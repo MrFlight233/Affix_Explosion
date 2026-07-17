@@ -11,6 +11,8 @@ export interface DragPayload {
   slotIdx?: number;
   childIdx?: number;
   warehouseIdx?: number;
+  /** 所属父实体 instanceId（null = 启动端直属/slot 顶层），用于嵌套容器拖拽 */
+  parentInstanceId?: string | null;
   // 用于排序
   isReorder?: boolean;
 }
@@ -40,7 +42,7 @@ export function makeDropZone(
   el: HTMLElement,
   zone: DropZoneType,
   slotIdx: number | undefined,
-  onDrop: (payload: DragPayload, zone: DropZoneType, slotIdx: number | undefined) => string | null,
+  onDrop: (payload: DragPayload, zone: DropZoneType, slotIdx: number | undefined, originalEvent?: DragEvent) => string | null,
 ) {
   el.addEventListener('dragover', (e) => {
     e.preventDefault();
@@ -48,7 +50,6 @@ export function makeDropZone(
     el.classList.add('drag-over');
   });
   el.addEventListener('dragleave', (e) => {
-    // 只有真正离开时才清除
     if (!el.contains(e.relatedTarget as Node)) {
       el.classList.remove('drag-over');
     }
@@ -58,7 +59,7 @@ export function makeDropZone(
     e.stopPropagation();
     el.classList.remove('drag-over');
     if (!currentDrag) return;
-    const err = onDrop(currentDrag, zone, slotIdx);
+    const err = onDrop(currentDrag, zone, slotIdx, e);
     if (err) {
       const toast = document.getElementById('toast');
       if (toast) {

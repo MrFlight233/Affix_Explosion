@@ -5,6 +5,7 @@ import { initDB } from './db/schema';
 import authRouter from './routes/auth';
 import saveRouter from './routes/save';
 import dataRouter from './routes/data';
+import adminRouter from './routes/admin';
 
 async function main() {
   // 初始化数据库
@@ -20,6 +21,7 @@ async function main() {
   app.use('/api/auth', authRouter);
   app.use('/api/saves', saveRouter);
   app.use('/api/data', dataRouter);
+  app.use('/api/admin', adminRouter);
 
   // 健康检查
   app.get('/api/health', (_req, res) => {

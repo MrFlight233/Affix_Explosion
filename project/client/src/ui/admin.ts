@@ -1,0 +1,564 @@
+// ============================================================
+// 管理员制作物品页面（v5: Template/Instance 分离）
+// ============================================================
+
+import { admin } from '../api/client';
+import { reloadData, getEntityCategory, DefaultChildSpec } from '../game/data';
+
+type TabType = 'entities' | 'affixes';
+
+interface AdminState {
+  tab: TabType;
+  entities: any[];
+  affixes: any[];
+  selectedId: string | null;
+  isCreating: boolean;
+  searchQuery: string;
+  entityCatFilter: string;
+  affixCatFilter: string;
+  toast: string | null;
+}
+
+/** 子实体覆写编辑状态（defaultChildren 展开编辑时的临时数据） */
+let _childOverrides: Record<string, Partial<Record<string, any>>> = {};
+let _childExpanded: Record<string, boolean> = {};
+
+function resetChildState() { _childOverrides = {}; _childExpanded = {}; }
+
+export async function showAdminPage(onBack: () => void): Promise<void> {
+  const app = document.getElementById('app')!;
+  let state: AdminState = {
+    tab: 'entities', entities: [], affixes: [],
+    selectedId: null, isCreating: false,
+    searchQuery: '', entityCatFilter: 'all', affixCatFilter: 'all', toast: null,
+  };
+
+  try {
+    const [eRes, aRes] = await Promise.all([admin.listEntities(), admin.listAffixes()]);
+    state.entities = eRes.entities;
+    state.affixes = aRes.affixes;
+  } catch (e: any) {
+    app.innerHTML = `<div style="padding:40px;text-align:center;"><p style="color:var(--warn);">加载数据失败：${e.message}</p><button class="btn" id="btn-back-admin">返回</button></div>`;
+    document.getElementById('btn-back-admin')!.addEventListener('click', onBack);
+    return;
+  }
+
+  app.innerHTML = `
+    <div id="admin-page" style="display:flex;flex-direction:column;height:100vh;">
+      <div id="admin-header" style="display:flex;align-items:center;padding:8px 16px;border-bottom:1px solid #ccc;background:#f5f5f5;gap:12px;flex-shrink:0;">
+        <button class="btn" id="adm-btn-back">← 返回</button>
+        <h2 style="font-size:16px;margin:0;flex:1;">制作物品管理</h2>
+        <div id="adm-tabs" style="display:flex;gap:0;">
+          <button id="adm-tab-entities" class="adm-tab-btn" style="padding:4px 16px;border:1px solid #aaa;background:#ddd;font-weight:bold;">实体管理</button>
+          <button id="adm-tab-affixes" class="adm-tab-btn" style="padding:4px 16px;border:1px solid #aaa;background:#fff;">词条管理</button>
+        </div>
+        <button class="btn btn-danger" id="adm-btn-reset" style="background:#fff;color:#c00;border:1px solid #c00;">重置</button>
+      </div>
+      <div style="display:flex;flex:1;overflow:hidden;">
+        <div id="adm-left" style="width:320px;border-right:1px solid #ddd;display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;">
+          <div style="padding:8px;border-bottom:1px solid #eee;">
+            <input id="adm-search" type="text" placeholder="搜索 ID 或名称..." style="width:100%;padding:5px 8px;border:1px solid #ccc;font-family:inherit;font-size:13px;box-sizing:border-box;">
+          </div>
+          <div style="padding:4px 8px;border-bottom:1px solid #eee;">
+            <button class="btn btn-small" id="adm-btn-add" style="width:100%;">+ 新增</button>
+          </div>
+          <div id="adm-cat-filter" style="padding:4px 8px;border-bottom:1px solid #eee;display:flex;flex-wrap:wrap;gap:2px;"></div>
+          <div id="adm-list" style="flex:1;overflow-y:auto;"></div>
+        </div>
+        <div id="adm-right" style="flex:1;overflow-y:auto;padding:16px;">
+          <p style="color:#999;">← 从左侧列表选择物品进行编辑，或点击"新增"创建新物品</p>
+        </div>
+      </div>
+      <div id="adm-toast" style="display:none;position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:8px 20px;font-size:13px;z-index:3000;"></div>
+    </div>`;
+
+  function showToast(msg: string) {
+    const el = document.getElementById('adm-toast')!;
+    el.textContent = msg; el.style.display = 'block';
+    setTimeout(() => { el.style.display = 'none'; }, 2000);
+  }
+
+  // ---- top-level events ----
+  document.getElementById('adm-btn-back')!.addEventListener('click', onBack);
+  document.getElementById('adm-btn-reset')!.addEventListener('click', async () => {
+    if (!confirm('确定要重置所有数据为默认值吗？此操作不可撤销！')) return;
+    try {
+      await admin.reset();
+      const [eRes, aRes] = await Promise.all([admin.listEntities(), admin.listAffixes()]);
+      state.entities = eRes.entities; state.affixes = aRes.affixes;
+      state.selectedId = null; state.isCreating = false; resetChildState();
+      reloadData(state.entities, state.affixes); render(); showToast('已重置为默认数据');
+    } catch (e: any) { showToast('重置失败：' + e.message); }
+  });
+  document.getElementById('adm-tab-entities')!.addEventListener('click', () => {
+    state.tab = 'entities'; state.selectedId = null; state.isCreating = false; resetChildState(); render();
+  });
+  document.getElementById('adm-tab-affixes')!.addEventListener('click', () => {
+    state.tab = 'affixes'; state.selectedId = null; state.isCreating = false; resetChildState(); render();
+  });
+  document.getElementById('adm-search')!.addEventListener('input', (e) => {
+    state.searchQuery = (e.target as HTMLInputElement).value.toLowerCase();
+    state.selectedId = null; state.isCreating = false; resetChildState(); render();
+  });
+  document.getElementById('adm-btn-add')!.addEventListener('click', () => {
+    state.isCreating = true; state.selectedId = null; resetChildState(); render();
+  });
+
+  // ---- render ----
+  function render() {
+    const tabEnt = document.getElementById('adm-tab-entities')!;
+    const tabAff = document.getElementById('adm-tab-affixes')!;
+    if (state.tab === 'entities') {
+      tabEnt.style.background = '#ddd'; tabEnt.style.fontWeight = 'bold';
+      tabAff.style.background = '#fff'; tabAff.style.fontWeight = 'normal';
+    } else {
+      tabAff.style.background = '#ddd'; tabAff.style.fontWeight = 'bold';
+      tabEnt.style.background = '#fff'; tabEnt.style.fontWeight = 'normal';
+    }
+    renderCatFilter(); renderList(); renderForm();
+  }
+
+  function renderCatFilter() {
+    const container = document.getElementById('adm-cat-filter')!;
+    if (state.tab === 'entities') {
+      const cats = ['all', '随从', '武器', '防具', '饰品', '容器'];
+      container.innerHTML = cats.map(c =>
+        `<button class="btn btn-small" style="font-size:11px;padding:1px 6px;${state.entityCatFilter === c ? 'background:#ddd;font-weight:bold;' : ''}" data-ecat="${c}">${c === 'all' ? '全部' : c}</button>`
+      ).join('');
+      container.querySelectorAll('[data-ecat]').forEach(btn => {
+        btn.addEventListener('click', () => { state.entityCatFilter = (btn as HTMLElement).dataset.ecat!; state.selectedId = null; state.isCreating = false; render(); });
+      });
+    } else {
+      const cats = ['all', '属性', '行动', '伤害', '防御', '耐力', '负重', '容器', '限制', '特殊', '类别'];
+      container.innerHTML = cats.map(c =>
+        `<button class="btn btn-small" style="font-size:11px;padding:1px 6px;${state.affixCatFilter === c ? 'background:#ddd;font-weight:bold;' : ''}" data-acat="${c}">${c === 'all' ? '全部' : c}</button>`
+      ).join('');
+      container.querySelectorAll('[data-acat]').forEach(btn => {
+        btn.addEventListener('click', () => { state.affixCatFilter = (btn as HTMLElement).dataset.acat!; state.selectedId = null; state.isCreating = false; render(); });
+      });
+    }
+  }
+
+  function getFilteredItems(): any[] {
+    const q = state.searchQuery;
+    if (state.tab === 'entities') {
+      let items = state.entities;
+      if (q) items = items.filter((e: any) => e.id.toLowerCase().includes(q) || e.name.toLowerCase().includes(q));
+      if (state.entityCatFilter !== 'all') items = items.filter((e: any) => getEntityCategory(e) === state.entityCatFilter);
+      return items;
+    } else {
+      let items = state.affixes;
+      if (q) items = items.filter((a: any) => a.id.toLowerCase().includes(q) || a.name.toLowerCase().includes(q) || (a.effect && a.effect.includes(q)));
+      if (state.affixCatFilter !== 'all') items = items.filter((a: any) => a.category === state.affixCatFilter);
+      return items;
+    }
+  }
+
+  function renderList() {
+    const listEl = document.getElementById('adm-list')!;
+    const items = getFilteredItems();
+    let html = '';
+    for (const item of items) {
+      const sel = state.selectedId === item.id ? ' style="background:#e8e8e8;font-weight:bold;"' : '';
+      if (state.tab === 'entities') {
+        const cat = getEntityCategory(item);
+        html += `<div class="adm-list-item" data-id="${item.id}"${sel}><span style="flex:1;">${item.name}</span><span style="font-size:10px;color:#888;">[${cat}]</span><span style="font-size:10px;color:#666;margin-left:6px;">价${item.value}</span></div>`;
+      } else {
+        html += `<div class="adm-list-item" data-id="${item.id}"${sel}><span style="flex:1;">${item.name}</span><span style="font-size:10px;color:#888;">[${item.category}]</span><span style="font-size:10px;color:#666;margin-left:6px;">${item.costValue >= 0 ? '价' + item.costValue : '-' + Math.abs(item.costValue)}</span></div>`;
+      }
+    }
+    listEl.innerHTML = html;
+    listEl.querySelectorAll('.adm-list-item').forEach(el => {
+      el.addEventListener('click', () => { state.selectedId = (el as HTMLElement).dataset.id!; state.isCreating = false; resetChildState(); render(); });
+    });
+  }
+
+  // ========== TAG SELECTOR ==========
+
+  function renderTagSelector(fieldId: string, label: string, selected: string[], options: { id: string; name: string; }[]) {
+    const avail = options.filter(o => !selected.includes(o.id));
+    const selJson = JSON.stringify(selected).replace(/"/g, '&quot;');
+    const resolveTag = (id: string) => { const a = state.affixes.find((x: any) => x.id === id); return a ? { name: a.name, effect: a.effect || '' } : { name: id, effect: '' }; };
+    let h = `<div class="tag-selector" id="${fieldId}" data-selected="${selJson}">`;
+    h += `<label style="font-size:12px;color:#666;display:block;margin-bottom:2px;">${label}</label>`;
+    h += `<div class="tag-list" id="${fieldId}-tags">`;
+    for (const s of selected) { const r = resolveTag(s); h += `<span class="tag-chip" data-val="${s}" title="${r.name}: ${r.effect}">${r.name}<span class="tag-remove" data-remove="${s}">&times;</span></span>`; }
+    h += `</div>`;
+    h += `<div style="display:flex;gap:4px;margin-top:2px;"><select id="${fieldId}-select" style="flex:1;font-size:12px;padding:2px 4px;border:1px solid #ccc;"><option value="">— 选择添加 —</option>`;
+    for (const o of avail) h += `<option value="${o.id}">${o.name} (${o.id})</option>`;
+    h += `</select><button class="btn btn-small" id="${fieldId}-add" style="font-size:11px;padding:2px 6px;">+</button></div></div>`;
+    return h;
+  }
+
+  function bindTagSelector(fieldId: string, options: { id: string; name: string }[]) {
+    const el = document.getElementById(fieldId)!;
+    const addBtn = document.getElementById(fieldId + '-add')!;
+    const selectEl = document.getElementById(fieldId + '-select')! as HTMLSelectElement;
+    el.querySelectorAll('.tag-remove').forEach(rm => { rm.addEventListener('click', (e) => { e.stopPropagation(); const val = (rm as HTMLElement).dataset.remove!; updateTagField(fieldId, getSelected(fieldId).filter(s => s !== val), options); }); });
+    addBtn.addEventListener('click', () => { const val = selectEl.value; if (!val) return; const cur = getSelected(fieldId); if (cur.includes(val)) return; updateTagField(fieldId, [...cur, val], options); });
+  }
+
+  function getSelected(fieldId: string): string[] { const el = document.getElementById(fieldId); if (!el) return []; try { return JSON.parse((el.dataset.selected || '[]').replace(/&quot;/g, '"')); } catch { return []; } }
+
+  function updateTagField(fieldId: string, updated: string[], options: { id: string; name: string }[]) {
+    const el = document.getElementById(fieldId)!;
+    el.dataset.selected = JSON.stringify(updated);
+    const resolveTag = (id: string) => { const a = state.affixes.find((x: any) => x.id === id); return a ? { name: a.name, effect: a.effect || '' } : { name: id, effect: '' }; };
+    const tagList = document.getElementById(fieldId + '-tags')!;
+    tagList.innerHTML = updated.map(s => { const r = resolveTag(s); return `<span class="tag-chip" data-val="${s}" title="${r.name}: ${r.effect}">${r.name}<span class="tag-remove" data-remove="${s}">&times;</span></span>`; }).join('');
+    const selectEl = document.getElementById(fieldId + '-select')! as HTMLSelectElement;
+    const avail = options.filter(o => !updated.includes(o.id));
+    selectEl.innerHTML = `<option value="">— 选择添加 —</option>` + avail.map(o => `<option value="${o.id}">${o.name} (${o.id})</option>`).join('');
+    tagList.querySelectorAll('.tag-remove').forEach(rm => { rm.addEventListener('click', (e) => { e.stopPropagation(); const val = (rm as HTMLElement).dataset.remove!; updateTagField(fieldId, getSelected(fieldId).filter(s => s !== val), options); }); });
+  }
+
+  // ========== FORM RENDERING ==========
+
+  function renderForm() {
+    const rightEl = document.getElementById('adm-right')!;
+    if (state.isCreating) { rightEl.innerHTML = state.tab === 'entities' ? buildEntityForm({}, true) : buildAffixForm({}, true); bindFormEvents(true, null); return; }
+    if (state.selectedId) {
+      const item = state.tab === 'entities' ? state.entities.find((e: any) => e.id === state.selectedId) : state.affixes.find((a: any) => a.id === state.selectedId);
+      if (!item) { rightEl.innerHTML = '<p style="color:#999;">物品不存在</p>'; return; }
+      rightEl.innerHTML = state.tab === 'entities' ? buildEntityForm(item, false) : buildAffixForm(item, false);
+      bindFormEvents(false, item); return;
+    }
+    rightEl.innerHTML = '<p style="color:#999;">← 从左侧列表选择物品进行编辑，或点击"新增"创建新物品</p>';
+  }
+
+  function buildEntityForm(data: any, isNew: boolean): string {
+    const v = (field: string, def: any = '') => isNew ? (data[field] ?? def) : data[field];
+    const sel = (field: string, val: string) => v(field) === val ? ' selected' : '';
+    const affixOpts = state.affixes.map((a: any) => ({ id: a.id, name: a.name }));
+
+    let h = `<h3 style="margin-top:0;">${isNew ? '新增实体' : '编辑实体：' + data.name}</h3><div class="admin-form" id="entity-form">`;
+    h += `<div class="admin-form-section"><h4>基本信息</h4>`;
+    h += `<div class="admin-field"><label>ID</label><input id="ef-id" value="${v('id')}" ${isNew ? '' : 'readonly'}></div>`;
+    h += `<div class="admin-field"><label>名称</label><input id="ef-name" value="${v('name')}"></div>`;
+    h += `<div class="admin-field"><label>占用槽位</label><input id="ef-slotCost" type="number" value="${v('slotCost', 1)}"></div>`;
+    h += `<div class="admin-field"><label>实体槽位</label><input id="ef-entitySlots" type="number" value="${v('entitySlots', 0)}"></div>`;
+    h += `<div class="admin-field"><label>重量</label><input id="ef-weight" type="number" value="${v('weight', 0)}"></div>`;
+    h += `<div class="admin-field"><label>价值</label><input id="ef-value" type="number" value="${v('value', 1)}"></div>`;
+    h += `<div class="admin-field"><label>词条槽数</label><input id="ef-dynamicAffixSlots" type="number" value="${v('dynamicAffixSlots', 0)}"></div>`;
+    h += `</div>`;
+    h += `<div class="admin-form-section"><h4>词条关联</h4>`;
+    h += renderTagSelector('ef-fixedAffixes', '固定词条', v('fixedAffixes') || [], affixOpts);
+    h += renderTagSelector('ef-poolPrerequisite', '池前置', v('poolPrerequisite') || [], affixOpts);
+    h += `</div>`;
+
+    // defaultChildren: Template/Instance model
+    const dcRaw = v('defaultChildren') || [];
+    const dcSpecs = normalizeDefaultChildren(dcRaw);
+    h += `<div class="admin-form-section"><h4>默认子装备（模板引用 + 可选覆写）</h4>`;
+    h += renderChildrenEditor(dcSpecs, data.id || 'new');
+    h += `</div>`;
+
+    h += `<div class="admin-form-section"><h4>启动端字段（仅 starter/follower 有效）</h4>`;
+    h += `<div class="admin-field"><label>HP</label><input id="ef-hp" type="number" value="${v('hp', 0)}"></div>`;
+    h += `<div class="admin-field"><label>耐力上限</label><input id="ef-maxStamina" type="number" value="${v('maxStamina', 0)}"></div>`;
+    h += `<div class="admin-field"><label>耐力回复/秒</label><input id="ef-staminaRegen" type="number" value="${v('staminaRegen', 0)}"></div>`;
+    h += `<div class="admin-field"><label>负重上限</label><input id="ef-maxLoad" type="number" value="${v('maxLoad', 0)}"></div>`;
+    h += `</div>`;
+    h += `<div class="admin-form-section"><h4>主动装备字段</h4>`;
+    h += `<div class="admin-field"><label>是否主动</label><input id="ef-isActive" type="checkbox" ${v('isActive') ? 'checked' : ''}></div>`;
+    h += `<div class="admin-field"><label>耐力消耗</label><input id="ef-staminaCost" type="number" value="${v('staminaCost', 0)}"></div>`;
+    h += `<div class="admin-field"><label>触发耗时(ms)</label><input id="ef-actionTime" type="number" value="${v('actionTime', 0)}"></div>`;
+    h += `<div class="admin-field"><label>伤害</label><input id="ef-damage" type="number" value="${v('damage', 0)}"></div>`;
+    h += `<div class="admin-field"><label>攻击类型</label><select id="ef-attackType"><option value="">—</option><option value="近战"${sel('attackType','近战')}>近战</option><option value="远程"${sel('attackType','远程')}>远程</option></select></div>`;
+    h += `<div class="admin-field"><label>攻击顺序</label><select id="ef-attackOrder"><option value="">—</option><option value="从上往下"${sel('attackOrder','从上往下')}>从上往下</option><option value="从下往上"${sel('attackOrder','从下往上')}>从下往上</option></select></div>`;
+    h += `<div class="admin-field"><label>优先目标</label><select id="ef-priorityTarget"><option value="">无</option><option value="1"${v('priorityTarget')===1?' selected':''}>1</option><option value="2"${v('priorityTarget')===2?' selected':''}>2</option><option value="3"${v('priorityTarget')===3?' selected':''}>3</option></select></div>`;
+    h += `</div>`;
+    h += `<div class="admin-form-section"><h4>被动加成</h4>`;
+    h += `<div class="admin-field"><label>护甲加成</label><input id="ef-armorBonus" type="number" value="${v('armorBonus', 0)}"></div>`;
+    h += `<div class="admin-field"><label>回复加成</label><input id="ef-regenBonus" type="number" value="${v('regenBonus', 0)}"></div>`;
+    h += `<div class="admin-field"><label>生命加成</label><input id="ef-hpBonus" type="number" value="${v('hpBonus', 0)}"></div>`;
+    h += `</div>`;
+    h += `<div class="admin-form-actions"><button class="btn btn-primary" id="ef-btn-save">${isNew ? '创建实体' : '保存修改'}</button><button class="btn" id="ef-btn-cancel">取消</button>${isNew ? '' : '<button class="btn btn-danger" id="ef-btn-delete">删除此项</button>'}</div></div>`;
+    return h;
+  }
+
+  /** 兼容旧数据：将任意格式的 defaultChildren 统一为 (string | DefaultChildSpec)[] */
+  function normalizeDefaultChildren(raw: any[]): (string | DefaultChildSpec)[] {
+    return raw.map((c: any) => {
+      if (typeof c === 'string') return c;
+      if (c && typeof c === 'object' && c.defId) return c as DefaultChildSpec;
+      // 兼容旧数据：完整内联实体对象 → 提取差异
+      const tpl = c?.id ? state.entities.find((e: any) => e.id === c.id) : null;
+      const ov: any = {};
+      const fields = ['damage','actionTime','staminaCost','armorBonus','regenBonus','hpBonus','weight','value','isActive','attackType','attackOrder','priorityTarget','name'];
+      for (const f of fields) { if (c[f] !== undefined && (!tpl || c[f] !== tpl[f])) ov[f] = c[f]; }
+      const spec: DefaultChildSpec = { defId: c.id || 'unknown' };
+      if (Object.keys(ov).length > 0) spec.overrides = ov;
+      return spec;
+    });
+  }
+
+  // ========== CHILDREN EDITOR (Template/Instance) ==========
+
+  function getChildDefId(spec: any): string { return typeof spec === 'string' ? spec : spec?.defId || spec?.id || 'unknown'; }
+
+  function getChildOverrides(spec: any, childKey: string): Record<string, any> {
+    const base: Record<string, any> = {};
+    if (spec && typeof spec === 'object') {
+      if (spec.overrides) Object.assign(base, spec.overrides);
+      else { // legacy inline object
+        const tpl = state.entities.find((e: any) => e.id === spec.id);
+        ['damage','actionTime','staminaCost','armorBonus','regenBonus','hpBonus','weight','value','isActive','attackType','attackOrder','priorityTarget','name'].forEach(f => {
+          if (spec[f] !== undefined && spec[f] !== (tpl?.[f] ?? undefined)) base[f] = spec[f];
+        });
+      }
+    }
+    return { ...base, ...(_childOverrides[childKey] || {}) };
+  }
+
+  function countOverrides(ov: Record<string, any>): number { return Object.values(ov).filter(v => v !== undefined && v !== null && v !== '').length; }
+
+  function renderChildrenEditor(specs: (string | DefaultChildSpec)[], parentId: string): string {
+    const entityOpts = state.entities.map((e: any) => ({ id: e.id, name: e.name + ' [' + getEntityCategory(e) + ']' }));
+    let h = '';
+    if (specs.length === 0) { h += `<p style="font-size:12px;color:#999;margin:4px 0;">暂无子装备</p>`; }
+    else {
+      h += `<div style="display:flex;flex-direction:column;gap:6px;">`;
+      for (let i = 0; i < specs.length; i++) {
+        const spec = specs[i]; const defId = getChildDefId(spec);
+        const childDef = state.entities.find((e: any) => e.id === defId);
+        const childKey = `${parentId}_${i}`;
+        const ov = getChildOverrides(spec, childKey); const ovCount = countOverrides(ov);
+        const expanded = _childExpanded[childKey] || false;
+        h += `<div class="child-entity-card" data-childkey="${childKey}" data-defid="${defId}">`;
+        h += `<div style="display:flex;align-items:center;padding:4px 8px;background:#f5f5f5;gap:6px;">`;
+        h += `<span style="font-size:12px;cursor:pointer;user-select:none;" class="child-toggle" data-childkey="${childKey}">${expanded ? '▼' : '▶'}</span>`;
+        h += `<select class="child-template-select" data-childkey="${childKey}" style="flex:1;font-size:11px;padding:2px 4px;border:1px solid #ccc;">${entityOpts.map(eo => `<option value="${eo.id}"${eo.id===defId?' selected':''}>${eo.name}</option>`).join('')}</select>`;
+        if (ovCount > 0) h += `<span style="font-size:10px;background:#fff3cd;color:#856404;padding:1px 5px;flex-shrink:0;">已定制 ${ovCount} 字段</span>`;
+        h += `<button class="btn btn-small child-remove" data-childkey="${childKey}" style="font-size:10px;padding:1px 4px;color:#c00;border:1px solid #c00;background:#fff;flex-shrink:0;">×</button>`;
+        h += `</div>`;
+        if (expanded && childDef) { h += `<div class="child-edit-body" style="padding:8px;">${renderChildOverrideForm(childDef, childKey, ov)}</div>`; }
+        h += `</div>`;
+      }
+      h += `</div>`;
+    }
+    const usedIds = specs.map(s => getChildDefId(s));
+    const avail = entityOpts.filter(o => !usedIds.includes(o.id));
+    h += `<div style="display:flex;gap:4px;margin-top:6px;"><select id="ef-children-select-${parentId}" style="flex:1;font-size:12px;padding:2px 4px;border:1px solid #ccc;"><option value="">— 添加子实体（选择模板） —</option>${avail.map(o => `<option value="${o.id}">${o.name}</option>`).join('')}</select>`;
+    h += `<button class="btn btn-small child-add" data-parent="${parentId}" style="font-size:11px;padding:2px 6px;">+</button></div>`;
+    return h;
+  }
+
+  function renderChildOverrideForm(tpl: any, childKey: string, ov: Record<string, any>): string {
+    let h = `<div class="child-override-form" data-childkey="${childKey}" style="font-size:11px;">`;
+    h += `<p style="color:#666;font-size:10px;margin:0 0 6px 0;">模板：${tpl.name} — 伤害${tpl.damage||0} 耗时${tpl.actionTime||0}ms 耐耗${tpl.staminaCost||0} 护甲${tpl.armorBonus||0} 回复${tpl.regenBonus||0} 生命${tpl.hpBonus||0}</p>`;
+    h += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;">`;
+    h += ovField('伤害','damage',tpl.damage,childKey,ov);
+    h += ovField('耗时ms','actionTime',tpl.actionTime,childKey,ov);
+    h += ovField('耐耗','staminaCost',tpl.staminaCost,childKey,ov);
+    h += `<label style="font-size:10px;display:flex;align-items:center;gap:2px;margin-right:6px;"><input class="cov-isActive" data-ck="${childKey}" type="checkbox" ${ov.isActive!==undefined?(ov.isActive?'checked':''):''}>主动</label>`;
+    h += ovSelect('攻击','attackType',['','近战','远程'],tpl.attackType,childKey,ov);
+    h += ovSelect('顺序','attackOrder',['','从上往下','从下往上'],tpl.attackOrder,childKey,ov);
+    h += ovSelect('目标','priorityTarget',['','1','2','3'],String(tpl.priorityTarget||''),childKey,ov);
+    h += `</div>`;
+    h += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px;">`;
+    h += ovField('护甲','armorBonus',tpl.armorBonus,childKey,ov);
+    h += ovField('回复','regenBonus',tpl.regenBonus,childKey,ov);
+    h += ovField('生命','hpBonus',tpl.hpBonus,childKey,ov);
+    h += ovField('重量','weight',tpl.weight,childKey,ov);
+    h += ovField('价值','value',tpl.value,childKey,ov);
+    h += `</div>`;
+    if (countOverrides(ov) > 0) h += `<button class="btn btn-small cov-clear" data-childkey="${childKey}" style="font-size:10px;padding:1px 6px;color:#c00;border:1px solid #c00;background:#fff;">清除全部覆写</button>`;
+    // recursive nested children
+    const subSpecs = normalizeDefaultChildren(ov.defaultChildren || tpl.defaultChildren || []);
+    h += `<div style="margin-top:6px;font-size:10px;color:#666;border-top:1px solid #eee;padding-top:4px;">嵌套子装备：</div>${renderChildrenEditor(subSpecs, childKey)}`;
+    h += `</div>`;
+    return h;
+  }
+
+  function ovField(label: string, field: string, defVal: any, ck: string, ov: Record<string, any>): string {
+    const cur = ov[field]; const val = cur !== undefined && cur !== null ? String(cur) : '';
+    const isOv = val !== '' && String(val) !== String(defVal);
+    return `<span style="display:inline-flex;align-items:center;gap:2px;font-size:10px;"><span style="color:#888;">${label}:</span><input class="cov-${field}" data-ck="${ck}" type="number" value="${val}" placeholder="${defVal}" style="width:${field==='actionTime'?'55':'40'}px;font-size:10px;padding:1px 3px;border:1px solid ${isOv?'#ffa500':'#ddd'};background:${val!==''?'#fff':'#f9f9f9'};"></span>`;
+  }
+
+  function ovSelect(label: string, field: string, opts: string[], defVal: any, ck: string, ov: Record<string, any>): string {
+    const cur = ov[field]; const val = cur !== undefined ? String(cur) : '';
+    const isOv = val !== '' && val !== String(defVal || '');
+    return `<span style="display:inline-flex;align-items:center;gap:2px;font-size:10px;"><span style="color:#888;">${label}:</span><select class="cov-${field}" data-ck="${ck}" style="font-size:10px;padding:1px 2px;border:1px solid ${isOv?'#ffa500':'#ddd'};background:${val!==''?'#fff':'#f9f9f9'};width:42px;">${opts.map(o=>`<option value="${o}"${val===o?' selected':''}>${o||'—'}</option>`).join('')}</select></span>`;
+  }
+
+  // ========== AFFIX FORM ==========
+
+  function buildAffixForm(data: any, isNew: boolean): string {
+    const v = (field: string, def: any = '') => isNew ? (data[field] ?? def) : data[field];
+    const sel = (field: string, val: string) => v(field) === val ? ' selected' : '';
+    const categories = ['属性','行动','伤害','防御','耐力','负重','容器','限制','特殊','类别'];
+    const targets = ['启动端','装备','通用'];
+    const affixOpts = state.affixes.map((a: any) => ({ id: a.id, name: a.name }));
+    let h = `<h3 style="margin-top:0;">${isNew?'新增词条':'编辑词条：'+data.name}</h3><div class="admin-form" id="affix-form"><div class="admin-form-section"><h4>基本信息</h4>`;
+    h += `<div class="admin-field"><label>ID</label><input id="af-id" value="${v('id')}" ${isNew?'':'readonly'}></div>`;
+    h += `<div class="admin-field"><label>名称</label><input id="af-name" value="${v('name')}"></div>`;
+    h += `<div class="admin-field"><label>分类</label><select id="af-category">${categories.map(c=>`<option value="${c}"${sel('category',c)}>${c}</option>`).join('')}</select></div>`;
+    h += `<div class="admin-field"><label>效果描述</label><input id="af-effect" value="${v('effect')}"></div>`;
+    h += `<div class="admin-field"><label>数值</label><input id="af-value" type="number" value="${v('value',0)}"></div>`;
+    h += `<div class="admin-field"><label>价值</label><input id="af-costValue" type="number" value="${v('costValue',0)}"></div>`;
+    h += `<div class="admin-field"><label>槽位消耗</label><input id="af-slotCost" type="number" value="${v('slotCost',0)}"></div>`;
+    h += `<div class="admin-field"><label>可重复</label><input id="af-repeatable" type="checkbox" ${v('repeatable')?'checked':''}></div>`;
+    h += `<div class="admin-field"><label>适用目标</label><select id="af-target">${targets.map(t=>`<option value="${t}"${sel('target',t)}>${t}</option>`).join('')}</select></div>`;
+    h += `</div>`;
+    h += `<div class="admin-form-section"><h4>前置条件</h4>`;
+    h += renderTagSelector('af-prerequisite','前置词条',v('prerequisite')||[],affixOpts);
+    h += renderTagSelector('af-poolPrerequisite','池前置',v('poolPrerequisite')||[],affixOpts);
+    h += `</div>`;
+    h += `<div class="admin-form-actions"><button class="btn btn-primary" id="af-btn-save">${isNew?'创建词条':'保存修改'}</button><button class="btn" id="af-btn-cancel">取消</button>${isNew?'':'<button class="btn btn-danger" id="af-btn-delete">删除此项</button>'}</div></div>`;
+    return h;
+  }
+
+  // ========== EVENT BINDING ==========
+
+  function bindFormEvents(isNew: boolean, originalData: any) {
+    const cancelBtn = document.getElementById('ef-btn-cancel') || document.getElementById('af-btn-cancel');
+    cancelBtn?.addEventListener('click', () => { state.isCreating = false; state.selectedId = isNew ? null : state.selectedId; resetChildState(); render(); });
+    if (state.tab === 'entities') bindEntityFormEvents(isNew, originalData);
+    else bindAffixFormEvents(isNew, originalData);
+  }
+
+  function bindEntityFormEvents(isNew: boolean, originalData: any) {
+    const affixOpts = state.affixes.map((a: any) => ({ id: a.id, name: a.name }));
+    bindTagSelector('ef-fixedAffixes', affixOpts);
+    bindTagSelector('ef-poolPrerequisite', affixOpts);
+    bindAllChildrenEditors();
+
+    document.getElementById('ef-btn-save')?.addEventListener('click', async () => {
+      const id = (document.getElementById('ef-id') as HTMLInputElement).value.trim();
+      if (!id) { showToast('ID 不能为空'); return; }
+      const name = (document.getElementById('ef-name') as HTMLInputElement).value.trim();
+      if (!name) { showToast('名称不能为空'); return; }
+
+      const entity: any = {
+        id, name,
+        slotCost: parseInt((document.getElementById('ef-slotCost') as HTMLInputElement).value) || 1,
+        entitySlots: parseInt((document.getElementById('ef-entitySlots') as HTMLInputElement).value) || 0,
+        weight: parseInt((document.getElementById('ef-weight') as HTMLInputElement).value) || 0,
+        value: parseInt((document.getElementById('ef-value') as HTMLInputElement).value) || 1,
+        fixedAffixes: getSelected('ef-fixedAffixes'),
+        dynamicAffixSlots: parseInt((document.getElementById('ef-dynamicAffixSlots') as HTMLInputElement).value) || 0,
+        poolPrerequisite: getSelected('ef-poolPrerequisite'),
+        defaultChildren: serializeChildrenSpecs(isNew ? 'new' : originalData?.id),
+        hp: parseInt((document.getElementById('ef-hp') as HTMLInputElement).value) || 0,
+        maxStamina: parseInt((document.getElementById('ef-maxStamina') as HTMLInputElement).value) || 0,
+        staminaRegen: parseInt((document.getElementById('ef-staminaRegen') as HTMLInputElement).value) || 0,
+        maxLoad: parseInt((document.getElementById('ef-maxLoad') as HTMLInputElement).value) || 0,
+        isActive: (document.getElementById('ef-isActive') as HTMLInputElement).checked,
+        staminaCost: parseInt((document.getElementById('ef-staminaCost') as HTMLInputElement).value) || 0,
+        actionTime: parseInt((document.getElementById('ef-actionTime') as HTMLInputElement).value) || 0,
+        damage: parseInt((document.getElementById('ef-damage') as HTMLInputElement).value) || 0,
+        attackType: (document.getElementById('ef-attackType') as HTMLSelectElement).value || null,
+        attackOrder: (document.getElementById('ef-attackOrder') as HTMLSelectElement).value || null,
+        priorityTarget: (() => { const v = (document.getElementById('ef-priorityTarget') as HTMLSelectElement).value; return v ? parseInt(v) : null; })(),
+        armorBonus: parseInt((document.getElementById('ef-armorBonus') as HTMLInputElement).value) || 0,
+        regenBonus: parseInt((document.getElementById('ef-regenBonus') as HTMLInputElement).value) || 0,
+        hpBonus: parseInt((document.getElementById('ef-hpBonus') as HTMLInputElement).value) || 0,
+      };
+      if (!entity.defaultChildren || entity.defaultChildren.length === 0) delete entity.defaultChildren;
+
+      try {
+        if (isNew) { await admin.createEntity(entity); showToast('实体创建成功'); }
+        else { await admin.updateEntity(originalData.id, entity); showToast('实体保存成功'); }
+        const [eRes, aRes] = await Promise.all([admin.listEntities(), admin.listAffixes()]);
+        state.entities = eRes.entities; state.affixes = aRes.affixes;
+        state.isCreating = false; state.selectedId = isNew ? entity.id : originalData.id; resetChildState();
+        reloadData(state.entities, state.affixes); render();
+      } catch (e: any) { showToast('保存失败：' + e.message); }
+    });
+
+    document.getElementById('ef-btn-delete')?.addEventListener('click', async () => {
+      if (!confirm(`确定要删除实体"${originalData.name}"吗？此操作不可撤销。`)) return;
+      try {
+        await admin.deleteEntity(originalData.id);
+        const [eRes, aRes] = await Promise.all([admin.listEntities(), admin.listAffixes()]);
+        state.entities = eRes.entities; state.affixes = aRes.affixes;
+        state.selectedId = null; resetChildState();
+        reloadData(state.entities, state.affixes); render(); showToast('实体已删除');
+      } catch (e: any) { showToast('删除失败：' + e.message); }
+    });
+  }
+
+  function bindAllChildrenEditors() {
+    document.querySelectorAll('.child-toggle').forEach(el => { el.addEventListener('click', () => { const ck = (el as HTMLElement).dataset.childkey!; _childExpanded[ck] = !_childExpanded[ck]; render(); }); });
+    document.querySelectorAll('.child-remove').forEach(el => { el.addEventListener('click', (e) => { e.stopPropagation(); const ck = (el as HTMLElement).dataset.childkey!; const card = (el as HTMLElement).closest('.child-entity-card')!; card.style.display = 'none'; card.dataset.removed = '1'; delete _childOverrides[ck]; delete _childExpanded[ck]; showToast('子实体已标记移除（保存生效）'); }); });
+    document.querySelectorAll('.child-add').forEach(el => { el.addEventListener('click', () => { const parent = (el as HTMLElement).dataset.parent!; const selectEl = document.getElementById(`ef-children-select-${parent}`) as HTMLSelectElement; if (!selectEl || !selectEl.value) return; showToast(`子实体模板 ${selectEl.value} 已添加（保存生效，展开后可编辑覆写）`); selectEl.value = ''; render(); }); });
+    document.querySelectorAll('[class*="cov-"]').forEach((el: any) => { const ck = el.dataset.ck; if (!ck) return; el.addEventListener('input', () => collectOverrideFromDOM(ck)); el.addEventListener('change', () => collectOverrideFromDOM(ck)); });
+    document.querySelectorAll('.cov-clear').forEach(el => { el.addEventListener('click', () => { const ck = (el as HTMLElement).dataset.childkey!; delete _childOverrides[ck]; render(); }); });
+    document.querySelectorAll('.child-template-select').forEach(el => { el.addEventListener('change', () => { showToast('模板已切换（保存生效）'); }); });
+  }
+
+  function collectOverrideFromDOM(ck: string) {
+    const ov: Record<string, any> = {};
+    ['damage','actionTime','staminaCost','armorBonus','regenBonus','hpBonus','weight','value'].forEach(f => { const el = document.querySelector(`.cov-${f}[data-ck="${ck}"]`) as HTMLInputElement; if (el && el.value !== '') ov[f] = parseFloat(el.value) || 0; });
+    ['attackType','attackOrder','priorityTarget'].forEach(f => { const sel = document.querySelector(`.cov-${f}[data-ck="${ck}"]`) as HTMLSelectElement; if (sel && sel.value !== '') ov[f] = sel.value; });
+    const cb = document.querySelector(`.cov-isActive[data-ck="${ck}"]`) as HTMLInputElement;
+    if (cb) { if (cb.checked) ov.isActive = true; else if (_childOverrides[ck]?.isActive !== undefined) ov.isActive = false; }
+    if (Object.keys(ov).length > 0) _childOverrides[ck] = ov; else delete _childOverrides[ck];
+  }
+
+  function serializeChildrenSpecs(parentId: string): (string | DefaultChildSpec)[] {
+    const result: (string | DefaultChildSpec)[] = [];
+    document.querySelectorAll('.child-entity-card:not([data-removed="1"])').forEach((card: any) => {
+      const ck = card.dataset.childkey; if (!ck || !ck.startsWith(parentId + '_')) return;
+      const sel = card.querySelector('.child-template-select') as HTMLSelectElement;
+      const defId = sel?.value || card.dataset.defid || 'unknown';
+      collectOverrideFromDOM(ck);
+      const merged = _childOverrides[ck] || {};
+      const clean: Record<string, any> = {};
+      for (const [k, v] of Object.entries(merged)) { if (v !== undefined && v !== null && v !== '') clean[k] = v; }
+      if (Object.keys(clean).length > 0) result.push({ defId, overrides: clean });
+      else result.push(defId);
+    });
+    return result;
+  }
+
+  function bindAffixFormEvents(isNew: boolean, originalData: any) {
+    const affixOpts = state.affixes.map((a: any) => ({ id: a.id, name: a.name }));
+    bindTagSelector('af-prerequisite', affixOpts);
+    bindTagSelector('af-poolPrerequisite', affixOpts);
+
+    document.getElementById('af-btn-save')?.addEventListener('click', async () => {
+      const id = (document.getElementById('af-id') as HTMLInputElement).value.trim();
+      if (!id) { showToast('ID 不能为空'); return; }
+      const name = (document.getElementById('af-name') as HTMLInputElement).value.trim();
+      if (!name) { showToast('名称不能为空'); return; }
+      const affix = {
+        id, name,
+        category: (document.getElementById('af-category') as HTMLSelectElement).value,
+        value: parseFloat((document.getElementById('af-value') as HTMLInputElement).value) || 0,
+        costValue: parseInt((document.getElementById('af-costValue') as HTMLInputElement).value) || 0,
+        slotCost: parseInt((document.getElementById('af-slotCost') as HTMLInputElement).value) || 0,
+        repeatable: (document.getElementById('af-repeatable') as HTMLInputElement).checked,
+        prerequisite: getSelected('af-prerequisite'),
+        poolPrerequisite: getSelected('af-poolPrerequisite'),
+        target: (document.getElementById('af-target') as HTMLSelectElement).value,
+        effect: (document.getElementById('af-effect') as HTMLInputElement).value.trim(),
+      };
+      try {
+        if (isNew) { await admin.createAffix(affix); showToast('词条创建成功'); }
+        else { await admin.updateAffix(originalData.id, affix); showToast('词条保存成功'); }
+        const [eRes, aRes] = await Promise.all([admin.listEntities(), admin.listAffixes()]);
+        state.entities = eRes.entities; state.affixes = aRes.affixes;
+        state.isCreating = false; state.selectedId = isNew ? affix.id : originalData.id; resetChildState();
+        reloadData(state.entities, state.affixes); render();
+      } catch (e: any) { showToast('保存失败：' + e.message); }
+    });
+
+    document.getElementById('af-btn-delete')?.addEventListener('click', async () => {
+      if (!confirm(`确定要删除词条"${originalData.name}"吗？此操作不可撤销。`)) return;
+      try {
+        await admin.deleteAffix(originalData.id);
+        const [eRes, aRes] = await Promise.all([admin.listEntities(), admin.listAffixes()]);
+        state.entities = eRes.entities; state.affixes = aRes.affixes;
+        state.selectedId = null; resetChildState();
+        reloadData(state.entities, state.affixes); render(); showToast('词条已删除');
+      } catch (e: any) { showToast('删除失败：' + e.message); }
+    });
+  }
+
+  render();
+}
+
+export {};

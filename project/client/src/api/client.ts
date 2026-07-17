@@ -53,6 +53,61 @@ export const data = {
     request<{opponents:any[]}>('/data/battle-pool?' + new URLSearchParams({floor:String(floor),round:String(round)})),
 };
 
+// Admin
+let _isAdmin: boolean | null = null;
+export async function checkAdmin(): Promise<boolean> {
+  if (_isAdmin !== null) return _isAdmin;
+  try {
+    const res = await request<{ admin: boolean; username: string }>('/admin/check');
+    _isAdmin = res.admin;
+    return _isAdmin;
+  } catch {
+    _isAdmin = false;
+    return false;
+  }
+}
+export function resetAdminCache() { _isAdmin = null; }
+
+export const admin = {
+  check: () => request<{ admin: boolean; username: string }>('/admin/check'),
+
+  // Entities
+  listEntities: () =>
+    request<{ entities: any[]; version: number }>('/admin/entities'),
+  getEntity: (id: string) =>
+    request<{ entity: any }>('/admin/entities/' + encodeURIComponent(id)),
+  createEntity: (entity: any) =>
+    request<{ entity: any }>('/admin/entities', {
+      method: 'POST', body: JSON.stringify({ entity }),
+    }),
+  updateEntity: (id: string, entity: any) =>
+    request<{ entity: any }>('/admin/entities/' + encodeURIComponent(id), {
+      method: 'PUT', body: JSON.stringify({ entity }),
+    }),
+  deleteEntity: (id: string) =>
+    request<{ ok: boolean }>('/admin/entities/' + encodeURIComponent(id), { method: 'DELETE' }),
+
+  // Affixes
+  listAffixes: () =>
+    request<{ affixes: any[]; version: number }>('/admin/affixes'),
+  getAffix: (id: string) =>
+    request<{ affix: any }>('/admin/affixes/' + encodeURIComponent(id)),
+  createAffix: (affix: any) =>
+    request<{ affix: any }>('/admin/affixes', {
+      method: 'POST', body: JSON.stringify({ affix }),
+    }),
+  updateAffix: (id: string, affix: any) =>
+    request<{ affix: any }>('/admin/affixes/' + encodeURIComponent(id), {
+      method: 'PUT', body: JSON.stringify({ affix }),
+    }),
+  deleteAffix: (id: string) =>
+    request<{ ok: boolean }>('/admin/affixes/' + encodeURIComponent(id), { method: 'DELETE' }),
+
+  // Reset to defaults
+  reset: () =>
+    request<{ ok: boolean; message: string }>('/admin/reset', { method: 'POST' }),
+};
+
 // Saves
 export const saves = {
   list: () => request<{save:{data_json:string;updated_at:string}|null}>('/saves'),

@@ -6,15 +6,24 @@ import { showAuthModal, hideAuthModal } from './ui/auth';
 import { UIManager } from './ui/panels';
 import { GameEngine } from './game/engine';
 import { getToken, setToken, saves as savesApi } from './api/client';
-import { ENTITY_DEFS, AFFIX_DEFS } from './game/data';
-import { showTooltip, hideTooltip } from './ui/tooltip';
+import { ENTITY_DEFS, AFFIX_DEFS, isStarter, EntityDef, getEntityDef, getAffixDef, getEntityCategory } from './game/data';
+// tooltip 已移至详情面板，不再需要 hover 提示
 
 const app = document.getElementById('app')!;
 
 async function main() {
   const token = getToken();
-  if (token) {
-    try { await savesApi.list(); } catch { setToken(null); }
+  if (!token) {
+    showLoginPage();
+    return;
+  }
+  // 验证 token 是否仍然有效
+  try {
+    await savesApi.list();
+  } catch {
+    setToken(null);
+    showLoginPage();
+    return;
   }
   showStartScreen();
 }
@@ -31,6 +40,9 @@ function showStartScreen() {
         <button id="btn-continue">继续游戏</button>
         <button id="btn-itempool">全物品池</button>
       </div>
+      <div style="margin-top:20px;">
+        <button id="btn-logout" style="background:none;border:1px solid #999;color:#888;font-size:12px;padding:4px 16px;cursor:pointer;">退出登录</button>
+      </div>
     </div>
   `;
 
@@ -40,6 +52,30 @@ function showStartScreen() {
   document.getElementById('btn-new-game')!.addEventListener('click', () => startGame(true));
   btnContinue.addEventListener('click', () => startGame(false));
   document.getElementById('btn-itempool')!.addEventListener('click', () => showFullItemPool());
+
+  // 退出登录
+  document.getElementById('btn-logout')!.addEventListener('click', async () => {
+    const { setToken, resetAdminCache } = await import('./api/client');
+    setToken(null);
+    resetAdminCache();
+    showLoginPage();
+  });
+
+  // 异步检查管理员状态，添加"制作物品"按钮
+  (async () => {
+    const { checkAdmin } = await import('./api/client');
+    if (await checkAdmin()) {
+      const menu = document.getElementById('start-menu')!;
+      const btn = document.createElement('button');
+      btn.id = 'btn-admin';
+      btn.textContent = '制作物品';
+      btn.addEventListener('click', async () => {
+        const { showAdminPage } = await import('./ui/admin');
+        showAdminPage(() => showStartScreen());
+      });
+      menu.appendChild(btn);
+    }
+  })();
 }
 
 async function checkSaveAvailability(btn: HTMLButtonElement) {
@@ -94,47 +130,352 @@ async function launchGame(engine: GameEngine, isNew: boolean) {
 
 // ---- 全物品池查看 ----
 
+type PoolTab = 'all' | 'entity' | 'affix';
+type EntityFilter = 'all-entity' | 'starter' | 'active' | 'passive';
+type EntityCatFilter = 'all' | '随从' | '武器' | '防具' | '饰品' | '容器';
+type AffixCatFilter = 'all' | '类别' | '属性' | '行动' | '伤害' | '防御' | '耐力' | '负重' | '容器' | '限制' | '特殊';
+
 function showFullItemPool() {
+  let currentTab: PoolTab = 'all';
+  let entityFilter: EntityFilter = 'all-entity';
+  let entityCatFilter: EntityCatFilter = 'all';
+  let affixCatFilter: AffixCatFilter = 'all';
+  let selectedId: string | null = null;
+
+  const render = () => {
+    // 筛选实体
+    let filteredEntities = ENTITY_DEFS;
+    if (entityFilter === 'starter') filteredEntities = filteredEntities.filter(e => isStarter(e));
+    else if (entityFilter === 'active') filteredEntities = filteredEntities.filter(e => !isStarter(e) && e.isActive);
+    else if (entityFilter === 'passive') filteredEntities = filteredEntities.filter(e => !isStarter(e) && !e.isActive);
+    if (entityCatFilter !== 'all') filteredEntities = filteredEntities.filter(e => getEntityCategory(e) === entityCatFilter);
+
+    // 筛选词条
+    let filteredAffixes = AFFIX_DEFS;
+    if (affixCatFilter !== 'all') filteredAffixes = filteredAffixes.filter(a => a.category === affixCatFilter);
+
+    // 渲染左侧列表
+    let listHtml = '';
+
+    // 实体列表
+    if (currentTab === 'all' || currentTab === 'entity') {
+      if (currentTab === 'entity' || currentTab === 'all') {
+        listHtml += '<h3 style="border-bottom:1px solid #333;padding-bottom:4px;margin-top:12px;">实体 (' + filteredEntities.length + ')</h3>';
+        if (currentTab === 'all') {
+          // 实体筛选按钮行
+          listHtml += '<div class="filter-row" style="margin-bottom:4px;">';
+          const efilters: { v: EntityFilter; label: string }[] = [
+            { v: 'all-entity', label: '全部实体' }, { v: 'starter', label: '启动端' }, { v: 'active', label: '主动装备' }, { v: 'passive', label: '被动装备' },
+          ];
+          for (const f of efilters) {
+            listHtml += `<button class="btn btn-small ${entityFilter === f.v ? 'active' : ''}" data-efilter="${f.v}">${f.label}</button>`;
+          }
+          listHtml += '</div>';
+          // 实体分类筛选
+          listHtml += '<div class="filter-row" style="margin-bottom:4px;">';
+          const ecats: EntityCatFilter[] = ['all', '随从', '武器', '防具', '饰品', '容器'];
+          for (const c of ecats) {
+            listHtml += `<button class="btn btn-small ${entityCatFilter === c ? 'active' : ''}" data-ecat="${c}">${c === 'all' ? '全部类别' : c}</button>`;
+          }
+          listHtml += '</div>';
+        }
+      }
+
+      for (const e of filteredEntities) {
+        const typeLabel = isStarter(e) ? '启动端' : e.isActive ? '主动装备' : '被动装备';
+        const sel = selectedId === e.id ? ' style="background:#f0f0f0;font-weight:bold;"' : '';
+        listHtml += `<div class="item-row ip-item" data-id="${e.id}" data-type="entity"${sel}>`;
+        listHtml += `<span class="item-name">${e.name}</span>`;
+        listHtml += `<span class="item-stat">[${typeLabel}] ${getEntityCategory(e)}</span>`;
+        listHtml += `<span class="item-value">价${e.value}</span></div>`;
+      }
+    }
+
+    // 词条列表
+    if (currentTab === 'all' || currentTab === 'affix') {
+      listHtml += '<h3 style="border-bottom:1px solid #333;padding-bottom:4px;margin-top:16px;">词条 (' + filteredAffixes.length + ')</h3>';
+      if (currentTab === 'all') {
+        // 词条分类筛选
+        listHtml += '<div class="filter-row" style="margin-bottom:4px;">';
+        const acats: AffixCatFilter[] = ['all', '类别', '属性', '行动', '伤害', '防御', '耐力', '负重', '容器', '限制', '特殊'];
+        for (const c of acats) {
+          listHtml += `<button class="btn btn-small ${affixCatFilter === c ? 'active' : ''}" data-acat="${c}">${c === 'all' ? '全部类别' : c}</button>`;
+        }
+        listHtml += '</div>';
+      }
+
+      for (const a of filteredAffixes) {
+        const sel = selectedId === a.id ? ' style="background:#f0f0f0;font-weight:bold;"' : '';
+        listHtml += `<div class="item-row ip-item" data-id="${a.id}" data-type="affix"${sel}">`;
+        listHtml += `<span class="item-name">${a.name}</span>`;
+        listHtml += `<span class="item-stat">[${a.category}] ${a.effect}</span>`;
+        listHtml += `<span class="item-value">价${Math.abs(a.costValue)}</span></div>`;
+      }
+    }
+
+    document.getElementById('ip-list')!.innerHTML = listHtml;
+
+    // 绑定列表项点击
+    document.querySelectorAll('.ip-item').forEach(el => {
+      el.addEventListener('click', () => {
+        selectedId = (el as HTMLElement).dataset.id!;
+        render();
+      });
+    });
+
+    // 绑定实体筛选按钮
+    document.querySelectorAll('[data-efilter]').forEach(el => {
+      el.addEventListener('click', () => {
+        entityFilter = (el as HTMLElement).dataset.efilter as EntityFilter;
+        selectedId = null;
+        render();
+      });
+    });
+    document.querySelectorAll('[data-ecat]').forEach(el => {
+      el.addEventListener('click', () => {
+        entityCatFilter = (el as HTMLElement).dataset.ecat as EntityCatFilter;
+        selectedId = null;
+        render();
+      });
+    });
+    document.querySelectorAll('[data-acat]').forEach(el => {
+      el.addEventListener('click', () => {
+        affixCatFilter = (el as HTMLElement).dataset.acat as AffixCatFilter;
+        selectedId = null;
+        render();
+      });
+    });
+
+    // 渲染右侧详情面板
+    renderDetail(selectedId);
+  };
+
+  /** 解析固定词条 ID → 完整中文名称+效果 */
+  const resolveAffix = (id: string) => {
+    const def = getAffixDef(id);
+    return def ? { name: def.name, effect: def.effect, category: def.category } : { name: id, effect: '', category: '' };
+  };
+
+  const renderDetail = (id: string | null) => {
+    const detailEl = document.getElementById('ip-detail')!;
+    if (!id) {
+      detailEl.innerHTML = '<p style="color:var(--text-dim);padding:16px;">← 点击左侧物品查看详情</p>';
+      return;
+    }
+
+    const entity = getEntityDef(id);
+    const affix = getAffixDef(id);
+
+    if (entity) {
+      const label = isStarter(entity) ? '启动端' : entity.isActive ? '主动装备' : '被动装备';
+      const row = (k: string, v: string, extraClass?: string) =>
+        `<tr><td class="tt-label" style="white-space:nowrap;vertical-align:top;padding-right:10px;">${k}</td><td${extraClass ? ` class="${extraClass}"` : ''}>${v}</td></tr>`;
+
+      let h = `<div class="tt-name" style="margin-bottom:8px;">${entity.name} <span style="font-size:12px;color:var(--text-dim);font-weight:normal;">[${label} · ${getEntityCategory(entity)}]</span></div>`;
+      h += '<table style="font-size:13px;line-height:1.9;width:100%;">';
+
+      // === 基础属性 ===
+      if (isStarter(entity)) {
+        h += '<tr><td colspan="2" style="font-weight:bold;padding-top:8px;border-bottom:1px solid #eee;">基础属性</td></tr>';
+        h += row('生命', String(entity.hp));
+        h += row('耐力上限', String(entity.maxStamina));
+        h += row('耐力回复', entity.staminaRegen + '/秒');
+        h += row('负重上限', String(entity.maxLoad));
+      }
+
+      // === 主动装备 ===
+      if (entity.isActive) {
+        h += '<tr><td colspan="2" style="font-weight:bold;padding-top:8px;border-bottom:1px solid #eee;">战斗参数</td></tr>';
+        h += row('伤害', String(entity.damage));
+        h += row('触发耗时', entity.actionTime + 'ms');
+        h += row('耐力消耗', String(entity.staminaCost));
+        h += row('攻击类型', entity.attackType || '—');
+        h += row('攻击顺序', entity.attackOrder || '—');
+        if (entity.priorityTarget) {
+          h += row('优先目标', '第 ' + entity.priorityTarget + ' 位');
+        }
+      }
+
+      // === 被动加成 ===
+      if (!isStarter(entity) && !entity.isActive) {
+        const bonuses: string[] = [];
+        if (entity.damage) bonuses.push(`伤害 +${entity.damage}`);
+        if (entity.armorBonus) bonuses.push(`护甲 +${entity.armorBonus}`);
+        if (entity.regenBonus) bonuses.push(`回复 +${entity.regenBonus}/秒`);
+        if (entity.hpBonus) bonuses.push(`生命 ${entity.hpBonus > 0 ? '+' : ''}${entity.hpBonus}`);
+        if (entity.entitySlots > 0) bonuses.push(`实体槽位 +${entity.entitySlots}`);
+        if (bonuses.length > 0) {
+          h += '<tr><td colspan="2" style="font-weight:bold;padding-top:8px;border-bottom:1px solid #eee;">被动加成</td></tr>';
+          for (const b of bonuses) h += row(b, '');
+        }
+      }
+
+      // === 装备与槽位 ===
+      h += '<tr><td colspan="2" style="font-weight:bold;padding-top:8px;border-bottom:1px solid #eee;">装备信息</td></tr>';
+      h += row('占用槽位', String(entity.slotCost));
+      if (!isStarter(entity)) h += row('重量', String(entity.weight));
+      if (!isStarter(entity)) h += row('实体槽位', entity.entitySlots > 0 ? String(entity.entitySlots) : '—');
+      h += row('词条槽位', String(entity.dynamicAffixSlots));
+      h += row('基础价值', entity.value + ' 金币');
+
+      // === 固定词条 ===
+      h += '<tr><td colspan="2" style="font-weight:bold;padding-top:8px;border-bottom:1px solid #eee;">固定词条</td></tr>';
+      if (entity.fixedAffixes.length === 0) {
+        h += row('—', '无');
+      } else {
+        for (const aid of entity.fixedAffixes) {
+          const resolved = resolveAffix(aid);
+          const desc = resolved.effect ? `<span style="color:var(--text-dim);">${resolved.effect}</span>` : '';
+          h += row(resolved.name, desc || '—');
+        }
+      }
+
+      // === 默认子装备 ===
+      if (entity.defaultChildren && entity.defaultChildren.length > 0) {
+        h += '<tr><td colspan="2" style="font-weight:bold;padding-top:8px;border-bottom:1px solid #eee;">默认子装备</td></tr>';
+        for (const c of entity.defaultChildren) {
+          if (typeof c === 'string') {
+            const cd = getEntityDef(c);
+            h += row(cd ? cd.name : c, cd ? `[${getEntityCategory(cd)}] 价${cd.value}` : '—');
+          } else {
+            const cd = getEntityDef(c.defId);
+            const ovKeys = c.overrides ? Object.keys(c.overrides).length : 0;
+            h += row((cd ? cd.name : c.defId) + (ovKeys > 0 ? ' (定制)' : ''), cd ? `[${getEntityCategory(cd)}] 价${cd.value}, 覆写${ovKeys}字段` : '—');
+          }
+        }
+      }
+
+      h += '<tr><td colspan="2" style="padding-top:8px;font-size:11px;color:var(--text-dim);">ID: ' + entity.id + '</td></tr>';
+      h += '</table>';
+      detailEl.innerHTML = h;
+      return;
+    }
+
+    // === 词条详情 ===
+    if (affix) {
+      const row = (k: string, v: string) =>
+        `<tr><td class="tt-label" style="white-space:nowrap;vertical-align:top;padding-right:10px;">${k}</td><td>${v}</td></tr>`;
+
+      let h = `<div class="tt-name" style="margin-bottom:8px;">${affix.name} <span style="font-size:12px;color:var(--text-dim);font-weight:normal;">[${affix.category}]</span></div>`;
+      h += '<table style="font-size:13px;line-height:1.9;width:100%;">';
+
+      h += '<tr><td colspan="2" style="font-weight:bold;padding-top:4px;border-bottom:1px solid #eee;">效果</td></tr>';
+      h += row('效果', affix.effect);
+      h += row('数值', String(affix.value));
+
+      h += '<tr><td colspan="2" style="font-weight:bold;padding-top:8px;border-bottom:1px solid #eee;">使用信息</td></tr>';
+      h += row('适用目标', affix.target);
+      h += row('槽位消耗', String(affix.slotCost));
+      h += row('可重复', affix.repeatable ? '是' : '否');
+
+      h += '<tr><td colspan="2" style="font-weight:bold;padding-top:8px;border-bottom:1px solid #eee;">前置条件</td></tr>';
+      if (affix.prerequisite.length > 0) {
+        for (const pid of affix.prerequisite) {
+          const r = resolveAffix(pid);
+          h += row(r.name, r.effect || '—');
+        }
+      } else {
+        h += row('—', '无');
+      }
+
+      h += '<tr><td colspan="2" style="font-weight:bold;padding-top:8px;border-bottom:1px solid #eee;">其他</td></tr>';
+      h += row('基础价值', Math.abs(affix.costValue) + ' 金币');
+      if (affix.poolPrerequisite.length > 0) {
+        h += row('池前置', affix.poolPrerequisite.map(p => resolveAffix(p).name).join('、'));
+      }
+
+      h += '<tr><td colspan="2" style="padding-top:8px;font-size:11px;color:var(--text-dim);">ID: ' + affix.id + '</td></tr>';
+      h += '</table>';
+      detailEl.innerHTML = h;
+    }
+  };
+
+  // 初始 HTML
   app.innerHTML = `
-    <div style="padding:20px;max-width:800px;margin:0 auto;overflow-y:auto;height:100vh;">
-      <h2 style="margin-bottom:16px;">全物品池</h2>
-      <button class="btn" id="btn-back" style="margin-bottom:16px;">返回</button>
-      <h3 style="border-bottom:1px solid #333;padding-bottom:4px;margin-top:16px;">实体</h3>
-      <div id="ip-entities"></div>
-      <h3 style="border-bottom:1px solid #333;padding-bottom:4px;margin-top:16px;">词条</h3>
-      <div id="ip-affixes"></div>
+    <div style="display:flex;height:100vh;">
+      <!-- 左侧：列表区 -->
+      <div style="flex:3;overflow-y:auto;padding:16px;border-right:1px solid var(--border-light);">
+        <h2 style="margin-bottom:4px;">全物品池</h2>
+        <button class="btn" id="btn-back" style="margin-bottom:8px;">返回</button>
+
+        <!-- Tab 切换 -->
+        <div class="filter-row" style="margin-bottom:8px;">
+          <button class="btn btn-small ${currentTab === 'all' ? 'active' : ''}" id="tab-all">全部</button>
+          <button class="btn btn-small ${currentTab === 'entity' ? 'active' : ''}" id="tab-entity">仅实体</button>
+          <button class="btn btn-small ${currentTab === 'affix' ? 'active' : ''}" id="tab-affix">仅词条</button>
+        </div>
+
+        <div id="ip-list"></div>
+      </div>
+
+      <!-- 右侧：详情面板 -->
+      <div style="flex:2;overflow-y:auto;padding:16px;background:var(--bg-panel);">
+        <h3 style="margin-bottom:8px;">物品详情</h3>
+        <div id="ip-detail"></div>
+      </div>
     </div>
   `;
 
   document.getElementById('btn-back')!.addEventListener('click', () => showStartScreen());
 
-  const entDiv = document.getElementById('ip-entities')!;
-  ENTITY_DEFS.forEach((e: any) => {
-    const row = document.createElement('div');
-    row.className = 'item-row';
-    row.style.cursor = 'default';
-    row.innerHTML = `<span class="item-name" data-defid="${e.id}" data-type="entity">${e.name}</span>
-      <span class="item-stat">[${e.kind === 'actionable' ? '可行动' : '装备'}] ${e.category}</span>
-      <span class="item-value">价${e.value}</span>`;
-    entDiv.appendChild(row);
-  });
+  // Tab 切换事件
+  document.getElementById('tab-all')!.addEventListener('click', () => { currentTab = 'all'; selectedId = null; render(); });
+  document.getElementById('tab-entity')!.addEventListener('click', () => { currentTab = 'entity'; selectedId = null; render(); });
+  document.getElementById('tab-affix')!.addEventListener('click', () => { currentTab = 'affix'; selectedId = null; render(); });
 
-  const affDiv = document.getElementById('ip-affixes')!;
-  AFFIX_DEFS.forEach((a: any) => {
-    const row = document.createElement('div');
-    row.className = 'item-row';
-    row.style.cursor = 'default';
-    row.innerHTML = `<span class="item-name" data-defid="${a.id}" data-type="affix">${a.name}</span>
-      <span class="item-stat">[${a.category}] ${a.effect}</span>
-      <span class="item-value">价${Math.abs(a.costValue)}</span>`;
-    affDiv.appendChild(row);
-  });
+  // 初始渲染
+  render();
+}
 
-  document.querySelectorAll('.item-name[data-defid]').forEach(el => {
-    const span = el as HTMLElement;
-    span.addEventListener('mouseenter', (e) => showTooltip(e as MouseEvent, span.dataset.defid!, span.dataset.type as any));
-    span.addEventListener('mouseleave', hideTooltip);
-  });
+// ---- 登录页面（未登录时的默认页面） ----
+
+function showLoginPage() {
+  app.innerHTML = `
+    <div id="start-screen">
+      <h1>词 条 爆 炸</h1>
+      <div class="subtitle">Affix Explosion</div>
+      <div id="auth-form"></div>
+    </div>
+  `;
+  const formEl = document.getElementById('auth-form')!;
+  formEl.innerHTML = `
+    <label>用户名</label><input id="login-user" type="text" autocomplete="username">
+    <label>密码</label><input id="login-pass" type="password" autocomplete="current-password">
+    <div class="auth-btns" style="margin-top:12px;">
+      <button class="btn" id="btn-login">登录</button>
+      <button class="btn" id="btn-register">注册</button>
+    </div>
+    <div id="login-error" style="color:var(--warn);font-size:12px;margin-top:6px;min-height:16px;"></div>
+  `;
+
+  const userEl = document.getElementById('login-user') as HTMLInputElement;
+  const passEl = document.getElementById('login-pass') as HTMLInputElement;
+  const errEl = document.getElementById('login-error')!;
+
+  const doAuth = async (mode: 'login' | 'register') => {
+    const username = userEl.value.trim();
+    const password = passEl.value;
+    if (!username || !password) { errEl.textContent = '请输入用户名和密码'; return; }
+    try {
+      const { auth } = await import('./api/client');
+      const result = mode === 'login'
+        ? await auth.login(username, password)
+        : await auth.register(username, password);
+      setToken(result.token);
+      showStartScreen();
+    } catch (e: any) {
+      errEl.textContent = e.message || '操作失败';
+    }
+  };
+
+  document.getElementById('btn-login')!.onclick = () => doAuth('login');
+  document.getElementById('btn-register')!.onclick = () => doAuth('register');
+  passEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') doAuth('login'); });
+}
+
+/** 导出导航函数，供面板中"返回主菜单"使用 */
+export function navigateToStart() {
+  showStartScreen();
 }
 
 main().catch(console.error);

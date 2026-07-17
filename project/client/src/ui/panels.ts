@@ -2,12 +2,11 @@
 // 界面渲染 — 含完整战斗阶段界面
 // ============================================================
 
-import { GameEngine, CombatEvent, EnemyUnit } from '../game/engine';
+import { GameEngine, CombatEvent, CombatUnitSnapshot, CombatUnitRuntime } from '../game/engine';
 import {
   EntityDef, ItemInstance,
-  getEntityDef, getAffixDef, isActionable, isEquipment,
+  getEntityDef, getAffixDef, isStarter, hasEntitySlots, getEffectiveEntitySlots, getEntityCategory,
 } from '../game/data';
-import { EquipmentEntity, ActionableEntity } from '../game/data';
 import { makeDraggable, makeDropZone, DragPayload } from './dragDrop';
 import { showTooltip, hideTooltip } from './tooltip';
 
@@ -15,10 +14,18 @@ export class UIManager {
   engine: GameEngine;
   rightPanel: string | null = null;
 
+  // 商店筛选状态
+  shopFilter: 'all' | 'entity' | 'affix' = 'all';
+
+  // 词条展开/收起状态（纯 UI，不入引擎）
+  collapsedAffixRows: Set<string> = new Set();
+
   // 战斗状态
-  combatEnemies: EnemyUnit[] = [];
+  combatEnemies: CombatUnitSnapshot[] = [];
   combatLog: CombatEvent[] = [];
   combatSpeed: number = 1;
+  combatFinished: boolean = false;
+  combatUpdateTimer: any = null;
 
   constructor(engine: GameEngine) {
     this.engine = engine;
@@ -62,14 +69,14 @@ export class UIManager {
 
     const isCombat = this.engine.state.phase === 2;
     this.renderHUD();
-    this.renderDeploy(isCombat);
-    if (!isCombat) this.renderQuickWarehouse();
-    this.renderLeftButtons(isCombat);
-
     if (isCombat) {
-      this.renderEnemyPanel();
+      this.renderPlayerCombatPanel();
+      this.renderEnemyCombatPanel();
       this.renderCombatLogPanel();
     } else {
+      this.renderDeploy(false);
+      this.renderQuickWarehouse();
+      this.renderLeftButtons(false);
       this.renderRightPanels();
     }
   }
@@ -80,18 +87,54 @@ export class UIManager {
     const g = this.engine.state;
     const canSave = (g.phase === 1 || g.phase === 3) && g.phase !== 2;
 
+    let rightHtml = '';
+    if (this.combatFinished) {
+      rightHtml = '<button id="btn-continue-combat">继续</button>';
+    } else if (g.phase !== 2) {
+      rightHtml = [
+        canSave ? '<button id="btn-save">存档</button>' : '',
+        `<button id="btn-next">${g.phase === 3 ? '下一轮' : (g.phase === 1 && g.deploySlots.length > 0 ? '开始战斗' : '下一阶段')}</button>`,
+      ].filter(Boolean).join('');
+    }
+
     hud.innerHTML = `
       <div class="hud-item"><span class="hud-label">金币</span><span class="hud-value">${g.gold}</span></div>
       <div class="hud-item"><span class="hud-label">层-轮</span><span class="hud-value">${g.floor}-${g.round}</span></div>
       <div class="hud-item"><span class="hud-label">阶段</span><span class="hud-value">${this.engine.getPhaseLabel()}</span></div>
       <div class="hud-item"><span class="hud-label">活力</span><span class="hud-value">${this.engine.getVitalityUsed()}/${g.maxVitality}</span></div>
       <div class="hud-right">
-        ${canSave ? '<button id="btn-save">存档</button>' : ''}
-        ${g.phase !== 2 ? `<button id="btn-next">${g.phase === 3 ? '下一轮' : (g.phase === 1 && g.deploySlots.length > 0 ? '开始战斗' : '下一阶段')}</button>` : ''}
+        <button id="btn-return-menu">返回主菜单</button>
+        ${rightHtml}
       </div>
     `;
 
-    if (canSave) document.getElementById('btn-save')!.onclick = () => this.showSavePanel();
+    // 返回主菜单
+    const btnReturn = document.getElementById('btn-return-menu');
+    if (btnReturn) {
+      btnReturn.onclick = async () => {
+        if (confirm('确定要返回主菜单吗？未保存的进度将丢失。')) {
+          if (this.combatUpdateTimer) { clearInterval(this.combatUpdateTimer); this.combatUpdateTimer = null; }
+          const { navigateToStart } = await import('../main');
+          navigateToStart();
+        }
+      };
+    }
+
+    if (canSave) {
+      const btnSave = document.getElementById('btn-save');
+      if (btnSave) btnSave.onclick = () => this.showSavePanel();
+    }
+    const btnContinue = document.getElementById('btn-continue-combat');
+    if (btnContinue) {
+      btnContinue.onclick = () => {
+        if (this.combatUpdateTimer) { clearInterval(this.combatUpdateTimer); this.combatUpdateTimer = null; }
+        this.combatFinished = false;
+        this.combatEnemies = [];
+        this.combatLog = [];
+        this.engine.state.phase = 3;
+        this.render();
+      };
+    }
     const btnNext = document.getElementById('btn-next');
     if (btnNext) {
       btnNext.onclick = () => {
@@ -102,86 +145,304 @@ export class UIManager {
     }
   }
 
-  // ======================== 出场面板 ========================
-  renderDeploy(locked: boolean = false) {
-    const area = document.getElementById('deploy-area')!;
-    const g = this.engine.state;
-    let html = `<div class="panel"><div class="panel-title">出场面板${locked ? ' [锁定]' : ''}</div>`;
-    html += '<div class="drop-zone" id="deploy-top-drop" style="min-height:40px;">';
-    if (g.deploySlots.length === 0) html += '<span style="color:var(--text-dim);font-size:12px;">拖拽可行动实体至此</span>';
-    html += '</div>';
+  /** 递归渲染实体树：自身 + children + 嵌套 drop zone */
+  private renderEntityTree(item: ItemInstance, depth: number, slotIdx: number, parentId: string | null): string {
+    const isEntity = item.type === 'entity';
+    const def = isEntity ? getEntityDef(item.defId) : getAffixDef(item.defId);
+    if (!def) return '';
 
-    for (let si = 0; si < g.deploySlots.length; si++) {
-      const slot = g.deploySlots[si];
-      const edef = getEntityDef(slot.entity.defId) as ActionableEntity | undefined;
-      if (!edef) continue;
-      let load = 0;
-      for (const c of slot.children) { const cd = getEntityDef(c.defId); if (cd && cd.kind === 'equipment') load += (cd as EquipmentEntity).weight; }
-      const over = load > edef.maxLoad;
+    const cls = !isEntity ? 'affix' : isStarter(def as EntityDef) ? 'starter' : 'gear';
+    const indent = depth > 0 ? ` nested-${Math.min(depth, 3)}` : '';
+    const dzId = isEntity && hasEntitySlots(def as EntityDef)
+      ? ` id="dz-${item.instanceId}"` : '';
+    const itemId = ` id="item-${item.instanceId}"`;
 
-      html += `<div class="drop-zone" id="deploy-slot-${si}" style="margin-top:4px;min-height:36px;">`;
-      html += `<div class="item-row actionable" id="item-${slot.entity.instanceId}">`;
-      html += `<span class="item-name" data-defid="${slot.entity.defId}" data-type="entity">${edef.name}</span>`;
-      html += `<span class="item-stat">HP:${edef.hp} 伤害:${edef.baseDamage} 耗时:${edef.baseActionTime}ms</span>`;
-      html += `<span class="item-stat">耐力:${edef.maxStamina}/${edef.staminaRegen}/s 负重:${load}/${edef.maxLoad}</span>`;
-      if (over) html += `<span class="item-stat warn">超重</span>`;
-      html += `<span class="item-stat">${edef.attackType} ${edef.attackOrder}${edef.priorityTarget ? ' [优先' + edef.priorityTarget + ']' : ''}</span>`;
+    let html = '';
+
+    if (isEntity) {
+      const edef = def as EntityDef;
+      html += `<div class="item-row ${cls}${indent}"${itemId}>`;
+      html += `<span class="item-name" data-defid="${edef.id}" data-type="entity">${edef.name}</span>`;
+      if (isStarter(edef)) {
+        // 启动端：显示 HP / 槽位 / 耐力 / 负重
+        let load = 0;
+        for (const c of (item.children || [])) { const cd = getEntityDef(c.defId); if (cd) load += cd.weight; }
+        const over = load > edef.maxLoad;
+        html += `<span class="item-stat">HP:${edef.hp} 槽位:${edef.entitySlots}</span>`;
+        html += `<span class="item-stat">耐力:${edef.maxStamina}/${edef.staminaRegen}/s 负重:${load}/${edef.maxLoad}</span>`;
+        if (over) html += `<span class="item-stat warn">超重</span>`;
+      } else if (edef.isActive) {
+        // 主动装备
+        html += `<span class="item-stat">伤害:${edef.damage} 耗时:${edef.actionTime}ms 耐耗:${edef.staminaCost} ${edef.attackType}</span>`;
+      } else {
+        // 被动装备
+        if (edef.damage) html += `<span class="item-stat">伤害加成:${edef.damage}</span>`;
+        if (edef.armorBonus) html += `<span class="item-stat">护甲:${edef.armorBonus}</span>`;
+        if (edef.hpBonus) html += `<span class="item-stat">HP:${edef.hpBonus}</span>`;
+        if (hasEntitySlots(edef)) html += `<span class="item-stat">内槽:${getEffectiveEntitySlots(edef, item)}</span>`;
+        html += `<span class="item-stat">重:${edef.weight}</span>`;
+      }
       html += `<span class="item-value">价${edef.value}</span></div>`;
+    } else {
+      // 词条
+      const adef = def as any;
+      html += `<div class="item-row ${cls}${indent}"${itemId}>`;
+      html += `<span class="item-name" data-defid="${adef.id}" data-type="affix">${adef.name}</span>`;
+      html += `<span class="item-stat">${adef.effect}</span>`;
+      html += `<span class="item-value">价${Math.abs(adef.costValue)}</span></div>`;
+    }
 
-      for (let ci = 0; ci < slot.children.length; ci++) {
-        const child = slot.children[ci];
-        const cdef = child.type === 'entity' ? getEntityDef(child.defId) : getAffixDef(child.defId);
-        if (!cdef) continue;
-        const cls = child.type === 'affix' ? 'affix' : 'equipment';
-        html += `<div class="item-row ${cls} nested-1" id="item-${child.instanceId}">`;
-        html += `<span class="item-name" data-defid="${child.defId}" data-type="${child.type}">${cdef.name}</span>`;
-        if (child.type !== 'affix') {
-          const c = cdef as EquipmentEntity;
-          if (c.isActive) html += `<span class="item-stat">伤害:${c.damageBonus} 耐耗:${c.staminaCost} ${c.attackType}</span>`;
-          if (c.armorBonus) html += `<span class="item-stat">护甲:${c.armorBonus}</span>`;
-          if (c.hpBonus) html += `<span class="item-stat">HP:${c.hpBonus}</span>`;
-          if (c.actionTimeMod) html += `<span class="item-stat">耗时${c.actionTimeMod > 0 ? '+' : ''}${c.actionTimeMod}ms</span>`;
-          html += `<span class="item-stat">重:${c.weight}</span><span class="item-value">价${c.value}</span>`;
-        } else {
-          const a = cdef as any;
-          html += `<span class="item-stat">${a.effect}</span><span class="item-value">价${Math.abs(a.costValue)}</span>`;
-        }
-        html += '</div>';
+    // 分离词条子项和实体子项
+    const allChildren = item.children || [];
+    const affixChildren = allChildren.filter(c => c.type === 'affix');
+    const entityChildren = allChildren.filter(c => c.type === 'entity');
+
+    // 词条展开/收起切换（仅当有词条子项时）
+    if (affixChildren.length > 0) {
+      const collapsed = this.collapsedAffixRows.has(item.instanceId);
+      const toggleId = `affix-toggle-${item.instanceId}`;
+      html += `<div class="item-row affix-toggle nested-${Math.min(depth + 1, 3)}" id="${toggleId}">`;
+      html += `<span>${collapsed ? '[展开词条]' : '[收起词条]'} (${affixChildren.length})</span>`;
+      if (collapsed) {
+        // 收起：一行显示词条名称摘要
+        const names = affixChildren.map(c => {
+          const adef = getAffixDef(c.defId);
+          return adef ? adef.name : c.defId;
+        }).join('、');
+        html += `<span class="item-stat" style="margin-left:6px;">词条: ${names}</span>`;
       }
       html += '</div>';
-    }
-    html += '</div>';
-    area.innerHTML = html;
 
-    if (!locked) {
-      this.bindDeployDragEvents();
+      // 展开时渲染每个词条
+      if (!collapsed) {
+        for (const ac of affixChildren) {
+          html += this.renderEntityTree(ac, depth + 1, slotIdx, item.instanceId);
+        }
+      }
     }
-    this.bindTooltips();
+
+    // 如果该实体有 entitySlots，渲染嵌套 drop zone（只放实体子项）
+    if (isEntity && hasEntitySlots(def as EntityDef)) {
+      html += `<div class="drop-zone"${dzId} style="margin-left:${(depth + 1) * 16}px;min-height:24px;">`;
+      if (entityChildren.length > 0) {
+        for (const child of entityChildren) {
+          html += this.renderEntityTree(child, depth + 1, slotIdx, item.instanceId);
+        }
+      }
+      html += '</div>';
+    } else if (entityChildren.length > 0 && !hasEntitySlots(def as EntityDef)) {
+      // 有实体子项但没有 slot 容量（兼容）
+      for (const child of entityChildren) {
+        html += this.renderEntityTree(child, depth + 1, slotIdx, item.instanceId);
+      }
+    }
+
+    return html;
   }
 
-  bindDeployDragEvents() {
+  /** 拖拽排序：根据放下位置计算插入索引并执行 reorder */
+  private handleReorderDrop(
+    payload: DragPayload,
+    slotIdx: number,
+    parentInstanceId: string | null,
+    siblings: NodeListOf<Element>,
+    event: DragEvent,
+  ): string | null {
+    const item = this.engine.findItem(payload.instanceId);
+    if (!item) return '物品不存在';
+
+    const dropY = event.clientY;
+    let insertIdx = -1;
+
+    for (let i = 0; i < siblings.length; i++) {
+      const rect = siblings[i].getBoundingClientRect();
+      if (dropY < rect.top + rect.height / 2) {
+        insertIdx = i;
+        break;
+      }
+    }
+
+    // Find the current index of the dragged item
+    const childrenArr = parentInstanceId === null
+      ? this.engine.state.deploySlots[slotIdx]?.children
+      : null; // We need to search...
+
+    // For simplicity: always do a move first, then reorder based on position
+    // If the item is already in the same parent, just reorder
+    if (payload.parentInstanceId === parentInstanceId && payload.slotIdx === slotIdx) {
+      // Same parent reorder
+      const fromIdx = payload.childIdx ?? 0;
+      this.engine.reorderChildren(parentInstanceId, slotIdx, fromIdx, insertIdx);
+      return null;
+    }
+
+    // Different parent: move to this parent first, then reorder
+    const err = this.engine.moveToDeploy(item, slotIdx, parentInstanceId);
+    if (err) return err;
+    // Now the item is at the end, move it to the right position
+    // The children array length changed, so find the new index
+    const newChildren = parentInstanceId === null
+      ? this.engine.state.deploySlots[slotIdx].children
+      : [];
+    if (newChildren.length > 0 && insertIdx >= 0 && insertIdx < newChildren.length) {
+      this.engine.reorderChildren(parentInstanceId, slotIdx, newChildren.length - 1, insertIdx);
+    }
+    return null;
+  }
+
+  /** 递归绑定拖拽事件：给每个实体行和 drop zone 绑定 */
+  private bindDeployDragEvents() {
     const g = this.engine.state;
+
+    // 顶层 drop zone（新增启动端）
     const top = document.getElementById('deploy-top-drop');
     if (top) makeDropZone(top, 'deploy-top', undefined, (p) => {
       const item = this.engine.findItem(p.instanceId); if (!item) return '物品不存在';
       if (p.source === 'shop') return this.engine.buyAndEquip(item, undefined);
       return this.engine.moveToDeploy(item, undefined);
     });
+
+    // 递归遍历所有 deploySlots 及其子树
+    const bindRecursive = (item: ItemInstance, slotIdx: number, parentId: string | null, source: string) => {
+      // 使实体行可拖拽
+      const row = document.getElementById(`item-${item.instanceId}`);
+      if (row) {
+        row.draggable = true;
+        makeDraggable(row, {
+          instanceId: item.instanceId,
+          source: source as any,
+          slotIdx,
+          parentInstanceId: parentId,
+        });
+      }
+
+      // 如果有 entitySlots，绑定子 drop zone
+      const def = getEntityDef(item.defId);
+      if (def && hasEntitySlots(def)) {
+        const dz = document.getElementById(`dz-${item.instanceId}`);
+        if (dz) {
+          makeDropZone(dz, 'deploy-slot', slotIdx, (p, _z, tgt) => {
+            const dragItem = this.engine.findItem(p.instanceId);
+            if (!dragItem) return '物品不存在';
+            if (p.source === 'shop') return this.engine.buyAndEquip(dragItem, tgt, item.instanceId);
+            return this.engine.moveToDeploy(dragItem, tgt, item.instanceId);
+          });
+        }
+      }
+
+      // 递归子项
+      if (item.children) {
+        for (const child of item.children) {
+          bindRecursive(child, slotIdx, item.instanceId, 'deploy-slot');
+        }
+      }
+    };
+
     for (let si = 0; si < g.deploySlots.length; si++) {
-      const el = document.getElementById(`deploy-slot-${si}`);
-      if (el) makeDropZone(el, 'deploy-slot', si, (p, _z, tgt) => {
-        const item = this.engine.findItem(p.instanceId); if (!item) return '物品不存在';
-        if (p.source === 'shop') return this.engine.buyAndEquip(item, tgt);
-        return this.engine.moveToDeploy(item, tgt);
-      });
-      // 实体行拖拽
-      const er = document.getElementById(`item-${g.deploySlots[si].entity.instanceId}`);
-      if (er) { er.draggable = true; makeDraggable(er, { instanceId: g.deploySlots[si].entity.instanceId, source: 'deploy-top', slotIdx: si }); }
-      for (let ci = 0; ci < g.deploySlots[si].children.length; ci++) {
-        const cr = document.getElementById(`item-${g.deploySlots[si].children[ci].instanceId}`);
-        if (cr) { cr.draggable = true; makeDraggable(cr, { instanceId: g.deploySlots[si].children[ci].instanceId, source: 'deploy-slot', slotIdx: si, childIdx: ci }); }
+      const slot = g.deploySlots[si];
+
+      // 启动端实体行
+      const er = document.getElementById(`item-${slot.entity.instanceId}`);
+      if (er) {
+        er.draggable = true;
+        makeDraggable(er, {
+          instanceId: slot.entity.instanceId,
+          source: 'deploy-top',
+          slotIdx: si,
+          parentInstanceId: null,
+        });
+      }
+
+      // 启动端子 drop zone（如果有 entitySlots）
+      const edef = getEntityDef(slot.entity.defId);
+      if (edef && hasEntitySlots(edef)) {
+        const dz = document.getElementById(`dz-${slot.entity.instanceId}`);
+        if (dz) {
+          makeDropZone(dz, 'deploy-slot', si, (p, _z, tgt) => {
+            const dragItem = this.engine.findItem(p.instanceId);
+            if (!dragItem) return '物品不存在';
+            if (p.source === 'shop') return this.engine.buyAndEquip(dragItem, tgt, slot.entity.instanceId);
+            return this.engine.moveToDeploy(dragItem, tgt, slot.entity.instanceId);
+          });
+        }
+      }
+
+      // 递归处理 entity 自身的 children（容器内嵌套）
+      if (slot.entity.children) {
+        for (const child of slot.entity.children) {
+          bindRecursive(child, si, slot.entity.instanceId, 'deploy-slot');
+        }
+      }
+
+      // 递归处理 slot.children（启动端直属）
+      for (const child of slot.children) {
+        bindRecursive(child, si, null, 'deploy-slot');
       }
     }
+  }
+
+  // ======================== 出场面板 ========================
+  renderDeploy(locked: boolean = false) {
+    const area = document.getElementById('deploy-area')!;
+    const g = this.engine.state;
+    let html = `<div class="panel"><div class="panel-title">出场面板${locked ? ' [锁定]' : ''}</div>`;
+    html += '<div class="drop-zone" id="deploy-top-drop" style="min-height:40px;">';
+    if (g.deploySlots.length === 0) html += '<span style="color:var(--text-dim);font-size:12px;">拖拽启动端至此</span>';
+    html += '</div>';
+
+    for (let si = 0; si < g.deploySlots.length; si++) {
+      const slot = g.deploySlots[si];
+      const edef = getEntityDef(slot.entity.defId);
+      if (!edef || !isStarter(edef)) continue;
+
+      html += `<div class="drop-zone" id="deploy-slot-${si}" style="margin-top:4px;min-height:36px;">`;
+
+      // 渲染启动端实体（depth=0，无 parent）
+      html += this.renderEntityTree(slot.entity, 0, si, null);
+
+      // 渲染 slot.children（启动端直属装备/词条）
+      for (const child of slot.children) {
+        html += this.renderEntityTree(child, 1, si, null);
+      }
+
+      html += '</div>';
+    }
+    html += '</div>';
+    area.innerHTML = html;
+
+    if (!locked) {
+      // slot 级 drop zone
+      for (let si = 0; si < g.deploySlots.length; si++) {
+        const el = document.getElementById(`deploy-slot-${si}`);
+        if (el) makeDropZone(el, 'deploy-slot', si, (p, _z, tgt, e) => {
+          const item = this.engine.findItem(p.instanceId); if (!item) return '物品不存在';
+          // 检测同父区域 → reorder
+          if (p.parentInstanceId === null && p.slotIdx === si && p.source !== 'shop') {
+            const siblings = el.querySelectorAll(':scope > .item-row, :scope > .drop-zone');
+            return this.handleReorderDrop(p, si, null, siblings, e as DragEvent);
+          }
+          if (p.source === 'shop') return this.engine.buyAndEquip(item, tgt);
+          return this.engine.moveToDeploy(item, tgt);
+        });
+      }
+      this.bindDeployDragEvents();
+    }
+
+    // 绑定词条展开/收起切换事件
+    document.querySelectorAll('[id^="affix-toggle-"]').forEach(el => {
+      const htmlEl = el as HTMLElement;
+      const instanceId = htmlEl.id.replace('affix-toggle-', '');
+      htmlEl.addEventListener('click', () => {
+        if (this.collapsedAffixRows.has(instanceId)) {
+          this.collapsedAffixRows.delete(instanceId);
+        } else {
+          this.collapsedAffixRows.add(instanceId);
+        }
+        this.render();
+      });
+    });
+
+    this.bindTooltips();
   }
 
   // ======================== 仓库简视 ========================
@@ -263,7 +524,7 @@ export class UIManager {
     if (!this.rightPanel) { this.renderEventPanel(area); return; }
     switch (this.rightPanel) {
       case 'warehouse': this.renderWarehouse(area); break;
-      case 'shop': this.renderShop(area); break;
+      case 'shop': this.renderShopFiltered(area); break;
       case 'itemPool': this.renderItemPool(area); break;
     }
   }
@@ -275,8 +536,14 @@ export class UIManager {
       c.innerHTML = '<div class="panel"><div class="panel-title">事件</div><p style="color:var(--text-dim);">探险阶段可查看事件</p></div>';
       return;
     }
+    // 过滤已访问的商人事件
+    const activeEvents = g.currentEvents.filter(eid => !g.visitedEventMerchants.includes(eid));
+    if (activeEvents.length === 0) {
+      c.innerHTML = '<div class="panel"><div class="panel-title">探险事件</div><p style="color:var(--text-dim);">本层事件已全部访问</p></div>';
+      return;
+    }
     let h = '<div class="panel"><div class="panel-title">探险事件（选择 1 个）</div>';
-    for (const eid of g.currentEvents)
+    for (const eid of activeEvents)
       h += `<div class="event-card" data-event="${eid}"><h4>${this.engine.getEventName(eid)}</h4><p>${this.eventDesc(eid)}</p></div>`;
     h += '</div>'; c.innerHTML = h;
     c.querySelectorAll('.event-card').forEach(card => card.addEventListener('click', () => this.triggerEvent((card as HTMLElement).dataset.event!)));
@@ -284,38 +551,82 @@ export class UIManager {
 
   eventDesc(eid: string): string {
     const cap = this.engine.getMerchantValueCap();
-    const m: Record<string, string> = { good_merchant: `随机6件,价值${cap}~${cap + 3}`, entity_merchant: `随机6件实体,价值${cap}~${cap + 3}`, affix_merchant: `随机6件词条,价值${cap}~${cap + 3}`, discount_merchant: '随机6件,半价', lottery: '随机6件,免费选1件' };
+    const m: Record<string, string> = {
+      good_merchant: `不限件数,实体+词条,价值${cap}~${cap + 3}`,
+      entity_merchant: `不限件数,仅实体,价值${cap}~${cap + 3}`,
+      affix_merchant: `不限件数,仅词条,价值${cap}~${cap + 3}`,
+      discount_merchant: `不限件数,实体+词条,半价`,
+      lottery: `不限件数,实体+词条,免费选1件`,
+    };
     return m[eid] || '';
   }
 
   triggerEvent(eid: string) {
     const cap = this.engine.getMerchantValueCap();
     let items: ItemInstance[] = [];
-    if (eid === 'good_merchant') items = this.randomItems(6, cap, cap + 3, false, false);
-    else if (eid === 'entity_merchant') items = this.randomItems(6, cap, cap + 3, true, false);
-    else if (eid === 'affix_merchant') items = this.randomItems(6, cap, cap + 3, false, true);
-    else if (eid === 'discount_merchant') items = this.randomItems(6, 1, cap, false, false);
-    else if (eid === 'lottery') items = this.randomItems(6, 1, cap, false, false);
+
+    // 使用 generateShopItems 获取全量匹配项，再按价值范围过滤
+    if (eid === 'good_merchant') {
+      items = this.engine.generateShopItems('all').filter(item => {
+        const def = item.type === 'entity' ? getEntityDef(item.defId) : getAffixDef(item.defId);
+        const v = def ? ('costValue' in def ? Math.abs(def.costValue) : (def as EntityDef).value) : 999;
+        return v >= cap && v <= cap + 3;
+      });
+    } else if (eid === 'entity_merchant') {
+      items = this.engine.generateShopItems('entity').filter(item => {
+        const def = getEntityDef(item.defId);
+        return def && def.value >= cap && def.value <= cap + 3;
+      });
+    } else if (eid === 'affix_merchant') {
+      items = this.engine.generateShopItems('affix').filter(item => {
+        const def = getAffixDef(item.defId);
+        return def && Math.abs(def.costValue) >= cap && Math.abs(def.costValue) <= cap + 3;
+      });
+    } else if (eid === 'discount_merchant') {
+      items = this.engine.generateShopItems('all').filter(item => {
+        const def = item.type === 'entity' ? getEntityDef(item.defId) : getAffixDef(item.defId);
+        const v = def ? ('costValue' in def ? Math.abs(def.costValue) : (def as EntityDef).value) : 999;
+        return v >= 1 && v <= cap;
+      });
+    } else if (eid === 'lottery') {
+      items = this.engine.generateShopItems('all').filter(item => {
+        const def = item.type === 'entity' ? getEntityDef(item.defId) : getAffixDef(item.defId);
+        const v = def ? ('costValue' in def ? Math.abs(def.costValue) : (def as EntityDef).value) : 999;
+        return v >= 1 && v <= cap;
+      });
+    }
 
     const area = document.getElementById('event-area')!;
     area.innerHTML = `<div class="panel"><div class="panel-title">${this.engine.getEventName(eid)}</div><div id="event-items"></div><button class="btn" id="btn-close-ev" style="margin-top:6px;">关闭</button></div>`;
     const itemsDiv = document.getElementById('event-items')!;
+
+    if (items.length === 0) {
+      itemsDiv.innerHTML = '<p style="color:var(--text-dim);">当前无可购买的物品</p>';
+    }
+
     items.forEach(item => {
       const def = item.type === 'entity' ? getEntityDef(item.defId) : getAffixDef(item.defId);
       if (!def) return;
-      const price = eid === 'discount_merchant' ? Math.floor(('costValue' in def ? Math.abs(def.costValue) : (def as any).value) / 2) : eid === 'lottery' ? 0 : ('costValue' in def ? Math.abs(def.costValue) : (def as any).value);
+      const basePrice = 'costValue' in def ? Math.abs(def.costValue) : (def as any).value;
+      const price = eid === 'discount_merchant' ? Math.floor(basePrice / 2) : eid === 'lottery' ? 0 : basePrice;
       const row = document.createElement('div'); row.className = 'item-row'; row.draggable = true;
-      row.innerHTML = `<span class="item-name" data-defid="${item.defId}" data-type="${item.type}">${def.name}</span><span style="margin-left:auto;margin-right:6px;font-size:12px;">${eid === 'lottery' ? '免费' : price + '金'}</span><button class="btn btn-small">购买</button>`;
+      row.innerHTML = `<span class="item-name" data-defid="${item.defId}" data-type="${item.type}">${def.name}</span><span class="item-stat">${'effect' in def ? def.effect : getEntityCategory(def as EntityDef)}</span><span style="margin-left:auto;margin-right:6px;font-size:12px;">${eid === 'lottery' ? '免费' : price + '金'}</span><button class="btn btn-small">购买</button>`;
       makeDraggable(row, { instanceId: item.instanceId, source: 'shop' });
       row.querySelector('button')!.addEventListener('click', (ev) => {
         ev.stopPropagation();
         if (eid === 'lottery') { this.engine.addToWarehouse(item); this.showToast(`免费获得: ${def.name}`); }
         else { const err = this.engine.buyItem(item); if (err) this.showToast(err); else this.showToast(`购买: ${def.name}`); }
-        this.engine.rightPanel = null; this.engine.state.currentEvents = []; this.render();
+        this.engine.rightPanel = null; this.engine.state.currentEvents = [];
+        this.engine.state.visitedEventMerchants.push(eid);
+        this.render();
       });
       itemsDiv.appendChild(row);
     });
-    document.getElementById('btn-close-ev')!.onclick = () => { this.engine.rightPanel = null; this.render(); };
+    document.getElementById('btn-close-ev')!.onclick = () => {
+      this.engine.state.visitedEventMerchants.push(eid);
+      this.engine.rightPanel = null;
+      this.render();
+    };
     this.bindTooltips();
   }
 
@@ -341,9 +652,9 @@ export class UIManager {
     else for (let wi = 0; wi < g.warehouse.length; wi++) {
       const item = g.warehouse[wi]; const def = item.type === 'entity' ? getEntityDef(item.defId) : getAffixDef(item.defId);
       if (!def) continue;
-      h += `<div class="item-row ${item.type === 'affix' ? 'affix' : (((def as any).kind === 'actionable') ? 'actionable' : 'equipment')}" id="wh-item-${item.instanceId}">`;
+      h += `<div class="item-row ${item.type === 'affix' ? 'affix' : (isStarter(def as EntityDef) ? 'starter' : 'gear')}" id="wh-item-${item.instanceId}">`;
       h += `<span class="item-name" data-defid="${item.defId}" data-type="${item.type}">${def.name}</span>`;
-      if (item.type !== 'affix') h += `<span class="item-stat">${(def as any).category || ''}</span><span class="item-value">价${(def as EntityDef).value}</span>`;
+      if (item.type !== 'affix') h += `<span class="item-stat">${getEntityCategory(def as EntityDef)}</span><span class="item-value">价${(def as EntityDef).value}</span>`;
       else h += `<span class="item-stat">${(def as any).effect}</span><span class="item-value">价${Math.abs((def as any).costValue)}</span>`;
       h += '</div>';
     }
@@ -355,24 +666,50 @@ export class UIManager {
     this.bindTooltips();
   }
 
-  // ---- 商店 ----
-  renderShop(c: HTMLElement) {
+  /** 固定商人：不限数量，仅价值限制，支持筛选 */
+  renderShopFiltered(c: HTMLElement) {
     const cap = this.engine.getMerchantValueCap();
-    const items = this.randomItems(8, 1, cap, false, false);
+    const items = this.engine.generateShopItems(this.shopFilter);
+
+    // 筛选按钮行
+    const filters = ['all', 'entity', 'affix'] as const;
+    const filterLabels: Record<string, string> = { all: '全部', entity: '实体', affix: '词条' };
+
     let h = `<div class="panel"><div class="panel-title">固定商人（价值上限: ${cap}）</div>`;
-    items.forEach(item => {
-      const def = item.type === 'entity' ? getEntityDef(item.defId) : getAffixDef(item.defId); if (!def) return;
-      const price = 'costValue' in def ? Math.abs(def.costValue) : (def as any).value;
-      h += `<div class="item-row" id="shop-item-${item.instanceId}"><span class="item-name" data-defid="${item.defId}" data-type="${item.type}">${def.name}</span>
-        <span class="item-stat">${'effect' in def ? def.effect : (def as any).category || ''}</span>
-        <span style="margin-left:auto;margin-right:6px;">${price}金</span><button class="btn btn-small">购买</button></div>`;
-    });
-    h += '</div>'; c.innerHTML = h;
+    h += '<div class="filter-row">';
+    for (const f of filters) {
+      h += `<button class="btn btn-small ${this.shopFilter === f ? 'active' : ''}" id="shop-flt-${f}">${filterLabels[f]}</button>`;
+    }
+    h += `</div><div id="shop-items">`;
+
+    if (items.length === 0) {
+      h += '<p style="color:var(--text-dim);">当前筛选无可用物品</p>';
+    } else {
+      for (const item of items) {
+        const def = item.type === 'entity' ? getEntityDef(item.defId) : getAffixDef(item.defId);
+        if (!def) continue;
+        const price = 'costValue' in def ? Math.abs(def.costValue) : (def as any).value;
+        h += `<div class="item-row" id="shop-item-${item.instanceId}"><span class="item-name" data-defid="${item.defId}" data-type="${item.type}">${def.name}</span>
+          <span class="item-stat">${'effect' in def ? def.effect : getEntityCategory(def as EntityDef)}</span>
+          <span style="margin-left:auto;margin-right:6px;">${price}金</span><button class="btn btn-small">购买</button></div>`;
+      }
+    }
+    h += '</div></div>';
+    c.innerHTML = h;
+
+    // 筛选按钮事件
+    for (const f of filters) {
+      const btn = document.getElementById(`shop-flt-${f}`);
+      if (btn) btn.onclick = () => { this.shopFilter = f; this.render(); };
+    }
+
+    // 拖拽 + 购买事件
     items.forEach(item => {
       const row = document.getElementById(`shop-item-${item.instanceId}`);
       if (!row) return; row.draggable = true;
       makeDraggable(row, { instanceId: item.instanceId, source: 'shop' });
-      row.querySelector('button')!.addEventListener('click', (e) => { e.stopPropagation(); const err = this.engine.buyItem(item); if (err) this.showToast(err); else this.showToast('购买成功'); });
+      const btn = row.querySelector('button');
+      if (btn) btn.addEventListener('click', (e) => { e.stopPropagation(); const err = this.engine.buyItem(item); if (err) this.showToast(err); else this.showToast('购买成功'); });
     });
     this.bindTooltips();
   }
@@ -392,28 +729,100 @@ export class UIManager {
     show('all');
   }
 
+  /** 更新战斗中动态值（HP/耐力/倒计时），只操作 DOM 文本节点，不 re-render */
+  private updateCombatDynamicValues() {
+    const pu = this.engine.combatPlayerUnits;
+    const eu = this.engine.combatEnemyUnits;
+
+    const updateUnit = (units: CombatUnitRuntime[] | null, prefix: string) => {
+      if (!units) return;
+      for (const u of units) {
+        const hpEl = document.getElementById(`cu-hp-${prefix}-${u.entityId}`);
+        if (hpEl) hpEl.textContent = `HP:${Math.max(u.currentHp, 0)}/${u.totalHp}`;
+        const stamEl = document.getElementById(`cu-stam-${prefix}-${u.entityId}`);
+        if (stamEl) stamEl.textContent = `耐力:${Math.floor(u.currentStamina)}/${u.maxStamina}`;
+        for (let wi = 0; wi < u.weapons.length; wi++) {
+          const cdEl = document.getElementById(`cu-cd-${prefix}-${u.entityId}-${wi}`);
+          if (cdEl) cdEl.textContent = `倒计时:${(u.weapons[wi].remainingTime / 1000).toFixed(1)}s`;
+        }
+      }
+    };
+
+    updateUnit(pu, 'p');
+    updateUnit(eu, 'e');
+  }
+
   // ======================== 战斗阶段界面 ========================
 
-  // 右上：敌人面板
-  renderEnemyPanel() {
-    const area = document.getElementById('event-area')!;
-    let h = '<div class="panel"><div class="panel-title">敌人 BD</div>';
-    for (const e of this.combatEnemies) {
-      const alive = e.hp > 0;
-      h += `<div class="item-row actionable" style="cursor:default;${alive ? '' : 'opacity:0.4;text-decoration:line-through;'}">`;
-      h += `<span>${e.name}</span>`;
-      h += `<span class="item-stat">HP:${Math.max(e.hp, 0)}/${e.maxHp}</span>`;
-      h += `<span class="item-stat">伤害:${e.damage}</span>`;
-      h += `<span class="item-stat">护甲:${e.armor}</span>`;
-      h += `<span class="item-stat">${e.attackType} ${e.attackOrder}${e.priorityTarget ? ' [优先' + e.priorityTarget + ']' : ''}</span>`;
-      h += `</div>`;
-      for (const ch of e.children) {
-        h += `<div class="item-row equipment nested-1" style="cursor:default;">`;
-        h += `<span>${ch.name}</span><span class="item-stat">${ch.desc}</span>`;
-        h += `</div>`;
-      }
+  /** 左上半区：玩家战斗状态面板（替代 renderDeploy） */
+  renderPlayerCombatPanel() {
+    const area = document.getElementById('deploy-area')!;
+    const pu = this.engine.combatPlayerUnits;
+    if (!pu || pu.length === 0) {
+      area.innerHTML = '<div class="panel"><div class="panel-title">出战单位</div><p style="color:var(--text-dim);">准备中...</p></div>';
+      return;
     }
-    if (this.combatEnemies.length === 0) h += '<p style="color:var(--text-dim);">准备战斗...</p>';
+
+    let h = '<div class="panel"><div class="panel-title">出战单位</div>';
+    for (const u of pu) {
+      const alive = u.currentHp > 0;
+      h += '<div class="combat-unit">';
+      h += `<div class="item-row starter" style="cursor:default;${alive ? '' : 'opacity:0.4;text-decoration:line-through;'}">`;
+      h += `<span>${u.entityName}</span>`;
+      h += `<span class="item-stat" id="cu-hp-p-${u.entityId}">HP:${Math.max(u.currentHp, 0)}/${u.totalHp}</span>`;
+      h += `<span class="item-stat" id="cu-stam-p-${u.entityId}">耐力:${Math.floor(u.currentStamina)}/${u.maxStamina}</span>`;
+      h += `<span class="item-stat">护甲:${u.totalArmor}</span>`;
+      if (u.isOverloaded) h += '<span class="item-stat warn">超重</span>';
+      h += '</div>';
+
+      // 武器行（含倒计时）
+      for (let wi = 0; wi < u.weapons.length; wi++) {
+        const w = u.weapons[wi];
+        h += `<div class="item-row gear nested-1" style="cursor:default;">`;
+        h += `<span>${w.name}</span>`;
+        h += `<span class="item-stat">伤害:${w.damage} 耐耗:${w.staminaCost}</span>`;
+        h += `<span class="item-stat" id="cu-cd-p-${u.entityId}-${wi}">倒计时:${(w.remainingTime / 1000).toFixed(1)}s</span>`;
+        h += `<span class="item-stat">${w.attackType}${w.priorityTarget ? ' [优先' + w.priorityTarget + ']' : ''}</span>`;
+        h += '</div>';
+      }
+      h += '</div>';
+    }
+    h += '</div>';
+    area.innerHTML = h;
+  }
+
+  /** 右上：敌人战斗状态面板 */
+  renderEnemyCombatPanel() {
+    const area = document.getElementById('event-area')!;
+    const eu = this.engine.combatEnemyUnits;
+    if (!eu || eu.length === 0) {
+      area.innerHTML = '<div class="panel"><div class="panel-title">敌方单位</div><p style="color:var(--text-dim);">准备战斗...</p></div>';
+      return;
+    }
+
+    let h = '<div class="panel"><div class="panel-title">敌方单位</div>';
+    for (const e of eu) {
+      const alive = e.currentHp > 0;
+      h += '<div class="combat-unit">';
+      h += `<div class="item-row starter" style="cursor:default;${alive ? '' : 'opacity:0.4;text-decoration:line-through;'}">`;
+      h += `<span>${e.entityName}</span>`;
+      h += `<span class="item-stat" id="cu-hp-e-${e.entityId}">HP:${Math.max(e.currentHp, 0)}/${e.totalHp}</span>`;
+      h += `<span class="item-stat" id="cu-stam-e-${e.entityId}">耐力:${Math.floor(e.currentStamina)}/${e.maxStamina}</span>`;
+      h += `<span class="item-stat">护甲:${e.totalArmor}</span>`;
+      if (e.isOverloaded) h += '<span class="item-stat warn">超重</span>';
+      h += '</div>';
+
+      for (let wi = 0; wi < e.weapons.length; wi++) {
+        const w = e.weapons[wi];
+        h += `<div class="item-row gear nested-1" style="cursor:default;">`;
+        h += `<span>${w.name}</span>`;
+        h += `<span class="item-stat">伤害:${w.damage}</span>`;
+        h += `<span class="item-stat" id="cu-cd-e-${e.entityId}-${wi}">倒计时:${(w.remainingTime / 1000).toFixed(1)}s</span>`;
+        h += `<span class="item-stat">${w.attackType}${w.priorityTarget ? ' [优先' + w.priorityTarget + ']' : ''}</span>`;
+        h += '</div>';
+      }
+      h += '</div>';
+    }
     h += '</div>';
     area.innerHTML = h;
   }
@@ -448,41 +857,36 @@ export class UIManager {
   async startCombat() {
     this.combatLog = [];
     this.combatSpeed = 1;
+    this.combatFinished = false;
     this.engine.state.phase = 2;
     this.render();
 
-    const enemies = this.engine.generateEnemyBD();
-    this.combatEnemies = enemies;
-    this.render();
-
-    // 延迟一下让 UI 先渲染
+    // 延迟让 UI 渲染
     await new Promise(r => setTimeout(r, 300));
+
+    // 启动实时更新（100ms 间隔）
+    this.combatUpdateTimer = setInterval(() => {
+      this.updateCombatDynamicValues();
+    }, 100);
 
     await this.engine.runCombat(
       (evt) => {
         this.combatLog.push(evt);
-        // 更新敌人 HP
-        for (const e of this.combatEnemies) {
-          if (e.name === evt.targetName) { e.hp = evt.targetHpAfter; break; }
-        }
         this.renderCombatLogPanel();
       },
       (win, gold) => {
+        // 清除实时更新
+        if (this.combatUpdateTimer) { clearInterval(this.combatUpdateTimer); this.combatUpdateTimer = null; }
+
         if (win) {
           this.showToast(`战斗胜利！+${gold}金币`);
-          this.engine.state.phase = 3;
-          this.combatEnemies = [];
-          this.combatLog = [];
-          this.render();
         } else {
           this.showToast('战斗失败');
-          // 保持战斗界面，让玩家看到结果
-          setTimeout(() => {
-            this.combatEnemies = [];
-            this.combatLog = [];
-            this.render();
-          }, 2000);
         }
+
+        // 保持战斗面板 + 日志，等待玩家点"继续"
+        this.combatFinished = true;
+        this.render();
       },
       this.combatSpeed,
     );

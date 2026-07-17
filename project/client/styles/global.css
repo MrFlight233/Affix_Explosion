@@ -194,8 +194,8 @@ body {
   font-size: 12px;
   color: var(--gold);
 }
-.item-row.actionable { border-left: 2px solid var(--border); }
-.item-row.equipment { border-left: 2px solid var(--border-light); }
+.item-row.starter { border-left: 2px solid var(--border); }
+.item-row.gear { border-left: 2px solid var(--border-light); }
 .item-row.affix { border-left: 2px solid var(--border-light); }
 .item-row.nested-1 { padding-left: 16px; }
 .item-row.nested-2 { padding-left: 28px; }
@@ -408,3 +408,113 @@ body {
 
 /* ---- 警告文字 ---- */
 .warn { color: var(--warn); }
+
+/* ---- 战斗状态面板 ---- */
+.combat-unit { margin-bottom: 8px; }
+.combat-unit .item-row { cursor: default; }
+
+/* ---- 词条折叠切换 ---- */
+.affix-toggle { cursor: pointer; color: var(--text-dim); font-size: 12px; }
+.affix-toggle:hover { color: var(--text); }
+
+/* ---- 管理员制作页面 ---- */
+.adm-list-item {
+  padding: 6px 10px;
+  border-bottom: 1px solid #f0f0f0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.adm-list-item:hover { background: #f5f5f5; }
+
+/* 管理表单 */
+.admin-form { font-size: 13px; }
+.admin-form-section {
+  margin-bottom: 14px;
+  border: 1px solid #ddd;
+  padding: 10px 12px;
+  background: #fafafa;
+}
+.admin-form-section h4 {
+  font-size: 12px;
+  margin: -10px -12px 8px -12px;
+  padding: 4px 12px;
+  background: #eee;
+  border-bottom: 1px solid #ddd;
+  font-weight: bold;
+}
+.admin-field {
+  display: flex;
+  align-items: center;
+  margin-bottom: 5px;
+}
+.admin-field label {
+  width: 100px;
+  font-size: 12px;
+  color: #666;
+  flex-shrink: 0;
+}
+.admin-field input,
+.admin-field select {
+  flex: 1;
+  border: 1px solid #ccc;
+  padding: 3px 6px;
+  font-family: inherit;
+  font-size: 13px;
+}
+.admin-field input:focus,
+.admin-field select:focus {
+  outline: none;
+  border-color: #888;
+}
+.admin-field input[type="checkbox"] {
+  flex: 0;
+  width: 16px;
+  height: 16px;
+  margin-left: 0;
+}
+.admin-field input[readonly] {
+  background: #eee;
+  color: #888;
+}
+.admin-form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid #ddd;
+}
+.btn-danger {
+  background: #fff;
+  color: #c00;
+  border: 1px solid #c00;
+}
+.btn-danger:hover { background: #fff0f0; }
+.btn-primary {
+  background: #555;
+  color: #fff;
+  border: 1px solid #555;
+}
+.btn-primary:hover { background: #444; }
+
+/* 标签选择器（tag selector） */
+.tag-selector { margin-bottom: 6px; }
+.tag-list { display: flex; flex-wrap: wrap; gap: 3px; margin: 2px 0; min-height: 22px; }
+.tag-chip {
+  display: inline-flex; align-items: center; gap: 2px;
+  font-size: 11px; background: #e8f0ff; border: 1px solid #b0c8f0;
+  padding: 1px 4px; border-radius: 2px;
+}
+.tag-remove { cursor: pointer; color: #888; font-weight: bold; margin-left: 2px; }
+.tag-remove:hover { color: #c00; }
+
+/* 子实体编辑器卡片 */
+.child-entity-card { border: 1px solid #ddd; margin-bottom: 4px; }
+.child-entity-card:hover { border-color: #aaa; }
+.child-toggle { cursor: pointer; }
+.child-edit-body { border-top: 1px solid #eee; background: #fdfdfd; }
+.child-mini-form .admin-field label { font-size: 10px; }
+.child-mini-form .admin-field input { font-size: 10px; padding: 1px 4px; }
+.child-mini-form .admin-field { margin-bottom: 2px; }

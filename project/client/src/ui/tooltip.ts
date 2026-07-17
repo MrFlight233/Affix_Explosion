@@ -1,8 +1,8 @@
 // ============================================================
-// 悬浮提示
+// 悬浮提示（v3：统一 EntityDef 渲染，不区分 actionable/equipment 分支）
 // ============================================================
 
-import { getEntityDef, getAffixDef, isActionable, isEquipment } from '../game/data';
+import { getEntityDef, getAffixDef, isStarter, EntityDef, getEntityCategory } from '../game/data';
 
 let tooltipEl: HTMLElement | null = null;
 
@@ -21,55 +21,68 @@ export function showTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affi
   if (type === 'entity') {
     const def = getEntityDef(defId);
     if (!def) return;
-    if (isActionable(def)) {
-      tip.innerHTML = `
-        <div class="tt-name">${def.name} [可行动-${def.category}]</div>
-        <div class="tt-row"><span class="tt-label">生命:</span>${def.hp}</div>
-        <div class="tt-row"><span class="tt-label">伤害:</span>${def.baseDamage}</div>
-        <div class="tt-row"><span class="tt-label">护甲:</span>${def.baseArmor}</div>
-        <div class="tt-row"><span class="tt-label">回复:</span>${def.baseRegen}</div>
-        <div class="tt-row"><span class="tt-label">耗时:</span>${def.baseActionTime}ms</div>
-        <div class="tt-row"><span class="tt-label">耐力:</span>${def.maxStamina} / ${def.staminaRegen}/s</div>
-        <div class="tt-row"><span class="tt-label">负重:</span>${def.maxLoad}</div>
-        <div class="tt-row"><span class="tt-label">攻击:</span>${def.attackType} ${def.attackOrder}${def.priorityTarget ? ' [优先' + def.priorityTarget + ']' : ''}</div>
-        <div class="tt-row"><span class="tt-label">槽位:</span>占${def.slotCost} | 实体槽${def.entitySlots} | 词条槽${def.dynamicAffixSlots}</div>
-        <div class="tt-row"><span class="tt-label">价值:</span>${def.value}</div>
-        <div class="tt-row"><span class="tt-label">固定词条:</span>${def.fixedAffixes.join('、') || '无'}</div>
-      `;
-    } else if (isEquipment(def)) {
-      tip.innerHTML = `
-        <div class="tt-name">${def.name} [${def.isActive ? '主动' : '被动'}-${def.category}]</div>
-        ${def.isActive ? `<div class="tt-row"><span class="tt-label">攻击类型:</span>${def.attackType} ${def.attackOrder}${def.priorityTarget ? ' [优先' + def.priorityTarget + ']' : ''}</div>` : ''}
-        ${def.isActive ? `<div class="tt-row"><span class="tt-label">耐力消耗:</span>${def.staminaCost}</div>` : ''}
-        ${def.damageBonus ? `<div class="tt-row"><span class="tt-label">伤害加成:</span>+${def.damageBonus}</div>` : ''}
-        ${def.armorBonus ? `<div class="tt-row"><span class="tt-label">护甲加成:</span>+${def.armorBonus}</div>` : ''}
-        ${def.regenBonus ? `<div class="tt-row"><span class="tt-label">回复加成:</span>+${def.regenBonus}</div>` : ''}
-        ${def.hpBonus ? `<div class="tt-row"><span class="tt-label">生命加成:</span>+${def.hpBonus}</div>` : ''}
-        ${def.actionTimeMod ? `<div class="tt-row"><span class="tt-label">耗时修正:</span>${def.actionTimeMod > 0 ? '+' : ''}${def.actionTimeMod}ms</div>` : ''}
-        <div class="tt-row"><span class="tt-label">重量:</span>${def.weight}</div>
-        ${def.entitySlots ? `<div class="tt-row"><span class="tt-label">实体槽位:</span>+${def.entitySlots}</div>` : ''}
-        <div class="tt-row"><span class="tt-label">槽位:</span>占${def.slotCost} | 词条槽${def.dynamicAffixSlots}</div>
-        <div class="tt-row"><span class="tt-label">价值:</span>${def.value}</div>
-        <div class="tt-row"><span class="tt-label">固定词条:</span>${def.fixedAffixes.join('、') || '无'}</div>
-      `;
-    }
+    renderEntityTooltip(tip, def);
   } else {
     const def = getAffixDef(defId);
     if (!def) return;
-    tip.innerHTML = `
-      <div class="tt-name">${def.name} [${def.category}]</div>
-      <div class="tt-row"><span class="tt-label">效果:</span>${def.effect}</div>
-      <div class="tt-row"><span class="tt-label">数值:</span>${def.value}</div>
-      <div class="tt-row"><span class="tt-label">价值:</span>${Math.abs(def.costValue)}</div>
-      <div class="tt-row"><span class="tt-label">适用:</span>${def.target}</div>
-      <div class="tt-row"><span class="tt-label">槽位:</span>${def.slotCost}</div>
-      <div class="tt-row"><span class="tt-label">可重复:</span>${def.repeatable ? '是' : '否'}</div>
-      <div class="tt-row"><span class="tt-label">前置:</span>${def.prerequisite.join('、') || '无'}</div>
-    `;
+    renderAffixTooltip(tip, def);
   }
 
   tip.style.display = 'block';
   positionTooltip(tip, e);
+}
+
+function renderEntityTooltip(tip: HTMLElement, def: EntityDef) {
+  const isSt = isStarter(def);
+  const label = isSt ? '启动端' : def.isActive ? '主动装备' : '被动装备';
+  const cat = getEntityCategory(def);
+
+  let html = `<div class="tt-name">${def.name} [${label}-${cat}]</div>`;
+
+  if (isSt) {
+    // 启动端
+    html += `<div class="tt-row"><span class="tt-label">生命:</span>${def.hp}</div>`;
+    html += `<div class="tt-row"><span class="tt-label">耐力:</span>${def.maxStamina} / ${def.staminaRegen}/s</div>`;
+    html += `<div class="tt-row"><span class="tt-label">负重:</span>${def.maxLoad}</div>`;
+  }
+
+  if (!isSt && def.isActive) {
+    // 主动装备
+    html += `<div class="tt-row"><span class="tt-label">耗时:</span>${def.actionTime}ms</div>`;
+    if (def.damage) html += `<div class="tt-row"><span class="tt-label">伤害:</span>${def.damage}</div>`;
+    html += `<div class="tt-row"><span class="tt-label">耐力消耗:</span>${def.staminaCost}</div>`;
+    html += `<div class="tt-row"><span class="tt-label">攻击:</span>${def.attackType} ${def.attackOrder}${def.priorityTarget ? ' [优先' + def.priorityTarget + ']' : ''}</div>`;
+  }
+
+  if (!isSt && !def.isActive) {
+    // 被动装备
+    if (def.damage) html += `<div class="tt-row"><span class="tt-label">伤害加成:</span>+${def.damage}</div>`;
+    if (def.armorBonus) html += `<div class="tt-row"><span class="tt-label">护甲加成:</span>+${def.armorBonus}</div>`;
+    if (def.regenBonus) html += `<div class="tt-row"><span class="tt-label">回复加成:</span>+${def.regenBonus}</div>`;
+    if (def.hpBonus) html += `<div class="tt-row"><span class="tt-label">生命加成:</span>${def.hpBonus > 0 ? '+' : ''}${def.hpBonus}</div>`;
+  }
+
+  // 通用信息
+  if (!isSt) html += `<div class="tt-row"><span class="tt-label">重量:</span>${def.weight}</div>`;
+  if (def.entitySlots) html += `<div class="tt-row"><span class="tt-label">实体槽位:</span>+${def.entitySlots}</div>`;
+  html += `<div class="tt-row"><span class="tt-label">槽位:</span>占${def.slotCost} | 词条槽${def.dynamicAffixSlots}</div>`;
+  html += `<div class="tt-row"><span class="tt-label">价值:</span>${def.value}</div>`;
+  html += `<div class="tt-row"><span class="tt-label">固定词条:</span>${def.fixedAffixes.join('、') || '无'}</div>`;
+
+  tip.innerHTML = html;
+}
+
+function renderAffixTooltip(tip: HTMLElement, def: any) {
+  tip.innerHTML = `
+    <div class="tt-name">${def.name} [${def.category}]</div>
+    <div class="tt-row"><span class="tt-label">效果:</span>${def.effect}</div>
+    <div class="tt-row"><span class="tt-label">数值:</span>${def.value}</div>
+    <div class="tt-row"><span class="tt-label">价值:</span>${Math.abs(def.costValue)}</div>
+    <div class="tt-row"><span class="tt-label">适用:</span>${def.target}</div>
+    <div class="tt-row"><span class="tt-label">槽位:</span>${def.slotCost}</div>
+    <div class="tt-row"><span class="tt-label">可重复:</span>${def.repeatable ? '是' : '否'}</div>
+    <div class="tt-row"><span class="tt-label">前置:</span>${def.prerequisite.join('、') || '无'}</div>
+  `;
 }
 
 function positionTooltip(tip: HTMLElement, e: MouseEvent) {
