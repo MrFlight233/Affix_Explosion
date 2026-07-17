@@ -1,0 +1,410 @@
+/* ============================================================
+   Affix Explosion — 白底黑字风格
+   ============================================================ */
+
+:root {
+  --bg: #ffffff;
+  --bg-panel: #fafafa;
+  --bg-header: #f0f0f0;
+  --text: #222222;
+  --text-dim: #888888;
+  --text-bright: #000000;
+  --border: #333333;
+  --border-light: #cccccc;
+  --border-dashed: #999999;
+  --accent: #222222;
+  --warn: #cc0000;
+  --danger: #cc0000;
+  --gold: #664400;
+  --drop-hover: #e8f0e8;
+  --drop-invalid: #ffe8e8;
+  --tooltip-bg: #fffff0;
+  font-family: 'Microsoft YaHei', 'SimHei', sans-serif;
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- 顶部状态栏 ---- */
+#hud {
+  height: 32px;
+  background: var(--bg-header);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 16px;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+#hud .hud-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text);
+}
+#hud .hud-label { color: var(--text-dim); }
+#hud .hud-value { font-weight: bold; }
+#hud .hud-right { margin-left: auto; display: flex; gap: 6px; }
+#hud button {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border-light);
+  padding: 2px 10px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+}
+#hud button:hover { background: #e8e8e8; }
+
+/* ---- 主布局 ---- */
+#main-layout {
+  display: flex;
+  flex: 1;
+  height: calc(100vh - 32px);
+  overflow: hidden;
+}
+#left-zone {
+  width: 50%;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+}
+#right-zone {
+  width: 50%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 左上半区：出场 */
+#deploy-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px;
+  min-height: 0;
+}
+
+/* 左中：仓库简视区 */
+#quick-warehouse {
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#quick-warehouse .qw-header {
+  background: var(--bg-header);
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  user-select: none;
+}
+#quick-warehouse .qw-header:hover { background: #e8e8e8; }
+#quick-warehouse .qw-body {
+  max-height: 150px;
+  overflow-y: auto;
+  padding: 2px 4px;
+}
+#quick-warehouse.collapsed .qw-body { display: none; }
+
+/* 左下半区：按钮 */
+#left-btns {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  display: flex;
+  gap: 6px;
+  background: var(--bg-header);
+  border-top: 1px solid var(--border-light);
+}
+
+/* 右上半区：事件/面板 */
+#event-area {
+  flex: 7;
+  overflow-y: auto;
+  padding: 6px;
+  min-height: 0;
+}
+
+/* 右下半区：出售面板 */
+#sell-zone {
+  flex: 3;
+  border-top: 1px solid var(--border);
+  padding: 6px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* ---- 面板通用 ---- */
+.panel { }
+.panel-title {
+  font-size: 13px;
+  font-weight: bold;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+  margin-bottom: 6px;
+  color: var(--text-bright);
+}
+
+/* ---- 物品行（核心） ---- */
+.item-row {
+  display: flex;
+  align-items: center;
+  padding: 2px 4px;
+  border-bottom: 1px solid #f0f0f0;
+  cursor: grab;
+  font-size: 13px;
+  white-space: nowrap;
+  user-select: none;
+  min-height: 24px;
+}
+.item-row:hover { background: #f5f5f5; }
+.item-row.dragging { opacity: 0.4; }
+.item-row .item-name {
+  font-weight: bold;
+  margin-right: 8px;
+  min-width: 60px;
+  cursor: pointer;
+}
+.item-row .item-name:hover { text-decoration: underline; }
+.item-row .item-stat {
+  margin-right: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.item-row .item-value {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--gold);
+}
+.item-row.actionable { border-left: 2px solid var(--border); }
+.item-row.equipment { border-left: 2px solid var(--border-light); }
+.item-row.affix { border-left: 2px solid var(--border-light); }
+.item-row.nested-1 { padding-left: 16px; }
+.item-row.nested-2 { padding-left: 28px; }
+.item-row.nested-3 { padding-left: 40px; }
+
+/* 槽位分隔 */
+.slot-separator {
+  border-top: 1px dashed var(--border-dashed);
+  margin: 4px 0;
+}
+
+/* 放置区 */
+.drop-zone {
+  min-height: 32px;
+  border: 1px dashed var(--border-dashed);
+  padding: 2px;
+  margin: 2px 0;
+}
+.drop-zone.drag-over { background: var(--drop-hover); }
+.drop-zone.drag-invalid { background: var(--drop-invalid); }
+
+/* ---- 按钮 ---- */
+.btn {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border-light);
+  padding: 4px 12px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+}
+.btn:hover { background: #e8e8e8; border-color: var(--border); }
+.btn.active { background: #ddd; border-color: var(--border); font-weight: bold; }
+.btn-small { padding: 1px 6px; font-size: 11px; }
+
+/* ---- 开始页面 ---- */
+#start-screen {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+#start-screen h1 {
+  font-size: 32px;
+  color: var(--text-bright);
+  letter-spacing: 6px;
+  margin-bottom: 4px;
+  font-weight: normal;
+}
+#start-screen .subtitle {
+  color: var(--text-dim);
+  margin-bottom: 32px;
+  font-size: 14px;
+}
+#start-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 240px;
+}
+#start-menu button {
+  padding: 10px;
+  font-size: 15px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font-family: inherit;
+}
+#start-menu button:hover { background: #f0f0f0; }
+#start-menu button:disabled { color: var(--text-dim); border-color: var(--border-light); cursor: default; background: var(--bg); }
+
+/* 登录表单 */
+#auth-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+#auth-modal .auth-box {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 24px;
+  width: 300px;
+}
+#auth-modal label {
+  display: block;
+  font-size: 13px;
+  margin: 10px 0 4px;
+  color: var(--text-dim);
+}
+#auth-modal input {
+  width: 100%;
+  border: 1px solid var(--border-light);
+  padding: 6px 10px;
+  font-family: inherit;
+  font-size: 14px;
+}
+#auth-modal input:focus { outline: none; border-color: var(--border); }
+#auth-modal .auth-btns {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+#auth-modal .auth-error {
+  color: var(--danger);
+  font-size: 12px;
+  margin-top: 6px;
+  min-height: 16px;
+}
+
+/* ---- 事件卡片 ---- */
+.event-card {
+  border: 1px solid var(--border-light);
+  padding: 8px 12px;
+  margin: 4px 0;
+  cursor: pointer;
+}
+.event-card:hover { border-color: var(--border); background: #f8f8f8; }
+.event-card h4 { font-size: 14px; margin-bottom: 2px; }
+.event-card p { color: var(--text-dim); font-size: 12px; }
+
+/* ---- 战斗日志 ---- */
+#combat-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(255,255,255,0.95);
+  z-index: 998;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+#combat-log {
+  width: 70%;
+  max-height: 70%;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  padding: 16px;
+  font-size: 13px;
+  background: var(--bg);
+  line-height: 1.8;
+}
+.combat-event { padding: 2px 0; border-bottom: 1px solid #f0f0f0; }
+
+/* ---- 悬浮提示 ---- */
+#tooltip {
+  position: fixed;
+  z-index: 2000;
+  background: var(--tooltip-bg);
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  max-width: 300px;
+  pointer-events: none;
+  box-shadow: 2px 2px 6px rgba(0,0,0,0.1);
+}
+#tooltip .tt-name { font-size: 14px; font-weight: bold; margin-bottom: 4px; }
+#tooltip .tt-row { display: flex; gap: 12px; }
+#tooltip .tt-label { color: var(--text-dim); }
+
+/* ---- 存档槽位 ---- */
+.save-slot {
+  border: 1px solid var(--border-light);
+  padding: 6px 10px;
+  margin: 3px 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+.save-slot .slot-info { color: var(--text-dim); font-size: 12px; }
+
+/* ---- Toast ---- */
+#toast {
+  position: fixed;
+  top: 36px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 6px 20px;
+  font-size: 13px;
+  z-index: 1000;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+#toast.show { opacity: 1; }
+
+/* ---- 滚动条 ---- */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: #f0f0f0; }
+::-webkit-scrollbar-thumb { background: #ccc; }
+
+/* ---- 物品池过滤 ---- */
+.filter-row {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.filter-row .btn { font-size: 11px; padding: 1px 8px; }
+
+/* ---- 警告文字 ---- */
+.warn { color: var(--warn); }

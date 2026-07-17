@@ -1,0 +1,38 @@
+import express from 'express';
+import cors from 'cors';
+import { CONFIG } from './config';
+import { initDB } from './db/schema';
+import authRouter from './routes/auth';
+import saveRouter from './routes/save';
+import dataRouter from './routes/data';
+
+async function main() {
+  // 初始化数据库
+  await initDB();
+
+  const app = express();
+
+  // 中间件
+  app.use(cors());
+  app.use(express.json({ limit: '1mb' }));
+
+  // 路由
+  app.use('/api/auth', authRouter);
+  app.use('/api/saves', saveRouter);
+  app.use('/api/data', dataRouter);
+
+  // 健康检查
+  app.get('/api/health', (_req, res) => {
+    res.json({ status: 'ok', time: new Date().toISOString() });
+  });
+
+  app.listen(CONFIG.PORT, () => {
+    console.log(`[Server] 词条爆炸服务器已启动: http://localhost:${CONFIG.PORT}`);
+    console.log(`[Server] 健康检查: http://localhost:${CONFIG.PORT}/api/health`);
+  });
+}
+
+main().catch(err => {
+  console.error('启动失败:', err);
+  process.exit(1);
+});
