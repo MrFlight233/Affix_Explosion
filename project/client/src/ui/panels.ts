@@ -85,7 +85,7 @@ export class UIManager {
   renderHUD() {
     const hud = document.getElementById('hud')!;
     const g = this.engine.state;
-    const canSave = (g.phase === 1 || g.phase === 3) && g.phase !== 2;
+    const canSave = g.phase === 1;
 
     let rightHtml = '';
     if (this.combatFinished) {
@@ -93,15 +93,17 @@ export class UIManager {
     } else if (g.phase !== 2) {
       rightHtml = [
         canSave ? '<button id="btn-save">存档</button>' : '',
-        `<button id="btn-next">${g.phase === 3 ? '下一轮' : (g.phase === 1 && g.deploySlots.length > 0 ? '开始战斗' : '下一阶段')}</button>`,
+        `<button id="btn-next">${g.phase === 1 && g.deploySlots.length > 0 ? '开始战斗' : '下一阶段'}</button>`,
       ].filter(Boolean).join('');
     }
 
+    const firstLayerUsed = g.deploySlots.reduce((s, sl) => { const d = getEntityDef(sl.entity.defId); return s + (d?.slotCost || 0); }, 0);
+    const firstLayerMax = this.engine.getFirstLayerSlots();
     hud.innerHTML = `
       <div class="hud-item"><span class="hud-label">金币</span><span class="hud-value">${g.gold}</span></div>
-      <div class="hud-item"><span class="hud-label">层-轮</span><span class="hud-value">${g.floor}-${g.round}</span></div>
+      <div class="hud-item"><span class="hud-label">回合</span><span class="hud-value">${g.round}</span></div>
       <div class="hud-item"><span class="hud-label">阶段</span><span class="hud-value">${this.engine.getPhaseLabel()}</span></div>
-      <div class="hud-item"><span class="hud-label">活力</span><span class="hud-value">${this.engine.getVitalityUsed()}/${g.maxVitality}</span></div>
+      <div class="hud-item"><span class="hud-label">一层槽位</span><span class="hud-value">${firstLayerUsed}/${firstLayerMax}</span></div>
       <div class="hud-right">
         <button id="btn-return-menu">返回主菜单</button>
         ${rightHtml}
@@ -131,7 +133,7 @@ export class UIManager {
         this.combatFinished = false;
         this.combatEnemies = [];
         this.combatLog = [];
-        this.engine.state.phase = 3;
+        this.engine.nextPhase();
         this.render();
       };
     }
@@ -173,11 +175,11 @@ export class UIManager {
         if (over) html += `<span class="item-stat warn">超重</span>`;
       } else if (edef.isActive) {
         // 主动装备
-        html += `<span class="item-stat">伤害:${edef.damage} 耗时:${edef.actionTime}ms 耐耗:${edef.staminaCost} ${edef.attackType}</span>`;
+        html += `<span class="item-stat">伤害:${edef.damage} 耗时:${edef.actionTime}ms 耐耗:${edef.staminaCost} ${edef.targetType}</span>`;
       } else {
         // 被动装备
         if (edef.damage) html += `<span class="item-stat">伤害加成:${edef.damage}</span>`;
-        if (edef.armorBonus) html += `<span class="item-stat">护甲:${edef.armorBonus}</span>`;
+        
         if (edef.hpBonus) html += `<span class="item-stat">HP:${edef.hpBonus}</span>`;
         if (hasEntitySlots(edef)) html += `<span class="item-stat">内槽:${getEffectiveEntitySlots(edef, item)}</span>`;
         html += `<span class="item-stat">重:${edef.weight}</span>`;
@@ -771,7 +773,6 @@ export class UIManager {
       h += `<span>${u.entityName}</span>`;
       h += `<span class="item-stat" id="cu-hp-p-${u.entityId}">HP:${Math.max(u.currentHp, 0)}/${u.totalHp}</span>`;
       h += `<span class="item-stat" id="cu-stam-p-${u.entityId}">耐力:${Math.floor(u.currentStamina)}/${u.maxStamina}</span>`;
-      h += `<span class="item-stat">护甲:${u.totalArmor}</span>`;
       if (u.isOverloaded) h += '<span class="item-stat warn">超重</span>';
       h += '</div>';
 
@@ -782,7 +783,7 @@ export class UIManager {
         h += `<span>${w.name}</span>`;
         h += `<span class="item-stat">伤害:${w.damage} 耐耗:${w.staminaCost}</span>`;
         h += `<span class="item-stat" id="cu-cd-p-${u.entityId}-${wi}">倒计时:${(w.remainingTime / 1000).toFixed(1)}s</span>`;
-        h += `<span class="item-stat">${w.attackType}${w.priorityTarget ? ' [优先' + w.priorityTarget + ']' : ''}</span>`;
+        h += `<span class="item-stat">${w.targetType}${w.priorityTarget ? ' [优先' + w.priorityTarget + ']' : ''}</span>`;
         h += '</div>';
       }
       h += '</div>';
@@ -808,7 +809,6 @@ export class UIManager {
       h += `<span>${e.entityName}</span>`;
       h += `<span class="item-stat" id="cu-hp-e-${e.entityId}">HP:${Math.max(e.currentHp, 0)}/${e.totalHp}</span>`;
       h += `<span class="item-stat" id="cu-stam-e-${e.entityId}">耐力:${Math.floor(e.currentStamina)}/${e.maxStamina}</span>`;
-      h += `<span class="item-stat">护甲:${e.totalArmor}</span>`;
       if (e.isOverloaded) h += '<span class="item-stat warn">超重</span>';
       h += '</div>';
 
@@ -818,7 +818,7 @@ export class UIManager {
         h += `<span>${w.name}</span>`;
         h += `<span class="item-stat">伤害:${w.damage}</span>`;
         h += `<span class="item-stat" id="cu-cd-e-${e.entityId}-${wi}">倒计时:${(w.remainingTime / 1000).toFixed(1)}s</span>`;
-        h += `<span class="item-stat">${w.attackType}${w.priorityTarget ? ' [优先' + w.priorityTarget + ']' : ''}</span>`;
+        h += `<span class="item-stat">${w.targetType}${w.priorityTarget ? ' [优先' + w.priorityTarget + ']' : ''}</span>`;
         h += '</div>';
       }
       h += '</div>';

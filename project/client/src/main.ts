@@ -289,10 +289,13 @@ function showFullItemPool() {
         h += row('伤害', String(entity.damage));
         h += row('触发耗时', entity.actionTime + 'ms');
         h += row('耐力消耗', String(entity.staminaCost));
-        h += row('攻击类型', entity.attackType || '—');
-        h += row('攻击顺序', entity.attackOrder || '—');
+        h += row('针对类型', entity.targetType || entity.targetType || '—');
+        h += row('针对顺序', entity.targetOrder || entity.targetOrder || '—');
         if (entity.priorityTarget) {
           h += row('优先目标', '第 ' + entity.priorityTarget + ' 位');
+        }
+        if (entity.targetFaction) {
+          h += row('针对目标', entity.targetFaction);
         }
       }
 
@@ -300,7 +303,7 @@ function showFullItemPool() {
       if (!isStarter(entity) && !entity.isActive) {
         const bonuses: string[] = [];
         if (entity.damage) bonuses.push(`伤害 +${entity.damage}`);
-        if (entity.armorBonus) bonuses.push(`护甲 +${entity.armorBonus}`);
+        
         if (entity.regenBonus) bonuses.push(`回复 +${entity.regenBonus}/秒`);
         if (entity.hpBonus) bonuses.push(`生命 ${entity.hpBonus > 0 ? '+' : ''}${entity.hpBonus}`);
         if (entity.entitySlots > 0) bonuses.push(`实体槽位 +${entity.entitySlots}`);
@@ -330,9 +333,9 @@ function showFullItemPool() {
         }
       }
 
-      // === 默认子装备 ===
+      // === 默认子实体 ===
       if (entity.defaultChildren && entity.defaultChildren.length > 0) {
-        h += '<tr><td colspan="2" style="font-weight:bold;padding-top:8px;border-bottom:1px solid #eee;">默认子装备</td></tr>';
+        h += '<tr><td colspan="2" style="font-weight:bold;padding-top:8px;border-bottom:1px solid #eee;">默认子实体</td></tr>';
         for (const c of entity.defaultChildren) {
           if (typeof c === 'string') {
             const cd = getEntityDef(c);
@@ -400,9 +403,9 @@ function showFullItemPool() {
 
         <!-- Tab 切换 -->
         <div class="filter-row" style="margin-bottom:8px;">
-          <button class="btn btn-small ${currentTab === 'all' ? 'active' : ''}" id="tab-all">全部</button>
-          <button class="btn btn-small ${currentTab === 'entity' ? 'active' : ''}" id="tab-entity">仅实体</button>
-          <button class="btn btn-small ${currentTab === 'affix' ? 'active' : ''}" id="tab-affix">仅词条</button>
+          <button class="btn btn-small ${(currentTab as string) === 'all' ? 'active' : ''}" id="tab-all">全部</button>
+          <button class="btn btn-small ${(currentTab as string) === 'entity' ? 'active' : ''}" id="tab-entity">仅实体</button>
+          <button class="btn btn-small ${(currentTab as string) === 'affix' ? 'active' : ''}" id="tab-affix">仅词条</button>
         </div>
 
         <div id="ip-list"></div>

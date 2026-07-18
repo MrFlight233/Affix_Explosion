@@ -12,7 +12,7 @@ import {
 } from './data';
 import { saves as savesApi } from '../api/client';
 
-export type GamePhase = 1 | 2 | 3;
+export type GamePhase = 1 | 2;
 
 // ---- 战斗单位快照（v3：启动端不自带攻击，武器独立触发） ----
 
@@ -21,7 +21,6 @@ export interface CombatUnitSnapshot {
   entityName: string;
   totalHp: number;
   currentHp: number;
-  totalArmor: number;
   totalRegen: number;
   maxStamina: number;
   currentStamina: number;
@@ -34,9 +33,10 @@ export interface CombatUnitSnapshot {
     actionTime: number;
     damage: number;
     staminaCost: number;
-    attackType: string;
-    attackOrder: string;
+    targetType: string;
+    targetOrder: string;
     priorityTarget: number | null;
+    targetFaction: string;
   }[];
 }
 
@@ -48,9 +48,10 @@ export interface CombatWeaponRuntime {
   remainingTime: number;  // ms 倒计时
   damage: number;
   staminaCost: number;
-  attackType: string;
-  attackOrder: string;
+  targetType: string;
+  targetOrder: string;
   priorityTarget: number | null;
+  targetFaction: string;
 }
 
 export interface CombatUnitRuntime {
@@ -58,7 +59,6 @@ export interface CombatUnitRuntime {
   entityName: string;
   totalHp: number;
   currentHp: number;
-  totalArmor: number;
   maxStamina: number;
   currentStamina: number;
   staminaRegen: number;
@@ -83,11 +83,8 @@ export interface CombatEvent {
 
 export interface GameState {
   gold: number;
-  floor: number;
   round: number;
   phase: GamePhase;
-  vitality: number;
-  maxVitality: number;
   warehouse: ItemInstance[];
   deploySlots: DeploySlot[];
   itemPool: string[];
@@ -124,7 +121,7 @@ export class GameEngine {
 
   resetState() {
     this.state = {
-      gold: 100, floor: 1, round: 1, phase: 1, vitality: 0, maxVitality: 5,
+      gold: 90, round: 1, phase: 1,
       warehouse: [], deploySlots: [], itemPool: [], seed: Date.now(),
       currentEvents: [], visitedEventMerchants: [], growthStacks: {}, quickWarehouseCollapsed: false,
     };
@@ -151,11 +148,39 @@ export class GameEngine {
     }
     if (type === 'entity') {
       const def = getEntityDef(defId);
+      // 处理主实体模板级预装动态词条
+      if (def?.preloadedDynamicAffixes && def.preloadedDynamicAffixes.length > 0) {
+        if (!item.children) item.children = [];
+        for (const affixId of def.preloadedDynamicAffixes) {
+          item.children.push(this.createItem(affixId, 'affix'));
+        }
+      }
       if (def?.defaultChildren && def.defaultChildren.length > 0) {
         item.children = def.defaultChildren.map(spec => {
           const cid = typeof spec === 'string' ? spec : spec.defId;
           const childOverrides = typeof spec === 'string' ? undefined : spec.overrides;
-          return this.createItem(cid, 'entity', childOverrides);
+          const child = this.createItem(cid, 'entity', childOverrides);
+
+          if (typeof spec !== 'string') {
+            // 合并 fixedAffixes：模板基础 + spec 附加（去重）
+            if (spec.fixedAffixes && spec.fixedAffixes.length > 0) {
+              const childDef = getEntityDef(cid);
+              if (childDef) {
+                const merged = [...new Set([...childDef.fixedAffixes, ...spec.fixedAffixes])];
+                if (!child.overrides) child.overrides = {};
+                child.overrides.fixedAffixes = merged;
+              }
+            }
+            // 预装动态词条：创建 affix 类型的子项挂载
+            if (spec.preloadedDynamicAffixes && spec.preloadedDynamicAffixes.length > 0) {
+              if (!child.children) child.children = [];
+              for (const affixId of spec.preloadedDynamicAffixes) {
+                child.children.push(this.createItem(affixId, 'affix'));
+              }
+            }
+          }
+
+          return child;
         });
       }
     }
@@ -231,30 +256,38 @@ export class GameEngine {
     return null;
   }
 
-  /** 判断实体能否装备到目标父实体（启动端/容器） */
+  /** 判断实体能否放入目标位置 */
   canEquipToSlot(slotIdx: number, parentInstanceId: string | null, childDef: EntityDef): string | null {
-    const slot = this.state.deploySlots[slotIdx];
-    if (!slot) return '槽位不存在';
+    // 拥有 starter 词条的实体不能放入其他实体的槽位
+    if (parentInstanceId !== null && isStarter(childDef)) return '拥有启动端词条的实体不能放入其他实体的槽位';
 
-    // 确定父实体
-    let parent: ItemInstance;
-    let parentDef: EntityDef;
     if (parentInstanceId === null) {
-      // 目标为 deploySlot 本身 → 检查是否为启动端
-      parent = slot.entity;
-      parentDef = getEntityDef(parent.defId)!;
-      if (!parentDef || !isStarter(parentDef)) return '只能装备到启动端上';
-    } else {
-      // 目标为嵌套实体
-      parent = this.findParentEntity(parentInstanceId, slotIdx)!;
-      if (!parent) return '父实体不存在';
-      parentDef = getEntityDef(parent.defId)!;
-      if (!parentDef) return '未知父实体类型';
-      // 非启动端的实体也可拥有槽位（通过容器词条）
+      // 目标为第一层 → 检查第一层槽位上限
+      const maxSlots = this.getFirstLayerSlots();
+      let usedSlots = 0;
+      for (const s of this.state.deploySlots) {
+        const d = getEntityDef(s.entity.defId);
+        if (d) usedSlots += d.slotCost;
+      }
+      // 如果要移动的物品已在第一层，先减去它的占用
+      // (简化处理：检查是否已在 deploySlots 中)
+      const alreadyDeployed = this.state.deploySlots.some(s => s.entity.defId === childDef.id);
+      if (!alreadyDeployed && usedSlots + childDef.slotCost > maxSlots) {
+        return `第一层槽位不足(剩${maxSlots - usedSlots},需${childDef.slotCost})`;
+      }
+      return null;
     }
 
-    // 启动端不能放入其他实体的槽位
-    if (isStarter(childDef)) return '启动端不能放入其他实体的槽位';
+    // 目标为嵌套实体
+    const slot = this.state.deploySlots[slotIdx];
+    if (!slot) return '槽位不存在';
+    const parent = this.findParentEntity(parentInstanceId, slotIdx)!;
+    if (!parent) return '父实体不存在';
+    const parentDef = getEntityDef(parent.defId)!;
+    if (!parentDef) return '未知父实体类型';
+
+    // 拥有 starter 词条的实体不能放入其他实体的槽位
+    if (isStarter(childDef)) return '拥有启动端词条的实体不能放入其他实体的槽位';
 
     // 计算有效槽位和已用槽位
     const effectiveSlots = getEffectiveEntitySlots(parentDef, parent);
@@ -262,18 +295,6 @@ export class GameEngine {
     if (childDef.slotCost > effectiveSlots - used)
       return `槽位不足(剩${effectiveSlots - used},需${childDef.slotCost})`;
     return null;
-  }
-
-  // ---- 活力计算 ----
-  getVitalityUsed(): number {
-    let t = 0;
-    for (const s of this.state.deploySlots) {
-      const d = getEntityDef(s.entity.defId);
-      if (d) for (const a of d.fixedAffixes) {
-        if (a === 'vitality1') t += 1; else if (a === 'vitality2') t += 2; else if (a === 'vitality3') t += 3;
-      }
-    }
-    this.state.vitality = t; return t;
   }
 
   /** 将物品移动到出场面板指定位置（支持嵌套父实体） */
@@ -325,7 +346,7 @@ export class GameEngine {
   sellItem(item: ItemInstance): number | null {
     const def = this.getDef(item); if (!def) return null;
     const bv = 'costValue' in def ? Math.abs(def.costValue) : (def as EntityDef).value;
-    const price = Math.max(Math.floor(bv / 2), 1);
+    const price = Math.floor(bv / 2);
     const wi = this.state.warehouse.findIndex(i => i.instanceId === item.instanceId);
     if (wi !== -1) { this.state.warehouse.splice(wi, 1); this.state.gold += price; this.notify(); return price; }
     const r = this.removeFromDeploy(item.instanceId);
@@ -411,21 +432,26 @@ export class GameEngine {
 
   // ---- 阶段 ----
   getPhaseLabel(): string {
-    const p = ['', '探险', '战斗', '收集'];
-    return `${this.state.floor}-${this.state.round}-${this.state.phase} ${p[this.state.phase]}阶段`;
+    const p = ['', '探险', '战斗'];
+    return `回合${this.state.round} ${p[this.state.phase]}阶段`;
   }
   getMerchantValueCap(): number { return this.state.round * 10; }
+  /** 获取第一层槽位上限 */
+  getFirstLayerSlots(): number { return this.state.round; }
 
   nextPhase() {
     if (this.state.phase === 1) {
+      // 探险 → 战斗
       this.state.phase = 2;
-    } else if (this.state.phase === 2) {
-      this.state.phase = 3;
-    } else if (this.state.phase === 3) {
-      if (this.state.round >= 3) { this.state.floor++; this.state.round = 1; this.state.visitedEventMerchants = []; }
-      else { this.state.round++; }
+    } else {
+      // 战斗 → 下一轮探险
+      this.state.round++;
       this.state.phase = 1;
+      this.state.visitedEventMerchants = [];
       this.generateEvents();
+      // 探险阶段金币
+      const exploreGold = Math.floor((this.state.round + 1) / 2) * 10;
+      this.state.gold += exploreGold;
       this.autoSave();
     }
     this.notify();
@@ -451,11 +477,11 @@ export class GameEngine {
     children: ItemInstance[],
     growthStack: number,
   ): {
-    totalArmor: number; totalRegen: number; totalHpBonus: number;
+    totalRegen: number; totalHpBonus: number;
     totalLoad: number; passiveDamageBonus: number;
     weapons: CombatUnitSnapshot['activeWeapons'];
   } {
-    let totalArmor = 0, totalRegen = 0, totalHpBonus = 0, totalLoad = 0, passiveDamageBonus = 0;
+    let totalRegen = 0, totalHpBonus = 0, totalLoad = 0, passiveDamageBonus = 0;
     const weapons: CombatUnitSnapshot['activeWeapons'] = [];
 
     for (const child of children) {
@@ -464,7 +490,6 @@ export class GameEngine {
         if (!cdef) continue;
 
         // v5: 使用 getEffectiveValue 读取，支持 ItemInstance.overrides
-        totalArmor += Number(getEffectiveValue(child, 'armorBonus') ?? 0);
         totalRegen += Number(getEffectiveValue(child, 'regenBonus') ?? 0);
         totalHpBonus += Number(getEffectiveValue(child, 'hpBonus') ?? 0);
         totalLoad += Number(getEffectiveValue(child, 'weight') ?? 0);
@@ -478,9 +503,10 @@ export class GameEngine {
             actionTime: Number(getEffectiveValue(child, 'actionTime') ?? 0),
             damage: weaponDamage,
             staminaCost: Number(getEffectiveValue(child, 'staminaCost') ?? 0),
-            attackType: String((getEffectiveValue(child, 'attackType') ?? cdef.attackType) || '近战'),
-            attackOrder: String((getEffectiveValue(child, 'attackOrder') ?? cdef.attackOrder) || '从上往下'),
+            targetType: String((getEffectiveValue(child, 'targetType') ?? cdef.targetType) || '近战'),
+            targetOrder: String((getEffectiveValue(child, 'targetOrder') ?? cdef.targetOrder) || '从上往下'),
             priorityTarget: (getEffectiveValue(child, 'priorityTarget') ?? cdef.priorityTarget) as number | null,
+            targetFaction: String((getEffectiveValue(child, 'targetFaction') ?? cdef.targetFaction) || '敌人'),
           });
         } else {
           // 被动装备 → 累加伤害到被动池
@@ -488,7 +514,6 @@ export class GameEngine {
           // 递归处理容器内的嵌套子项
           if (child.children && child.children.length > 0) {
             const nested = this.collectFromChildren(child.children, growthStack);
-            totalArmor += nested.totalArmor;
             totalRegen += nested.totalRegen;
             totalHpBonus += nested.totalHpBonus;
             totalLoad += nested.totalLoad;
@@ -504,7 +529,7 @@ export class GameEngine {
         }
       }
     }
-    return { totalArmor, totalRegen, totalHpBonus, totalLoad, passiveDamageBonus, weapons };
+    return { totalRegen, totalHpBonus, totalLoad, passiveDamageBonus, weapons };
   }
 
   /** 从 DeploySlot 构建 CombatUnitSnapshot（v4：递归嵌套） */
@@ -512,25 +537,25 @@ export class GameEngine {
     const units: CombatUnitSnapshot[] = [];
     for (const slot of this.state.deploySlots) {
       const edef = getEntityDef(slot.entity.defId);
-      if (!edef || !isStarter(edef)) continue;
+      if (!edef) continue;
 
       const growthStack = this.state.growthStacks[slot.entity.instanceId] || 0;
+      const collected = isStarter(edef)
+        ? this.collectFromChildren(slot.children, growthStack)
+        : { totalRegen: 0, totalHpBonus: 0, totalLoad: 0, passiveDamageBonus: 0, weapons: [] };
 
-      // 递归收集直属子项 + 容器嵌套
-      const collected = this.collectFromChildren(slot.children, growthStack);
-
-      // strength 词条加成需要加到所有武器上
+      // strength 词条加成（仅 starter）
       let extraDmg = 0;
-      for (const c of slot.children) {
-        if (c.type === 'affix') {
-          const adef = getAffixDef(c.defId);
-          if (adef?.id === 'strength') extraDmg += adef.value;
+      if (isStarter(edef)) {
+        for (const c of slot.children) {
+          if (c.type === 'affix') {
+            const adef = getAffixDef(c.defId);
+            if (adef?.id === 'strength') extraDmg += adef.value;
+          }
         }
-      }
-
-      // 将 passiveDamageBonus 应用到每个武器
-      for (const w of collected.weapons) {
-        w.damage += collected.passiveDamageBonus - extraDmg; // extraDmg 已在 collectFromChildren 中计入
+        for (const w of collected.weapons) {
+          w.damage += collected.passiveDamageBonus - extraDmg;
+        }
       }
 
       const hp = edef.hp + collected.totalHpBonus;
@@ -538,10 +563,9 @@ export class GameEngine {
 
       units.push({
         entityId: edef.id,
-        entityName: edef.name,
+        entityName: edef.name + (isStarter(edef) ? '' : '(木桩)'),
         totalHp: hp,
         currentHp: hp,
-        totalArmor: collected.totalArmor,
         totalRegen: edef.staminaRegen + collected.totalRegen,
         maxStamina: edef.maxStamina,
         currentStamina: edef.maxStamina,
@@ -562,18 +586,18 @@ export class GameEngine {
     const count = r === 1 ? 1 : r === 2 ? 2 : 3;
 
     const enemyTemplates = [
-      { name: '重装步兵', hpBase: 25, armBase: 5, maxStamina:60, staminaRegen:5, maxLoad:25, atk: '近战', ao: '从上往下', pt: 1 as number | null },
-      { name: '哥布林战士', hpBase: 15, armBase: 1, maxStamina:50, staminaRegen:8, maxLoad:15, atk: '近战', ao: '从上往下', pt: 1 as number | null },
-      { name: '哥布林弓手', hpBase: 12, armBase: 0, maxStamina:55, staminaRegen:7, maxLoad:12, atk: '远程', ao: '从下往上', pt: null as number | null },
-      { name: '骷髅法师', hpBase: 10, armBase: 0, maxStamina:70, staminaRegen:6, maxLoad:10, atk: '远程', ao: '从下往上', pt: 2 as number | null },
-      { name: '暗影刺客', hpBase: 14, armBase: 1, maxStamina:45, staminaRegen:9, maxLoad:12, atk: '近战', ao: '从上往下', pt: 1 as number | null },
+      { name: '重装步兵', hpBase: 25, maxStamina:60, staminaRegen:5, maxLoad:25, atk: '近战', ao: '从上往下', pt: 1 as number | null },
+      { name: '哥布林战士', hpBase: 15, maxStamina:50, staminaRegen:8, maxLoad:15, atk: '近战', ao: '从上往下', pt: 1 as number | null },
+      { name: '哥布林弓手', hpBase: 12, maxStamina:55, staminaRegen:7, maxLoad:12, atk: '远程', ao: '从下往上', pt: null as number | null },
+      { name: '骷髅法师', hpBase: 10, maxStamina:70, staminaRegen:6, maxLoad:10, atk: '远程', ao: '从下往上', pt: 2 as number | null },
+      { name: '暗影刺客', hpBase: 14, maxStamina:45, staminaRegen:9, maxLoad:12, atk: '近战', ao: '从上往下', pt: 1 as number | null },
     ];
 
     const weaponTemplates = [
-      { name: '生锈短剑', actionTime: 2000, damage: 3, staminaCost: 10, attackType: '近战', attackOrder: '从上往下', priorityTarget: 1 as number | null },
-      { name: '猎弓', actionTime: 2100, damage: 4, staminaCost: 12, attackType: '远程', attackOrder: '从下往上', priorityTarget: null as number | null },
-      { name: '木盾', actionTime: 0, damage: 0, staminaCost: 0, attackType: '近战', attackOrder: '从上往下', priorityTarget: 1 as number | null },
-      { name: '骨杖', actionTime: 2500, damage: 5, staminaCost: 15, attackType: '远程', attackOrder: '从下往上', priorityTarget: 3 as number | null },
+      { name: '生锈短剑', actionTime: 2000, damage: 3, staminaCost: 10, targetType: '近战', targetOrder: '从上往下', priorityTarget: 1 as number | null, targetFaction: '敌人' },
+      { name: '猎弓', actionTime: 2100, damage: 4, staminaCost: 12, targetType: '远程', targetOrder: '从下往上', priorityTarget: null as number | null, targetFaction: '敌人' },
+      { name: '木盾', actionTime: 0, damage: 0, staminaCost: 0, targetType: '近战', targetOrder: '从上往下', priorityTarget: 1 as number | null, targetFaction: '敌人' },
+      { name: '骨杖', actionTime: 2500, damage: 5, staminaCost: 15, targetType: '远程', targetOrder: '从下往上', priorityTarget: 3 as number | null, targetFaction: '敌人' },
     ];
 
     const units: CombatUnitSnapshot[] = [];
@@ -582,7 +606,6 @@ export class GameEngine {
       const t = enemyTemplates[Math.floor(rand() * enemyTemplates.length)];
       const mult = 1 + (r - 1) * 0.7;
       const hp = Math.floor(t.hpBase * mult * (0.8 + rand() * 0.4));
-      const arm = Math.floor(t.armBase * mult * 0.8);
 
       const weapons: CombatUnitSnapshot['activeWeapons'] = [];
       // 50% 概率装备武器
@@ -597,9 +620,10 @@ export class GameEngine {
           actionTime: 2000 + Math.floor(rand() * 1500),
           damage: Math.floor((2 + rand() * 3) * mult),
           staminaCost: 8,
-          attackType: t.atk,
-          attackOrder: t.ao,
+          targetType: t.atk,
+          targetOrder: t.ao,
           priorityTarget: t.pt,
+          targetFaction: '敌人',
         });
       }
 
@@ -608,7 +632,6 @@ export class GameEngine {
         entityName: `${t.name} Lv${r}`,
         totalHp: hp,
         currentHp: hp,
-        totalArmor: arm,
         totalRegen: t.staminaRegen,
         maxStamina: t.maxStamina,
         currentStamina: t.maxStamina,
@@ -630,10 +653,9 @@ export class GameEngine {
       entityName: u.entityName,
       totalHp: u.totalHp,
       currentHp: u.currentHp,
-      totalArmor: u.totalArmor,
       maxStamina: u.maxStamina,
       currentStamina: u.currentStamina,
-      staminaRegen: u.staminaRegen,
+      staminaRegen: u.totalRegen, // 使用包含装备加成的总回复
       isOverloaded: u.isOverloaded,
       weapons: u.activeWeapons.map(w => ({
         name: w.name,
@@ -641,31 +663,50 @@ export class GameEngine {
         remainingTime: w.actionTime, // 初始倒计时 = actionTime
         damage: w.damage,
         staminaCost: w.staminaCost,
-        attackType: w.attackType,
-        attackOrder: w.attackOrder,
+        targetType: w.targetType,
+        targetOrder: w.targetOrder,
         priorityTarget: w.priorityTarget,
+        targetFaction: w.targetFaction,
       })),
     }));
   }
 
-  /** 为目标武器选择敌方目标 */
+  /** 根据 targetFaction 选择目标 */
   private selectTarget(
     weapon: CombatWeaponRuntime,
+    playerUnits: CombatUnitRuntime[],
     enemyUnits: CombatUnitRuntime[],
+    isPlayer: boolean,
   ): CombatUnitRuntime | null {
-    const alive = enemyUnits.filter(e => e.currentHp > 0);
+    const faction = weapon.targetFaction || '敌人';
+
+    // 确定候选池
+    let candidates: CombatUnitRuntime[];
+    if (faction === '友方') {
+      candidates = isPlayer ? playerUnits : enemyUnits;
+    } else if (faction === '所有') {
+      // 双方都搜索：先搜对方，再搜己方
+      const opposing = isPlayer ? enemyUnits : playerUnits;
+      const friendly = isPlayer ? playerUnits : enemyUnits;
+      candidates = [...opposing, ...friendly];
+    } else {
+      // '敌人'（默认）：对方
+      candidates = isPlayer ? enemyUnits : playerUnits;
+    }
+
+    const alive = candidates.filter(c => c.currentHp > 0);
     if (alive.length === 0) return null;
 
-    // priorityTarget: 1-based index into enemy list
+    // priorityTarget: 1-based index into candidates list
     if (weapon.priorityTarget !== null) {
       const idx = weapon.priorityTarget - 1;
-      if (idx >= 0 && idx < enemyUnits.length && enemyUnits[idx].currentHp > 0) {
-        return enemyUnits[idx];
+      if (idx >= 0 && idx < candidates.length && candidates[idx].currentHp > 0) {
+        return candidates[idx];
       }
     }
 
-    // fallback: attackOrder 搜索
-    if (weapon.attackOrder === '从下往上') {
+    // fallback: targetOrder 搜索
+    if (weapon.targetOrder === '从下往上') {
       for (let i = alive.length - 1; i >= 0; i--) return alive[i];
     }
     // 从上往下（默认）
@@ -761,7 +802,7 @@ export class GameEngine {
 
         const overloadPenalty = unit.isOverloaded ? 1.5 : 1.0;
         const effectiveCost = weapon.staminaCost * overloadPenalty;
-        const damage = Math.max(weapon.damage, 1);
+        const damage = weapon.damage; // 可为负值=恢复HP，无最小值限制
 
         if (unit.currentStamina < effectiveCost) {
           // 耐力不足，下个 tick 再试
@@ -772,13 +813,12 @@ export class GameEngine {
         // 消耗耐力
         unit.currentStamina -= effectiveCost;
 
-        // 选择目标
-        const targets = isPlayer ? enemyUnits : playerUnits;
-        const target = this.selectTarget(weapon, targets);
+        // 选择目标（根据 targetFaction 决定从哪方选）
+        const target = this.selectTarget(weapon, playerUnits, enemyUnits, isPlayer);
         if (!target) continue;
 
-        // 计算伤害
-        const dmg = Math.max(Math.floor(damage - target.totalArmor), 1);
+        // 计算伤害（dmg 可为负值=恢复HP）
+        const dmg = damage;
         target.currentHp -= dmg;
 
         // 重置倒计时
@@ -786,7 +826,7 @@ export class GameEngine {
 
         // 发射事件
         const effects: string[] = [];
-        if (dmg >= target.totalHp * 0.3) effects.push('重击');
+        if (Math.abs(dmg) >= target.totalHp * 0.3) effects.push(dmg > 0 ? '重击' : '大回复');
 
         onEvent({
           time: Math.round(simTime),
@@ -845,8 +885,8 @@ export class GameEngine {
   // ---- 存档（单存档，无槽位） ----
   toSaveData(): any {
     return {
-      gold: this.state.gold, floor: this.state.floor, round: this.state.round,
-      phase: this.state.phase, maxVitality: this.state.maxVitality,
+      gold: this.state.gold, round: this.state.round,
+      phase: this.state.phase,
       warehouse: this.state.warehouse, deploySlots: this.state.deploySlots,
       itemPool: this.state.itemPool, seed: this.state.seed,
       growthStacks: this.state.growthStacks, savedAt: new Date().toISOString(),
@@ -854,15 +894,14 @@ export class GameEngine {
   }
 
   loadSaveData(data: any) {
-    this.state.gold = data.gold ?? 100; this.state.floor = data.floor ?? 1;
-    this.state.round = data.round ?? 1; this.state.phase = data.phase ?? 1;
-    this.state.maxVitality = data.maxVitality ?? 5;
+    this.state.gold = data.gold ?? 90; this.state.round = data.round ?? 1;
+    this.state.phase = data.phase ?? 1;
     this.state.warehouse = data.warehouse ?? []; this.state.deploySlots = data.deploySlots ?? [];
     this.state.itemPool = data.itemPool ?? []; this.state.seed = data.seed ?? Date.now();
     this.state.growthStacks = data.growthStacks ?? {}; this.state.currentEvents = [];
     this.state.visitedEventMerchants = data.visitedEventMerchants ?? [];
     if (this.state.phase === 1) this.generateEvents();
-    this.getVitalityUsed(); this.notify();
+    this.notify();
   }
 
   async autoSave() {

@@ -1,26 +1,80 @@
 // ============================================================
 // Affix Explosion — 前后端共享类型定义
 // ============================================================
+//
+// 关系模型（v5：完整梳理）
+// ======================
+//
+// 1. 实体 ↔ 实体嵌套关系（Parent-Child Composition）
+//    - 父实体通过 entitySlots（槽位容量）+ children (ItemInstance[])
+//      容纳子实体
+//    - 模板层：EntityDef.defaultChildren 指定出厂默认子实体
+//      类型：(string | DefaultChildSpec)[]
+//    - 实例层：ItemInstance.children 保存运行时嵌套
+//    - 槽位限制：slotCost（子实体占位数）vs 父实体有效槽位
+//      entitySlots + containerLevel
+//    - 递归：子实体可继续嵌套（容器类实体）
+//
+// 2. 实体 ↔ 词条关系（Entity-Affix Binding）
+//    2a. 固定词条（Fixed Affixes）：
+//        - EntityDef.fixedAffixes: string[]
+//        - 在实体定义时硬绑定，创建实例时自动附带
+//        - 用于实体分类（follower/weapon_type/armor_type/accessory_type/containerN）
+//          和被动属性（vitalityN, starter）
+//        - DefaultChildSpec.fixedAffixes 可为子实体附加额外固定词条（合并去重）
+//    2b. 动态词条槽位（Dynamic Affix Slots）：
+//        - EntityDef.dynamicAffixSlots: number
+//        - 创建实例后由玩家手动挂载词条到槽位
+//        - 运行时：affix 类型的 ItemInstance 挂载到 entity 的 children 中
+//        - DefaultChildSpec.preloadedDynamicAffixes 可预设出厂自带动态词条
+//    2c. 词条生效目标：
+//        - AffixDef.target: '启动端' | '装备' | '通用'
+//        - 启动端词条作用于整个启动端角色
+//        - 装备词条作用于挂载该词条的装备实体
+//        - 通用词条（如容器、类别）作用于系统层面
+//
+// 3. 词条 ↔ 词条关系（Affix Dependency Chain）
+//    3a. 前置依赖（prerequisite）：
+//        - AffixDef.prerequisite: string[]
+//        - 同一实体必须已拥有前置词条才能挂载当前词条
+//        - 形成线性依赖链（如 container1→container2→container3→container4）
+//    3b. 池解锁（poolPrerequisite）：
+//        - AffixDef.poolPrerequisite: string[] | EntityDef.poolPrerequisite: string[]
+//        - 全局物品池中必须先解锁前置条件才会出现此物品
+//        - 用于控制游戏进度中的物品出现顺序
+//
+// 4. Template/Instance 分离设计
+//    - EntityDef / AffixDef = 模板（Template），定义默认值
+//    - ItemInstance = 实例（Instance），通过 overrides 按需差异化
+//    - createItem(defId, type, overrides?) 创建实例，合并模板与覆写
+//    - getEffectiveValue(item, field) 读取有效值（overrides > 模板）
+//    - DefaultChildSpec 是模板层的实例化指令：引用模板 + 覆写 + 词条预设
 
 // ---- 枚举 ----
 
-export type AttackType = '近战' | '远程';
-/** 顺序攻击 — 优先目标位不存在时的兜底搜索方向 */
-export type AttackOrder = '从上往下' | '从下往上';
+export type TargetType = '近战' | '远程';
+/** 针对顺序 — 优先目标位不存在时的兜底搜索方向 */
+export type TargetOrder = '从上往下' | '从下往上';
+/** 针对目标 — 可触发动作的对付对象 */
+export type TargetFaction = '友方' | '敌人' | '所有';
 /** 优先目标位 — 优先攻击敌方第几位（1-based），null = 无优先 */
 export type PriorityTarget = 1 | 2 | 3 | null;
 export type AffixCategory = '属性' | '行动' | '伤害' | '防御' | '耐力' | '负重' | '容器' | '限制' | '特殊';
 export type AffixTarget = '启动端' | '装备' | '通用';
-export type GamePhase = 1 | 2 | 3; // 1=探险 2=战斗 3=收集
+export type GamePhase = 1 | 2; // 1=探险 2=战斗
 
 // ---- 统一实体定义（v3：启动端/装备统一模型） ----
 
-/** 子实体规格：引用模板 + 可选字段覆写 */
+/** 子实体规格：引用模板 + 可选字段覆写 + 词条预设 */
 export interface DefaultChildSpec {
   /** 引用的实体模板 ID */
   defId: string;
   /** 按需覆写的字段，只存与模板的差异。未指定的字段使用模板默认值 */
   overrides?: Partial<EntityDef>;
+  /** 附加固定词条 — 与模板 fixedAffixes 合并去重（不替换），用于子实体出厂带额外类别/属性标记 */
+  fixedAffixes?: string[];
+  /** 预装动态词条 — 创建子实体时自动作为 affix 子项挂载到 children 中 */
+  preloadedDynamicAffixes?: string[];
 }
 
 export interface EntityDef {
@@ -36,8 +90,10 @@ export interface EntityDef {
   fixedAffixes: string[];
   dynamicAffixSlots: number;
   poolPrerequisite: string[];
-  /** 创建该实体时自动生成的子装备列表。字符串 = 纯模板引用; { defId, overrides? } = 带覆写 */
+  /** 创建该实体时自动生成的子实体列表。字符串 = 纯模板引用; { defId, overrides?, fixedAffixes?, preloadedDynamicAffixes? } = 带覆写与词条预设 */
   defaultChildren?: (string | DefaultChildSpec)[];
+  /** 模板级预装动态词条 — 创建实例时自动挂载到 children（占用 dynamicAffixSlots） */
+  preloadedDynamicAffixes?: string[];
 
   // ---- 启动端字段（fixedAffixes 含 'starter' 时有效，否则为 0） ----
   /** 启动端: 基础HP; 装备: 始终为 0 */
@@ -52,18 +108,17 @@ export interface EntityDef {
   staminaCost: number;
   /** 主动装备: 绝对毫秒值; 启动端/被动装备: 0 */
   actionTime: number;
-  /** 主动装备: 每次触发伤害; 被动装备: 全局伤害加成（加至所有主动武器）; 启动端: 始终为 0 */
+  /** 主动装备: 每次触发伤害（可为负值表示恢复HP）; 被动装备: 全局伤害加成（加至所有主动武器）; 启动端: 始终为 0 */
   damage: number;
-  attackType: string | null;    // '近战'|'远程'
-  attackOrder: string | null;   // '从上往下'|'从下往上'
-  priorityTarget: number | null; // 1|2|3|null
+  targetType: string | null;       // '近战'|'远程' — 针对类型
+  targetOrder: string | null;      // '从上往下'|'从下往上' — 针对顺序
+  priorityTarget: number | null;   // 1|2|3|null — 优先目标位
+  targetFaction: TargetFaction | null; // '友方'|'敌人'|'所有' — 针对目标
 
-  // ---- 被动加成（对父启动端生效） ----
-  /** 被动加成: 护甲; 启动端: 始终为 0 */
-  armorBonus: number;
-  /** 被动加成: 回复/秒; 启动端: 始终为 0 */
+  // ---- 被动加成（对父实体生效） ----
+  /** 被动加成: 回复/秒 */
   regenBonus: number;
-  /** 装备: 分配给父启动端的 HP 加成; 启动端: 始终为 0 */
+  /** 分配给父实体的 HP 加成 */
   hpBonus: number;
 }
 
@@ -106,11 +161,8 @@ export interface DeploySlot {
 
 export interface GameState {
   gold: number;
-  floor: number;
   round: number;
   phase: GamePhase;
-  vitality: number;
-  maxVitality: number;
   warehouse: ItemInstance[];
   deploySlots: DeploySlot[];
   itemPool: string[];
@@ -126,7 +178,6 @@ export interface CombatUnitSnapshot {
   entityName: string;
   totalHp: number;
   currentHp: number;
-  totalArmor: number;       // 基础护甲 + 所有被动装备 armorBonus 之和
   totalRegen: number;       // 基础恢复 + 所有被动装备 regenBonus 之和
   maxStamina: number;
   currentStamina: number;
@@ -141,9 +192,10 @@ export interface CombatUnitSnapshot {
     actionTime: number;     // 绝对毫秒，固定值
     damage: number;          // 武器自身伤害 + 被动装备 damage 加成
     staminaCost: number;
-    attackType: string;      // '近战' | '远程'
-    attackOrder: string;     // '从上往下' | '从下往上'
+    targetType: string;      // '近战' | '远程'
+    targetOrder: string;     // '从上往下' | '从下往上'
     priorityTarget: number | null; // 1|2|3|null
+    targetFaction: string;   // '友方' | '敌人' | '所有'
   }[];
 }
 

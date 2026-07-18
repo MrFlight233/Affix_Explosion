@@ -22,8 +22,10 @@ interface AdminState {
 /** 子实体覆写编辑状态（defaultChildren 展开编辑时的临时数据） */
 let _childOverrides: Record<string, Partial<Record<string, any>>> = {};
 let _childExpanded: Record<string, boolean> = {};
+/** 待添加的子实体（未保存前，通过 + 按钮添加的） */
+let _pendingChildren: Record<string, string[]> = {};
 
-function resetChildState() { _childOverrides = {}; _childExpanded = {}; }
+function resetChildState() { _childOverrides = {}; _childExpanded = {}; _pendingChildren = {}; }
 
 export async function showAdminPage(onBack: () => void): Promise<void> {
   const app = document.getElementById('app')!;
@@ -237,13 +239,19 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     h += `<div class="admin-field"><label>名称</label><input id="ef-name" value="${v('name')}"></div>`;
     h += `<div class="admin-field"><label>占用槽位</label><input id="ef-slotCost" type="number" value="${v('slotCost', 1)}"></div>`;
     h += `<div class="admin-field"><label>实体槽位</label><input id="ef-entitySlots" type="number" value="${v('entitySlots', 0)}"></div>`;
+    h += `<div style="font-size:11px;color:#888;margin-bottom:2px;">默认子实体：已用 ${(v('defaultChildren') || []).length} / 总数 ${v('entitySlots', 0)}</div>`;
     h += `<div class="admin-field"><label>重量</label><input id="ef-weight" type="number" value="${v('weight', 0)}"></div>`;
     h += `<div class="admin-field"><label>价值</label><input id="ef-value" type="number" value="${v('value', 1)}"></div>`;
     h += `<div class="admin-field"><label>词条槽数</label><input id="ef-dynamicAffixSlots" type="number" value="${v('dynamicAffixSlots', 0)}"></div>`;
+    const preloadedDyn = v('preloadedDynamicAffixes') || [];
+    const slotUsed = preloadedDyn.length;
+    const slotTotal = v('dynamicAffixSlots', 0);
+    h += `<div style="font-size:11px;color:${slotUsed > slotTotal ? '#c00' : '#888'};margin-bottom:4px;">动态词条：已用 ${slotUsed} / 总数 ${slotTotal}</div>`;
     h += `</div>`;
     h += `<div class="admin-form-section"><h4>词条关联</h4>`;
     h += renderTagSelector('ef-fixedAffixes', '固定词条', v('fixedAffixes') || [], affixOpts);
     h += renderTagSelector('ef-poolPrerequisite', '池前置', v('poolPrerequisite') || [], affixOpts);
+    h += renderTagSelector('ef-preloadedDynamicAffixes', '预装动态词条', preloadedDyn, affixOpts);
     h += `</div>`;
 
     // defaultChildren: Template/Instance model
@@ -259,17 +267,20 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     h += `<div class="admin-field"><label>耐力回复/秒</label><input id="ef-staminaRegen" type="number" value="${v('staminaRegen', 0)}"></div>`;
     h += `<div class="admin-field"><label>负重上限</label><input id="ef-maxLoad" type="number" value="${v('maxLoad', 0)}"></div>`;
     h += `</div>`;
-    h += `<div class="admin-form-section"><h4>主动装备字段</h4>`;
-    h += `<div class="admin-field"><label>是否主动</label><input id="ef-isActive" type="checkbox" ${v('isActive') ? 'checked' : ''}></div>`;
+    const isActiveVal = v('isActive', false);
+    h += `<div class="admin-form-section"><h4>可触发动作</h4>`;
+    h += `<div class="admin-field"><label>可触发动作</label><select id="ef-isActive"><option value="有"${isActiveVal ? ' selected' : ''}>有</option><option value="无"${!isActiveVal ? ' selected' : ''}>无</option></select></div>`;
+    h += `<div id="ef-action-fields" style="${isActiveVal ? '' : 'display:none;'}">`;
     h += `<div class="admin-field"><label>耐力消耗</label><input id="ef-staminaCost" type="number" value="${v('staminaCost', 0)}"></div>`;
     h += `<div class="admin-field"><label>触发耗时(ms)</label><input id="ef-actionTime" type="number" value="${v('actionTime', 0)}"></div>`;
-    h += `<div class="admin-field"><label>伤害</label><input id="ef-damage" type="number" value="${v('damage', 0)}"></div>`;
-    h += `<div class="admin-field"><label>攻击类型</label><select id="ef-attackType"><option value="">—</option><option value="近战"${sel('attackType','近战')}>近战</option><option value="远程"${sel('attackType','远程')}>远程</option></select></div>`;
-    h += `<div class="admin-field"><label>攻击顺序</label><select id="ef-attackOrder"><option value="">—</option><option value="从上往下"${sel('attackOrder','从上往下')}>从上往下</option><option value="从下往上"${sel('attackOrder','从下往上')}>从下往上</option></select></div>`;
+    h += `<div class="admin-field"><label>伤害(负值=恢复)</label><input id="ef-damage" type="number" value="${v('damage', 0)}" step="any"></div>`;
+    h += `<div class="admin-field"><label>针对目标</label><select id="ef-targetFaction"><option value="">—</option><option value="友方"${sel('targetFaction','友方')}>友方</option><option value="敌人"${sel('targetFaction','敌人')}>敌人</option><option value="所有"${sel('targetFaction','所有')}>所有</option></select></div>`;
+    h += `<div class="admin-field"><label>针对类型</label><select id="ef-targetType"><option value="">—</option><option value="近战"${sel('targetType','近战')}>近战</option><option value="远程"${sel('targetType','远程')}>远程</option></select></div>`;
+    h += `<div class="admin-field"><label>针对顺序</label><select id="ef-targetOrder"><option value="">—</option><option value="从上往下"${sel('targetOrder','从上往下')}>从上往下</option><option value="从下往上"${sel('targetOrder','从下往上')}>从下往上</option></select></div>`;
     h += `<div class="admin-field"><label>优先目标</label><select id="ef-priorityTarget"><option value="">无</option><option value="1"${v('priorityTarget')===1?' selected':''}>1</option><option value="2"${v('priorityTarget')===2?' selected':''}>2</option><option value="3"${v('priorityTarget')===3?' selected':''}>3</option></select></div>`;
     h += `</div>`;
+    h += `</div>`;
     h += `<div class="admin-form-section"><h4>被动加成</h4>`;
-    h += `<div class="admin-field"><label>护甲加成</label><input id="ef-armorBonus" type="number" value="${v('armorBonus', 0)}"></div>`;
     h += `<div class="admin-field"><label>回复加成</label><input id="ef-regenBonus" type="number" value="${v('regenBonus', 0)}"></div>`;
     h += `<div class="admin-field"><label>生命加成</label><input id="ef-hpBonus" type="number" value="${v('hpBonus', 0)}"></div>`;
     h += `</div>`;
@@ -285,7 +296,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
       // 兼容旧数据：完整内联实体对象 → 提取差异
       const tpl = c?.id ? state.entities.find((e: any) => e.id === c.id) : null;
       const ov: any = {};
-      const fields = ['damage','actionTime','staminaCost','armorBonus','regenBonus','hpBonus','weight','value','isActive','attackType','attackOrder','priorityTarget','name'];
+      const fields = ['damage','actionTime','staminaCost','regenBonus','hpBonus','weight','value','isActive','targetType','targetOrder','priorityTarget','targetFaction','name','slotCost','entitySlots','dynamicAffixSlots','hp','maxStamina','staminaRegen','maxLoad','poolPrerequisite'];
       for (const f of fields) { if (c[f] !== undefined && (!tpl || c[f] !== tpl[f])) ov[f] = c[f]; }
       const spec: DefaultChildSpec = { defId: c.id || 'unknown' };
       if (Object.keys(ov).length > 0) spec.overrides = ov;
@@ -303,7 +314,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
       if (spec.overrides) Object.assign(base, spec.overrides);
       else { // legacy inline object
         const tpl = state.entities.find((e: any) => e.id === spec.id);
-        ['damage','actionTime','staminaCost','armorBonus','regenBonus','hpBonus','weight','value','isActive','attackType','attackOrder','priorityTarget','name'].forEach(f => {
+        ['damage','actionTime','staminaCost','regenBonus','hpBonus','weight','value','isActive','targetType','targetOrder','priorityTarget','targetFaction','name'].forEach(f => {
           if (spec[f] !== undefined && spec[f] !== (tpl?.[f] ?? undefined)) base[f] = spec[f];
         });
       }
@@ -315,29 +326,35 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
 
   function renderChildrenEditor(specs: (string | DefaultChildSpec)[], parentId: string): string {
     const entityOpts = state.entities.map((e: any) => ({ id: e.id, name: e.name + ' [' + getEntityCategory(e) + ']' }));
+    // 合并原始 specs 和待添加子实体
+    const pending = _pendingChildren[parentId] || [];
+    const allSpecs: (string | DefaultChildSpec)[] = [...specs, ...pending];
+    const pendingStartIdx = specs.length;
     let h = '';
-    if (specs.length === 0) { h += `<p style="font-size:12px;color:#999;margin:4px 0;">暂无子装备</p>`; }
+    if (allSpecs.length === 0) { h += `<p style="font-size:12px;color:#999;margin:4px 0;">暂无子装备</p>`; }
     else {
       h += `<div style="display:flex;flex-direction:column;gap:6px;">`;
-      for (let i = 0; i < specs.length; i++) {
-        const spec = specs[i]; const defId = getChildDefId(spec);
+      for (let i = 0; i < allSpecs.length; i++) {
+        const spec = allSpecs[i]; const defId = getChildDefId(spec);
         const childDef = state.entities.find((e: any) => e.id === defId);
+        const isPending = i >= pendingStartIdx;
         const childKey = `${parentId}_${i}`;
-        const ov = getChildOverrides(spec, childKey); const ovCount = countOverrides(ov);
+        const ov = isPending ? {} : getChildOverrides(spec, childKey); const ovCount = countOverrides(ov);
         const expanded = _childExpanded[childKey] || false;
-        h += `<div class="child-entity-card" data-childkey="${childKey}" data-defid="${defId}">`;
+        h += `<div class="child-entity-card" data-childkey="${childKey}" data-defid="${defId}" data-parentid="${parentId}"${isPending ? ' data-pending="1"' : ''}>`;
         h += `<div style="display:flex;align-items:center;padding:4px 8px;background:#f5f5f5;gap:6px;">`;
         h += `<span style="font-size:12px;cursor:pointer;user-select:none;" class="child-toggle" data-childkey="${childKey}">${expanded ? '▼' : '▶'}</span>`;
         h += `<select class="child-template-select" data-childkey="${childKey}" style="flex:1;font-size:11px;padding:2px 4px;border:1px solid #ccc;">${entityOpts.map(eo => `<option value="${eo.id}"${eo.id===defId?' selected':''}>${eo.name}</option>`).join('')}</select>`;
-        if (ovCount > 0) h += `<span style="font-size:10px;background:#fff3cd;color:#856404;padding:1px 5px;flex-shrink:0;">已定制 ${ovCount} 字段</span>`;
-        h += `<button class="btn btn-small child-remove" data-childkey="${childKey}" style="font-size:10px;padding:1px 4px;color:#c00;border:1px solid #c00;background:#fff;flex-shrink:0;">×</button>`;
+        if (isPending) h += `<span style="font-size:10px;background:#d4edda;color:#155724;padding:1px 5px;flex-shrink:0;">待添加</span>`;
+        else if (ovCount > 0) h += `<span style="font-size:10px;background:#fff3cd;color:#856404;padding:1px 5px;flex-shrink:0;">已定制 ${ovCount} 字段</span>`;
+        h += `<button class="btn btn-small child-remove" data-childkey="${childKey}" data-pending="${isPending ? '1' : '0'}" style="font-size:10px;padding:1px 4px;color:#c00;border:1px solid #c00;background:#fff;flex-shrink:0;">×</button>`;
         h += `</div>`;
         if (expanded && childDef) { h += `<div class="child-edit-body" style="padding:8px;">${renderChildOverrideForm(childDef, childKey, ov)}</div>`; }
         h += `</div>`;
       }
       h += `</div>`;
     }
-    const usedIds = specs.map(s => getChildDefId(s));
+    const usedIds = allSpecs.map(s => getChildDefId(s));
     const avail = entityOpts.filter(o => !usedIds.includes(o.id));
     h += `<div style="display:flex;gap:4px;margin-top:6px;"><select id="ef-children-select-${parentId}" style="flex:1;font-size:12px;padding:2px 4px;border:1px solid #ccc;"><option value="">— 添加子实体（选择模板） —</option>${avail.map(o => `<option value="${o.id}">${o.name}</option>`).join('')}</select>`;
     h += `<button class="btn btn-small child-add" data-parent="${parentId}" style="font-size:11px;padding:2px 6px;">+</button></div>`;
@@ -346,18 +363,16 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
 
   function renderChildOverrideForm(tpl: any, childKey: string, ov: Record<string, any>): string {
     let h = `<div class="child-override-form" data-childkey="${childKey}" style="font-size:11px;">`;
-    h += `<p style="color:#666;font-size:10px;margin:0 0 6px 0;">模板：${tpl.name} — 伤害${tpl.damage||0} 耗时${tpl.actionTime||0}ms 耐耗${tpl.staminaCost||0} 护甲${tpl.armorBonus||0} 回复${tpl.regenBonus||0} 生命${tpl.hpBonus||0}</p>`;
     h += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;">`;
     h += ovField('伤害','damage',tpl.damage,childKey,ov);
     h += ovField('耗时ms','actionTime',tpl.actionTime,childKey,ov);
     h += ovField('耐耗','staminaCost',tpl.staminaCost,childKey,ov);
     h += `<label style="font-size:10px;display:flex;align-items:center;gap:2px;margin-right:6px;"><input class="cov-isActive" data-ck="${childKey}" type="checkbox" ${ov.isActive!==undefined?(ov.isActive?'checked':''):''}>主动</label>`;
-    h += ovSelect('攻击','attackType',['','近战','远程'],tpl.attackType,childKey,ov);
-    h += ovSelect('顺序','attackOrder',['','从上往下','从下往上'],tpl.attackOrder,childKey,ov);
-    h += ovSelect('目标','priorityTarget',['','1','2','3'],String(tpl.priorityTarget||''),childKey,ov);
+    h += ovSelect('针对','targetType',['','近战','远程'],tpl.targetType,childKey,ov);
+    h += ovSelect('顺序','targetOrder',['','从上往下','从下往上'],tpl.targetOrder,childKey,ov);
+    h += ovSelect('优先','priorityTarget',['','1','2','3'],String(tpl.priorityTarget||''),childKey,ov);
     h += `</div>`;
     h += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px;">`;
-    h += ovField('护甲','armorBonus',tpl.armorBonus,childKey,ov);
     h += ovField('回复','regenBonus',tpl.regenBonus,childKey,ov);
     h += ovField('生命','hpBonus',tpl.hpBonus,childKey,ov);
     h += ovField('重量','weight',tpl.weight,childKey,ov);
@@ -423,6 +438,17 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     const affixOpts = state.affixes.map((a: any) => ({ id: a.id, name: a.name }));
     bindTagSelector('ef-fixedAffixes', affixOpts);
     bindTagSelector('ef-poolPrerequisite', affixOpts);
+    bindTagSelector('ef-preloadedDynamicAffixes', affixOpts);
+
+    // isActive 切换：显示/隐藏动作相关字段
+    const isActiveSel = document.getElementById('ef-isActive') as HTMLSelectElement;
+    const actionFields = document.getElementById('ef-action-fields');
+    if (isActiveSel && actionFields) {
+      isActiveSel.addEventListener('change', () => {
+        actionFields.style.display = isActiveSel.value === '有' ? '' : 'none';
+      });
+    }
+
     bindAllChildrenEditors();
 
     document.getElementById('ef-btn-save')?.addEventListener('click', async () => {
@@ -439,24 +465,26 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         value: parseInt((document.getElementById('ef-value') as HTMLInputElement).value) || 1,
         fixedAffixes: getSelected('ef-fixedAffixes'),
         dynamicAffixSlots: parseInt((document.getElementById('ef-dynamicAffixSlots') as HTMLInputElement).value) || 0,
+        preloadedDynamicAffixes: getSelected('ef-preloadedDynamicAffixes'),
         poolPrerequisite: getSelected('ef-poolPrerequisite'),
         defaultChildren: serializeChildrenSpecs(isNew ? 'new' : originalData?.id),
         hp: parseInt((document.getElementById('ef-hp') as HTMLInputElement).value) || 0,
         maxStamina: parseInt((document.getElementById('ef-maxStamina') as HTMLInputElement).value) || 0,
         staminaRegen: parseInt((document.getElementById('ef-staminaRegen') as HTMLInputElement).value) || 0,
         maxLoad: parseInt((document.getElementById('ef-maxLoad') as HTMLInputElement).value) || 0,
-        isActive: (document.getElementById('ef-isActive') as HTMLInputElement).checked,
+        isActive: (document.getElementById('ef-isActive') as HTMLSelectElement).value === '有',
         staminaCost: parseInt((document.getElementById('ef-staminaCost') as HTMLInputElement).value) || 0,
         actionTime: parseInt((document.getElementById('ef-actionTime') as HTMLInputElement).value) || 0,
-        damage: parseInt((document.getElementById('ef-damage') as HTMLInputElement).value) || 0,
-        attackType: (document.getElementById('ef-attackType') as HTMLSelectElement).value || null,
-        attackOrder: (document.getElementById('ef-attackOrder') as HTMLSelectElement).value || null,
+        damage: parseFloat((document.getElementById('ef-damage') as HTMLInputElement).value) || 0,
+        targetFaction: (document.getElementById('ef-targetFaction') as HTMLSelectElement).value || null,
+        targetType: (document.getElementById('ef-targetType') as HTMLSelectElement).value || null,
+        targetOrder: (document.getElementById('ef-targetOrder') as HTMLSelectElement).value || null,
         priorityTarget: (() => { const v = (document.getElementById('ef-priorityTarget') as HTMLSelectElement).value; return v ? parseInt(v) : null; })(),
-        armorBonus: parseInt((document.getElementById('ef-armorBonus') as HTMLInputElement).value) || 0,
         regenBonus: parseInt((document.getElementById('ef-regenBonus') as HTMLInputElement).value) || 0,
         hpBonus: parseInt((document.getElementById('ef-hpBonus') as HTMLInputElement).value) || 0,
       };
       if (!entity.defaultChildren || entity.defaultChildren.length === 0) delete entity.defaultChildren;
+      if (!entity.preloadedDynamicAffixes || entity.preloadedDynamicAffixes.length === 0) delete entity.preloadedDynamicAffixes;
 
       try {
         if (isNew) { await admin.createEntity(entity); showToast('实体创建成功'); }
@@ -482,8 +510,8 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
 
   function bindAllChildrenEditors() {
     document.querySelectorAll('.child-toggle').forEach(el => { el.addEventListener('click', () => { const ck = (el as HTMLElement).dataset.childkey!; _childExpanded[ck] = !_childExpanded[ck]; render(); }); });
-    document.querySelectorAll('.child-remove').forEach(el => { el.addEventListener('click', (e) => { e.stopPropagation(); const ck = (el as HTMLElement).dataset.childkey!; const card = (el as HTMLElement).closest('.child-entity-card')!; card.style.display = 'none'; card.dataset.removed = '1'; delete _childOverrides[ck]; delete _childExpanded[ck]; showToast('子实体已标记移除（保存生效）'); }); });
-    document.querySelectorAll('.child-add').forEach(el => { el.addEventListener('click', () => { const parent = (el as HTMLElement).dataset.parent!; const selectEl = document.getElementById(`ef-children-select-${parent}`) as HTMLSelectElement; if (!selectEl || !selectEl.value) return; showToast(`子实体模板 ${selectEl.value} 已添加（保存生效，展开后可编辑覆写）`); selectEl.value = ''; render(); }); });
+    document.querySelectorAll('.child-remove').forEach(el => { el.addEventListener('click', (e) => { e.stopPropagation(); const ck = (el as HTMLElement).dataset.childkey!; const card = (el as HTMLElement).closest('.child-entity-card')! as HTMLElement; const isPending = card.dataset.pending === '1'; const parentId = card.dataset.parentid!; if (isPending) { const defId = card.dataset.defid!; const arr = _pendingChildren[parentId] || []; const idx = arr.indexOf(defId); if (idx !== -1) arr.splice(idx, 1); if (arr.length === 0) delete _pendingChildren[parentId]; delete _childOverrides[ck]; delete _childExpanded[ck]; showToast('子实体已移除'); } else { card.style.display = 'none'; card.dataset.removed = '1'; delete _childOverrides[ck]; delete _childExpanded[ck]; showToast('子实体已标记移除（保存生效）'); } }); });
+    document.querySelectorAll('.child-add').forEach(el => { el.addEventListener('click', () => { const parent = (el as HTMLElement).dataset.parent!; const selectEl = document.getElementById(`ef-children-select-${parent}`) as HTMLSelectElement; if (!selectEl || !selectEl.value) return; const defId = selectEl.value; if (!_pendingChildren[parent]) _pendingChildren[parent] = []; _pendingChildren[parent].push(defId); showToast(`子实体模板 ${defId} 已添加（保存生效）`); selectEl.value = ''; render(); }); });
     document.querySelectorAll('[class*="cov-"]').forEach((el: any) => { const ck = el.dataset.ck; if (!ck) return; el.addEventListener('input', () => collectOverrideFromDOM(ck)); el.addEventListener('change', () => collectOverrideFromDOM(ck)); });
     document.querySelectorAll('.cov-clear').forEach(el => { el.addEventListener('click', () => { const ck = (el as HTMLElement).dataset.childkey!; delete _childOverrides[ck]; render(); }); });
     document.querySelectorAll('.child-template-select').forEach(el => { el.addEventListener('change', () => { showToast('模板已切换（保存生效）'); }); });
@@ -491,10 +519,16 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
 
   function collectOverrideFromDOM(ck: string) {
     const ov: Record<string, any> = {};
-    ['damage','actionTime','staminaCost','armorBonus','regenBonus','hpBonus','weight','value'].forEach(f => { const el = document.querySelector(`.cov-${f}[data-ck="${ck}"]`) as HTMLInputElement; if (el && el.value !== '') ov[f] = parseFloat(el.value) || 0; });
-    ['attackType','attackOrder','priorityTarget'].forEach(f => { const sel = document.querySelector(`.cov-${f}[data-ck="${ck}"]`) as HTMLSelectElement; if (sel && sel.value !== '') ov[f] = sel.value; });
+    // Select fields
+    ['targetType','targetOrder','priorityTarget'].forEach(f => { const sel = document.querySelector(`.cov-${f}[data-ck="${ck}"]`) as HTMLSelectElement; if (sel && sel.value !== '') ov[f] = sel.value; });
+    // isActive checkbox
     const cb = document.querySelector(`.cov-isActive[data-ck="${ck}"]`) as HTMLInputElement;
     if (cb) { if (cb.checked) ov.isActive = true; else if (_childOverrides[ck]?.isActive !== undefined) ov.isActive = false; }
+    // Numeric fields
+    ['damage','actionTime','staminaCost','regenBonus','hpBonus','weight','value'].forEach(f => {
+      const input = document.querySelector(`.cov-${f}[data-ck="${ck}"]`) as HTMLInputElement;
+      if (input && input.value !== '' && !isNaN(parseFloat(input.value))) ov[f] = parseFloat(input.value);
+    });
     if (Object.keys(ov).length > 0) _childOverrides[ck] = ov; else delete _childOverrides[ck];
   }
 

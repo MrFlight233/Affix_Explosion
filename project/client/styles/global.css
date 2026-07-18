@@ -518,3 +518,27 @@ body {
 .child-mini-form .admin-field label { font-size: 10px; }
 .child-mini-form .admin-field input { font-size: 10px; padding: 1px 4px; }
 .child-mini-form .admin-field { margin-bottom: 2px; }
+
+/* 子实体内标签选择器 */
+.child-tag-selector { margin-bottom: 4px; }
+.child-tag-selector .tag-list { display: flex; flex-wrap: wrap; gap: 2px; min-height: 18px; margin: 1px 0; }
+.child-tag-selector .tag-chip {
+  padding: 0 4px; border-radius: 3px;
+  font-size: 9px; line-height: 16px;
+}
+/* 子实体覆写表单字段分组 */
+.child-edit-body .child-field-group {
+  display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px;
+}
+.child-edit-body .child-field-group-label {
+  font-size: 10px; color: #888; margin-bottom: 2px;
+  border-bottom: 1px solid #eee; padding-bottom: 2px;
+}
+
+/* 槽位使用计数 */
+.slot-usage { font-size: 10px; color: #888; margin-left: 6px; }
+.slot-usage.full { color: #c00; font-weight: bold; }
+
+/* 可触发动作字段显隐 */
+.action-fields { border-left: 2px solid #ddd; padding-left: 10px; margin: 4px 0 0 4px; }
+.action-fields.hidden { display: none; }

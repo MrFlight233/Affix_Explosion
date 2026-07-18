@@ -51,13 +51,13 @@ function renderEntityTooltip(tip: HTMLElement, def: EntityDef) {
     html += `<div class="tt-row"><span class="tt-label">耗时:</span>${def.actionTime}ms</div>`;
     if (def.damage) html += `<div class="tt-row"><span class="tt-label">伤害:</span>${def.damage}</div>`;
     html += `<div class="tt-row"><span class="tt-label">耐力消耗:</span>${def.staminaCost}</div>`;
-    html += `<div class="tt-row"><span class="tt-label">攻击:</span>${def.attackType} ${def.attackOrder}${def.priorityTarget ? ' [优先' + def.priorityTarget + ']' : ''}</div>`;
+    html += `<div class="tt-row"><span class="tt-label">攻击:</span>${def.targetType} ${def.targetOrder}${def.priorityTarget ? ' [优先' + def.priorityTarget + ']' : ''}</div>`;
   }
 
   if (!isSt && !def.isActive) {
     // 被动装备
     if (def.damage) html += `<div class="tt-row"><span class="tt-label">伤害加成:</span>+${def.damage}</div>`;
-    if (def.armorBonus) html += `<div class="tt-row"><span class="tt-label">护甲加成:</span>+${def.armorBonus}</div>`;
+    
     if (def.regenBonus) html += `<div class="tt-row"><span class="tt-label">回复加成:</span>+${def.regenBonus}</div>`;
     if (def.hpBonus) html += `<div class="tt-row"><span class="tt-label">生命加成:</span>${def.hpBonus > 0 ? '+' : ''}${def.hpBonus}</div>`;
   }

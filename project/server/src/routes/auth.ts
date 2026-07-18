@@ -39,7 +39,7 @@ router.post('/register', (req: Request, res: Response) => {
   const userId = result.lastInsertRowid as number;
 
   const token = jwt.sign({ userId, username: trimmed }, CONFIG.JWT_SECRET, {
-    expiresIn: CONFIG.JWT_EXPIRES_IN,
+    expiresIn: '7d',
   });
 
   res.status(201).json({ token, user: { id: userId, username: trimmed } });
@@ -66,7 +66,7 @@ router.post('/login', (req: Request, res: Response) => {
   }
 
   const token = jwt.sign({ userId: user.id, username: user.username }, CONFIG.JWT_SECRET, {
-    expiresIn: CONFIG.JWT_EXPIRES_IN,
+    expiresIn: '7d',
   });
 
   res.json({ token, user: { id: user.id, username: user.username } });
