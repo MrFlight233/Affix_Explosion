@@ -532,16 +532,19 @@ export class GameEngine {
     return { totalRegen, totalHpBonus, totalLoad, passiveDamageBonus, weapons };
   }
 
-  /** 从 DeploySlot 构建 CombatUnitSnapshot（v4：递归嵌套） */
-  calculateCombatSnapshots(): CombatUnitSnapshot[] {
+  /** 从 DeploySlot 构建 CombatUnitSnapshot（v4：递归嵌套）。可传入自定义 slots 用于模拟对战。 */
+  calculateCombatSnapshots(slots?: DeploySlot[]): CombatUnitSnapshot[] {
+    const deploySlots = slots ?? this.state.deploySlots;
     const units: CombatUnitSnapshot[] = [];
-    for (const slot of this.state.deploySlots) {
+    for (const slot of deploySlots) {
       const edef = getEntityDef(slot.entity.defId);
       if (!edef) continue;
 
       const growthStack = this.state.growthStacks[slot.entity.instanceId] || 0;
+      // 合并 entity 自身的默认子实体 + slot 的用户挂载物品
+      const allChildren = [...(slot.entity.children || []), ...slot.children];
       const collected = isStarter(edef)
-        ? this.collectFromChildren(slot.children, growthStack)
+        ? this.collectFromChildren(allChildren, growthStack)
         : { totalRegen: 0, totalHpBonus: 0, totalLoad: 0, passiveDamageBonus: 0, weapons: [] };
 
       // strength 词条加成（仅 starter）
@@ -722,35 +725,17 @@ export class GameEngine {
     return false;
   }
 
-  /** 时间线驱动战斗引擎 */
-  async runCombat(
+  /** 时间线驱动战斗引擎（内部核心，不含状态管理） */
+  private async _runBattleCore(
+    playerUnits: CombatUnitRuntime[],
+    enemyUnits: CombatUnitRuntime[],
     onEvent: (evt: CombatEvent) => void,
-    onEnd: (win: boolean, gold: number) => void,
     speed: number,
-  ) {
-    const snapshots = this.calculateCombatSnapshots();
-    const enemySnaps = this.generateEnemyBD();
-
-    const playerUnits = this.buildCombatRuntime(snapshots);
-    const enemyUnits = this.buildCombatRuntime(enemySnaps);
-
-    this.combatPlayerUnits = playerUnits;
-    this.combatEnemyUnits = enemyUnits;
-
-    const rand = seededRandom(this.state.seed + this.state.round * 999);
+  ): Promise<{ win: boolean }> {
     const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 
     let simTime = 0;
     const MAX_SIM_TIME = 120000; // 2 分钟模拟时间上限
-
-    // 初始回调
-    onEvent({
-      time: 0, actorName: '', weaponName: '',
-      targetName: '战斗开始', damage: 0,
-      targetHpAfter: 0, targetMaxHp: 0, effects: [],
-    });
-
-    await delay(300); // 让 UI 先渲染
 
     while (
       playerUnits.some(u => u.currentHp > 0) &&
@@ -860,9 +845,38 @@ export class GameEngine {
     }
 
     const win = playerUnits.some(u => u.currentHp > 0);
-    const goldReward = win ? (10 + this.state.round * 5 + this.state.deploySlots.length * 2) : 0;
+    return { win };
+  }
 
-    if (win) {
+  /** 时间线驱动战斗引擎（正式游戏） */
+  async runCombat(
+    onEvent: (evt: CombatEvent) => void,
+    onEnd: (win: boolean, gold: number) => void,
+    speed: number,
+  ) {
+    const snapshots = this.calculateCombatSnapshots();
+    const enemySnaps = this.generateEnemyBD();
+
+    const playerUnits = this.buildCombatRuntime(snapshots);
+    const enemyUnits = this.buildCombatRuntime(enemySnaps);
+
+    this.combatPlayerUnits = playerUnits;
+    this.combatEnemyUnits = enemyUnits;
+
+    // 初始回调
+    onEvent({
+      time: 0, actorName: '', weaponName: '',
+      targetName: '战斗开始', damage: 0,
+      targetHpAfter: 0, targetMaxHp: 0, effects: [],
+    });
+
+    await new Promise(r => setTimeout(r, 300)); // 让 UI 先渲染
+
+    const result = await this._runBattleCore(playerUnits, enemyUnits, onEvent, speed);
+
+    const goldReward = result.win ? (10 + this.state.round * 5 + this.state.deploySlots.length * 2) : 0;
+
+    if (result.win) {
       for (const slot of this.state.deploySlots) {
         // 递归检查 growth 词条
         const hasGrowth = this.hasGrowthAffix(slot.children) ||
@@ -878,8 +892,41 @@ export class GameEngine {
     this.combatPlayerUnits = null;
     this.combatEnemyUnits = null;
     this.notify();
-    onEnd(win, goldReward);
-    return { win, enemies: enemyUnits, goldReward };
+    onEnd(result.win, goldReward);
+    return { win: result.win, enemies: enemyUnits, goldReward };
+  }
+
+  /** 模拟对战：使用自定义双方 BD 运行战斗，无金币/生长/存档 */
+  async runSimCombat(
+    playerSlots: DeploySlot[],
+    enemySlots: DeploySlot[],
+    onEvent: (evt: CombatEvent) => void,
+    onEnd: (win: boolean) => void,
+    speed: number,
+  ) {
+    const playerSnaps = this.calculateCombatSnapshots(playerSlots);
+    const enemySnaps = this.calculateCombatSnapshots(enemySlots);
+
+    const playerUnits = this.buildCombatRuntime(playerSnaps);
+    const enemyUnits = this.buildCombatRuntime(enemySnaps);
+
+    this.combatPlayerUnits = playerUnits;
+    this.combatEnemyUnits = enemyUnits;
+
+    // 初始回调
+    onEvent({
+      time: 0, actorName: '', weaponName: '',
+      targetName: '战斗开始', damage: 0,
+      targetHpAfter: 0, targetMaxHp: 0, effects: [],
+    });
+
+    await new Promise(r => setTimeout(r, 300));
+
+    const result = await this._runBattleCore(playerUnits, enemyUnits, onEvent, speed);
+
+    this.combatPlayerUnits = null;
+    this.combatEnemyUnits = null;
+    onEnd(result.win);
   }
 
   // ---- 存档（单存档，无槽位） ----

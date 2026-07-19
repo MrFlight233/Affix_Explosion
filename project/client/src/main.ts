@@ -74,6 +74,17 @@ function showStartScreen() {
         showAdminPage(() => showStartScreen());
       });
       menu.appendChild(btn);
+
+      // "模拟对战"按钮
+      const btnSim = document.createElement('button');
+      btnSim.id = 'btn-sim-battle';
+      btnSim.textContent = '模拟对战';
+      btnSim.style.cssText = 'border-color:#c96;color:#960;';
+      btnSim.addEventListener('click', async () => {
+        const { showSimBattle } = await import('./ui/sim-battle');
+        showSimBattle(() => showStartScreen());
+      });
+      menu.appendChild(btnSim);
     }
   })();
 }

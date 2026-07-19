@@ -2,8 +2,8 @@
 // 拖拽系统 — HTML5 Drag & Drop + 排序支持
 // ============================================================
 
-export type DropZoneType = 'deploy-top' | 'deploy-slot' | 'warehouse' | 'quick-warehouse' | 'shop' | 'sell';
-export type DragSource = 'deploy-top' | 'deploy-slot' | 'warehouse' | 'quick-warehouse' | 'shop';
+export type DropZoneType = 'deploy-top' | 'deploy-slot' | 'warehouse' | 'quick-warehouse' | 'shop' | 'sell' | 'sim-battle';
+export type DragSource = 'deploy-top' | 'deploy-slot' | 'warehouse' | 'quick-warehouse' | 'shop' | 'sim-battle';
 
 export interface DragPayload {
   instanceId: string;
