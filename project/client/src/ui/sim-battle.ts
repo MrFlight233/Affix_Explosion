@@ -910,13 +910,13 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
     for (const { el, side } of bdZones) {
       if (!el) continue;
       bindDropZone(el, 'sim-battle', (payload, _zone, _slotIdx, e) => {
-        // 若拖拽过程中曾靠近卡片标题，走排序逻辑
-        if (lastHover) {
+        // 仅 BD 内部移动 + 曾靠近卡片标题 → 走排序
+        if (lastHover && payload && findItemInSlots(getSlots(side), payload.instanceId)) {
           const hdr = lastHover.cardEl.querySelector('[data-dropzone="card"]') as HTMLElement;
           if (hdr) {
             const ib = lastHover.insertBefore;
             const err = handleDropOnCard(payload, hdr.dataset.side as 'player'|'enemy', hdr.dataset.instance!, e, ib);
-            if (err) showToast('排序错误:'+err); else showToast('BD排序OK');
+            if (err) showToast('排序错误:'+err);
             setDragPayload(null); clearPlaceholder(); return null;
           }
         }
@@ -930,7 +930,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       const side = htmlEl.dataset.side as 'player' | 'enemy';
       const parentId = htmlEl.dataset.instance!;
       bindDropZone(htmlEl, 'sim-battle', (payload, _zone, _slotIdx, e) => {
-        if (lastHover) {
+        if (lastHover && payload && findItemInSlots(getSlots(side), payload.instanceId)) {
           const hdr = lastHover.cardEl.querySelector('[data-dropzone="card"]') as HTMLElement;
           if (hdr) {
             const ib = lastHover.insertBefore;
@@ -981,16 +981,21 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       });
 
       htmlEl.addEventListener('drop', (e) => {
-        showToast('CARDdrop');
         e.preventDefault();
         e.stopPropagation();
         const rect = htmlEl.getBoundingClientRect();
         const insertBefore = e.clientY < rect.top + rect.height / 2;
         clearPlaceholder();
         const payload = getDragPayload();
-        if (!payload) { showToast('payload为空'); return; }
-        const err = handleDropOnCard(payload, side, targetInstId, e, insertBefore);
-        if (err) showToast('排序错误:' + err); else showToast('排序OK ib='+insertBefore);
+        if (!payload) return;
+        // BD 物品 → 排序；池物品 → 找父级放入
+        if (payload && findItemInSlots(getSlots(side), payload.instanceId)) {
+          const err = handleDropOnCard(payload, side, targetInstId, e, insertBefore);
+          if (err) showToast('排序错误:' + err);
+        } else {
+          const err = handleSmartDrop(payload, side, e);
+          if (err) showToast(err);
+        }
         setDragPayload(null);
       });
     });
@@ -1001,7 +1006,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       const side = htmlEl.dataset.side as 'player' | 'enemy';
       const parentId = htmlEl.dataset.instance!;
       bindDropZone(htmlEl, 'sim-battle', (payload, _zone, _slotIdx, e) => {
-        if (lastHover) {
+        if (lastHover && payload && findItemInSlots(getSlots(side), payload.instanceId)) {
           const hdr = lastHover.cardEl.querySelector('[data-dropzone="card"]') as HTMLElement;
           if (hdr) {
             const ib = lastHover.insertBefore;
@@ -1020,7 +1025,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       const side = htmlEl.dataset.side as 'player' | 'enemy';
       const parentId = htmlEl.dataset.instance!;
       bindDropZone(htmlEl, 'sim-battle', (payload, _zone, _slotIdx, e) => {
-        if (lastHover) {
+        if (lastHover && payload && findItemInSlots(getSlots(side), payload.instanceId)) {
           const hdr = lastHover.cardEl.querySelector('[data-dropzone="card"]') as HTMLElement;
           if (hdr) {
             const ib = lastHover.insertBefore;
