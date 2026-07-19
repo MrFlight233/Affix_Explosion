@@ -646,7 +646,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
             if (!dynCollapsed) {
               for (const ac of (item.children || []).filter(c => c.type === 'affix')) {
                 const ad = getAffixDef(ac.defId);
-                if (ad) h += `<div class="sb-card-stats" style="margin-left:12px;" data-instance="${ac.instanceId}" data-defid="${ac.defId}" data-type="affix" data-side="${side}" draggable="${mode === 'build'}">${ad.name}  效果:${ad.effect}  数值:${ad.value}</div>`;
+                if (ad) h += `<div class="sb-card-stats" style="margin-left:12px;" data-instance="${ac.instanceId}" data-defid="${ac.defId}" data-type="affix" data-side="${side}" data-dropzone="card" draggable="${mode === 'build'}">${ad.name}  效果:${ad.effect}  数值:${ad.value}</div>`;
               }
               if (mode === 'build') {
                 for (let i = 0; i < affixSlots - dynAffixCount; i++) {
@@ -911,8 +911,8 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       if (!el) continue;
       bindDropZone(el, 'sim-battle', (payload, _zone, _slotIdx, e) => {
         // 仅 BD 内部移动 + 曾靠近卡片标题 → 走排序
-        if (lastHover && payload && findItemInSlots(getSlots(side), payload.instanceId)) {
-          const hdr = lastHover.cardEl.querySelector('[data-dropzone="card"]') as HTMLElement;
+        if (lastHover) {
+          const hdr = (lastHover.cardEl.matches('[data-dropzone="card"]') ? lastHover.cardEl : lastHover.cardEl.querySelector('[data-dropzone="card"]')) as HTMLElement;
           if (hdr) {
             const ib = lastHover.insertBefore;
             const err = handleDropOnCard(payload, hdr.dataset.side as 'player'|'enemy', hdr.dataset.instance!, e, ib);
@@ -930,8 +930,8 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       const side = htmlEl.dataset.side as 'player' | 'enemy';
       const parentId = htmlEl.dataset.instance!;
       bindDropZone(htmlEl, 'sim-battle', (payload, _zone, _slotIdx, e) => {
-        if (lastHover && payload && findItemInSlots(getSlots(side), payload.instanceId)) {
-          const hdr = lastHover.cardEl.querySelector('[data-dropzone="card"]') as HTMLElement;
+        if (lastHover) {
+          const hdr = (lastHover.cardEl.matches('[data-dropzone="card"]') ? lastHover.cardEl : lastHover.cardEl.querySelector('[data-dropzone="card"]')) as HTMLElement;
           if (hdr) {
             const ib = lastHover.insertBefore;
             const err = handleDropOnCard(payload, hdr.dataset.side as 'player'|'enemy', hdr.dataset.instance!, e, ib);
@@ -965,7 +965,9 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       const htmlEl = el as HTMLElement;
       const side = htmlEl.dataset.side as 'player' | 'enemy';
       const targetInstId = htmlEl.dataset.instance!;
-      const cardEl = htmlEl.closest('.sb-card') as HTMLElement;
+      const isAffixRow = htmlEl.dataset.type === 'affix';
+      // 词条行用自身，卡片标题用父级 .sb-card
+      const cardEl = isAffixRow ? htmlEl : (htmlEl.closest('.sb-card') as HTMLElement);
 
       htmlEl.addEventListener('dragover', (e) => {
         e.preventDefault();
@@ -980,24 +982,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
         else cardEl.parentNode!.insertBefore(ph, cardEl.nextSibling);
       });
 
-      htmlEl.addEventListener('drop', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const rect = htmlEl.getBoundingClientRect();
-        const insertBefore = e.clientY < rect.top + rect.height / 2;
-        clearPlaceholder();
-        const payload = getDragPayload();
-        if (!payload) return;
-        // BD 物品 → 排序；池物品 → 找父级放入
-        if (payload && findItemInSlots(getSlots(side), payload.instanceId)) {
-          const err = handleDropOnCard(payload, side, targetInstId, e, insertBefore);
-          if (err) showToast('排序错误:' + err);
-        } else {
-          const err = handleSmartDrop(payload, side, e);
-          if (err) showToast(err);
-        }
-        setDragPayload(null);
-      });
+      // drop handled by unified BD panel/child zone handlers
     });
 
     // 词条区 drop zones — 若有 lastHover 走排序
@@ -1006,8 +991,8 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       const side = htmlEl.dataset.side as 'player' | 'enemy';
       const parentId = htmlEl.dataset.instance!;
       bindDropZone(htmlEl, 'sim-battle', (payload, _zone, _slotIdx, e) => {
-        if (lastHover && payload && findItemInSlots(getSlots(side), payload.instanceId)) {
-          const hdr = lastHover.cardEl.querySelector('[data-dropzone="card"]') as HTMLElement;
+        if (lastHover) {
+          const hdr = (lastHover.cardEl.matches('[data-dropzone="card"]') ? lastHover.cardEl : lastHover.cardEl.querySelector('[data-dropzone="card"]')) as HTMLElement;
           if (hdr) {
             const ib = lastHover.insertBefore;
             const err = handleDropOnCard(payload, hdr.dataset.side as 'player'|'enemy', hdr.dataset.instance!, e, ib);
@@ -1025,8 +1010,8 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       const side = htmlEl.dataset.side as 'player' | 'enemy';
       const parentId = htmlEl.dataset.instance!;
       bindDropZone(htmlEl, 'sim-battle', (payload, _zone, _slotIdx, e) => {
-        if (lastHover && payload && findItemInSlots(getSlots(side), payload.instanceId)) {
-          const hdr = lastHover.cardEl.querySelector('[data-dropzone="card"]') as HTMLElement;
+        if (lastHover) {
+          const hdr = (lastHover.cardEl.matches('[data-dropzone="card"]') ? lastHover.cardEl : lastHover.cardEl.querySelector('[data-dropzone="card"]')) as HTMLElement;
           if (hdr) {
             const ib = lastHover.insertBefore;
             const err = handleDropOnCard(payload, hdr.dataset.side as 'player'|'enemy', hdr.dataset.instance!, e, ib);
@@ -1177,7 +1162,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       if (!draggedItem) return '找不到物品';
       if (draggedItem.instanceId === targetInstId) return null;
       const tgtItem = findItemInSlots(slots, targetInstId);
-      if (!tgtItem) return '目标不存在';
+      if (!tgtItem) {  return '目标不存在'; }
 
       // 词条拖到实体上 → 加入实体 children
       if (draggedItem.type === 'affix' && tgtItem.type !== 'affix') {
@@ -1188,6 +1173,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       }
       // 词条排序
       if (draggedItem.type === 'affix' && tgtItem.type === 'affix') {
+        
         const pc = findParentChildren(slots, targetInstId);
         if (!pc) return '找不到父级';
         let ti = pc.findIndex(c => c.instanceId === targetInstId);
@@ -1240,8 +1226,16 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
     // 从物品池拖入
     const defId = dt.getData('application/x-defid') || payload.instanceId;
     if (type === 'affix') {
-      const targetItem = findItemInSlots(slots, targetInstId);
+      let targetItem = findItemInSlots(slots, targetInstId);
       if (!targetItem) return '目标不存在';
+      // 目标是词条时，向上找父实体
+      if (targetItem.type === 'affix') {
+        for (const s of slots) {
+          const found = findInTree(s.entity, targetInstId);
+          if (found) { targetItem = s.entity; break; }
+        }
+        if (!targetItem || targetItem.type === 'affix') return '找不到父实体';
+      }
       const parentDef = getEntityDef(targetItem.defId);
       if (!parentDef) return '未知实体';
       const dynCount = (targetItem.children || []).filter(c => c.type === 'affix').length;
@@ -1329,6 +1323,19 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
 
       // 同侧移动/重排
       const def = getEntityDef(item.defId);
+      // 词条类物品跳过实体检查
+      if (item.type === 'affix') {
+        removeFromSlots(getSlots(fromSide), instId);
+        if (parentInstanceId != null) {
+          const parent = findItemInSlots(getSlots(side), parentInstanceId);
+          if (parent) {
+            if (!parent.children) parent.children = [];
+            parent.children.push(item);
+          }
+        }
+        render();
+        return null;
+      }
       if (!def) return '未知物品';
 
       // 同父重排跳过容量检查
