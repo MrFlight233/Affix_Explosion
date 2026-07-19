@@ -924,12 +924,21 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       });
     }
 
-    // 子实体区 drop zones
+    // 子实体区 drop zones — 若有 lastHover 走排序
     document.querySelectorAll('[data-dropzone="child"]').forEach(el => {
       const htmlEl = el as HTMLElement;
       const side = htmlEl.dataset.side as 'player' | 'enemy';
       const parentId = htmlEl.dataset.instance!;
       bindDropZone(htmlEl, 'sim-battle', (payload, _zone, _slotIdx, e) => {
+        if (lastHover) {
+          const hdr = lastHover.cardEl.querySelector('[data-dropzone="card"]') as HTMLElement;
+          if (hdr) {
+            const ib = lastHover.insertBefore;
+            const err = handleDropOnCard(payload, hdr.dataset.side as 'player'|'enemy', hdr.dataset.instance!, e, ib);
+            if (err) showToast('排序错误:'+err);
+            setDragPayload(null); clearPlaceholder(); return null;
+          }
+        }
         return handleDropInDeploy(payload, side, undefined, parentId, e);
       });
     });
@@ -986,22 +995,40 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       });
     });
 
-    // 词条区 drop zones
+    // 词条区 drop zones — 若有 lastHover 走排序
     document.querySelectorAll('[data-dropzone="affix"]').forEach(el => {
       const htmlEl = el as HTMLElement;
       const side = htmlEl.dataset.side as 'player' | 'enemy';
       const parentId = htmlEl.dataset.instance!;
       bindDropZone(htmlEl, 'sim-battle', (payload, _zone, _slotIdx, e) => {
+        if (lastHover) {
+          const hdr = lastHover.cardEl.querySelector('[data-dropzone="card"]') as HTMLElement;
+          if (hdr) {
+            const ib = lastHover.insertBefore;
+            const err = handleDropOnCard(payload, hdr.dataset.side as 'player'|'enemy', hdr.dataset.instance!, e, ib);
+            if (err) showToast('排序错误:'+err);
+            setDragPayload(null); clearPlaceholder(); return null;
+          }
+        }
         return handleDropInDeploy(payload, side, undefined, parentId, e);
       });
     });
 
-    // 空槽位 drop zones
+    // 空槽位 drop zones — 若有 lastHover 走排序
     document.querySelectorAll('.sb-empty-slot').forEach(el => {
       const htmlEl = el as HTMLElement;
       const side = htmlEl.dataset.side as 'player' | 'enemy';
       const parentId = htmlEl.dataset.instance!;
       bindDropZone(htmlEl, 'sim-battle', (payload, _zone, _slotIdx, e) => {
+        if (lastHover) {
+          const hdr = lastHover.cardEl.querySelector('[data-dropzone="card"]') as HTMLElement;
+          if (hdr) {
+            const ib = lastHover.insertBefore;
+            const err = handleDropOnCard(payload, hdr.dataset.side as 'player'|'enemy', hdr.dataset.instance!, e, ib);
+            if (err) showToast('排序错误:'+err);
+            setDragPayload(null); clearPlaceholder(); return null;
+          }
+        }
         return handleDropInDeploy(payload, side, undefined, parentId, e);
       });
     });
