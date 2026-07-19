@@ -152,6 +152,8 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
     toast: null,
   };
 
+  let draggingType: 'entity' | 'affix' | null = null;
+
   // ============================================================
   // 槽位校验
   // ============================================================
@@ -886,10 +888,12 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
         e.dataTransfer!.setData('application/x-defid', defId);
         e.dataTransfer!.setData('application/x-type', type);
         e.dataTransfer!.setData('application/x-source', 'pool');
+        draggingType = type;
         htmlEl.classList.add('dragging');
       });
       htmlEl.addEventListener('dragend', () => {
         setDragPayload(null);
+        draggingType = null;
         htmlEl.classList.remove('dragging');
         document.querySelectorAll('.drag-over').forEach(d => d.classList.remove('drag-over'));
         document.getElementById('sb-pool')?.classList.remove('remove-target');
@@ -970,6 +974,8 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       const cardEl = isAffixRow ? htmlEl : (htmlEl.closest('.sb-card') as HTMLElement);
 
       htmlEl.addEventListener('dragover', (e) => {
+        // 类型过滤：实体↔卡片标题、词条↔词条行
+        if (draggingType && (draggingType === 'affix') !== isAffixRow) return;
         e.preventDefault();
         e.dataTransfer!.dropEffect = 'move';
         const rect = htmlEl.getBoundingClientRect();
@@ -1035,6 +1041,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
         setDragPayload(payload);
         e.dataTransfer!.setData('text/plain', htmlEl.dataset.instance!);
         e.dataTransfer!.setData('application/x-source', 'bd');
+        draggingType = htmlEl.dataset.type === 'affix' ? 'affix' : 'entity';
         htmlEl.classList.add('dragging');
       });
       htmlEl.addEventListener('dragend', () => {
