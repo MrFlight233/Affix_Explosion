@@ -1248,7 +1248,18 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       return null;
     }
 
-    return handleDropInDeploy(payload, side, undefined, targetInstId, e);
+    // targetInstId 可能是子实体，池物品应放入其父实体
+    let parentId = targetInstId;
+    const tgt = findItemInSlots(getSlots(side), targetInstId);
+    if (tgt && tgt.type === 'entity' && !isStarter(getEntityDef(tgt.defId)!)) {
+      const pc = findParentChildren(getSlots(side), targetInstId);
+      if (pc) {
+        for (const s of getSlots(side)) {
+          if (s.entity.children === pc) { parentId = s.entity.instanceId; break; }
+        }
+      }
+    }
+    return handleDropInDeploy(payload, side, undefined, parentId, e);
   }
 
   /** 找到 item 在 slot 树中的父级 children 数组 */
