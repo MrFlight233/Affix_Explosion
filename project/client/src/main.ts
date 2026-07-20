@@ -6,12 +6,30 @@ import { showAuthModal, hideAuthModal } from './ui/auth';
 import { UIManager } from './ui/panels';
 import { GameEngine } from './game/engine';
 import { getToken, setToken, saves as savesApi } from './api/client';
-import { ENTITY_DEFS, AFFIX_DEFS, isStarter, EntityDef, getEntityDef, getAffixDef, getEntityCategory } from './game/data';
+import { ENTITY_DEFS, AFFIX_DEFS, isStarter, EntityDef, getEntityDef, getAffixDef, getEntityCategory, loadInitialData } from './game/data';
 // tooltip 已移至详情面板，不再需要 hover 提示
 
 const app = document.getElementById('app')!;
 
 async function main() {
+  // Phase 4: 启动时从服务端加载游戏数据
+  try {
+    await loadInitialData();
+  } catch (e) {
+    app.innerHTML = `
+      <div id="start-screen">
+        <h1>词 条 爆 炸</h1>
+        <div class="subtitle">Affix Explosion</div>
+        <p style="color:var(--warn);margin-top:24px;">
+          游戏数据加载失败，请检查网络连接或联系管理员。<br>
+          <span style="font-size:12px;color:var(--text-dim);">${(e as Error).message || String(e)}</span>
+        </p>
+        <button class="btn" style="margin-top:16px;" onclick="location.reload()">重试</button>
+      </div>
+    `;
+    return;
+  }
+
   const token = getToken();
   if (!token) {
     showLoginPage();

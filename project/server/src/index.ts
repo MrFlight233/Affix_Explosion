@@ -1,15 +1,28 @@
 import express from 'express';
 import cors from 'cors';
 import { CONFIG } from './config';
-import { initDB } from './db/schema';
+import { initDB, initTables, seedFromJson, templateCache } from './db';
 import authRouter from './routes/auth';
 import saveRouter from './routes/save';
 import dataRouter from './routes/data';
 import adminRouter from './routes/admin';
 
-async function main() {
-  // 初始化数据库
-  await initDB();
+function main() {
+  // 初始化数据库（better-sqlite3，同步调用）
+  initDB();
+
+  // 建表
+  initTables();
+
+  // 检查是否需要导入种子数据（首次启动 / entities 表为空）
+  const db = require('./db/connection').getDB();
+  const countRow = db.prepare('SELECT COUNT(*) as cnt FROM entities').get() as any;
+  if (countRow && countRow.cnt === 0) {
+    seedFromJson();
+  } else {
+    // 已有数据，直接加载缓存
+    templateCache.load();
+  }
 
   const app = express();
 
@@ -34,7 +47,4 @@ async function main() {
   });
 }
 
-main().catch(err => {
-  console.error('启动失败:', err);
-  process.exit(1);
-});
+main();

@@ -6,7 +6,7 @@
 - **npm** >= 9.x（随 Node.js 安装）
 - **浏览器**：Chrome / Edge / Firefox 最新版
 
-> 无需安装数据库！项目使用 SQLite（sql.js 纯 JS 实现），即开即用。
+> 无需安装数据库服务！项目使用 SQLite（better-sqlite3），即开即用。首次 `npm install` 需要 C++ 编译工具链（Windows 上安装 Visual Studio Build Tools 或 `npm install --build-from-source`）。
 
 ---
 
@@ -73,18 +73,33 @@ project/
 ├── README.md                 # 本文件
 ├── shared/
 │   └── types.ts              # 前后端共享类型定义
-├── server/                   # 后端（Express + SQLite）
+├── server/                   # 后端（Express + better-sqlite3）
 │   ├── package.json
 │   ├── tsconfig.json
+│   ├── data/
+│   │   └── game_data.json    # 种子数据（首次启动导入 DB）
 │   └── src/
 │       ├── index.ts          # 入口
 │       ├── config.ts         # 配置
-│       ├── db/schema.ts      # 数据库
-│       ├── middleware/auth.ts # JWT 认证
+│       ├── db/
+│       │   ├── schema.ts     # Drizzle ORM 表定义
+│       │   ├── connection.ts # DB 单例连接
+│       │   ├── cache.ts      # 模板内存缓存
+│       │   ├── seed.ts       # 种子数据导入
+│       │   ├── index.ts      # 统一导出
+│       │   └── repositories/
+│       │       ├── entityRepo.ts  # 实体 CRUD
+│       │       ├── affixRepo.ts   # 词条 CRUD
+│       │       ├── saveRepo.ts    # 存档读写
+│       │       └── battleRepo.ts  # 对战池操作
+│       ├── middleware/
+│       │   ├── auth.ts       # JWT 认证
+│       │   └── admin.ts      # 管理员权限
 │       └── routes/
 │           ├── auth.ts       # 注册/登录
 │           ├── save.ts       # 存档
-│           └── data.ts       # 游戏数据 + 战斗池
+│           ├── data.ts       # 游戏数据 + 战斗池
+│           └── admin.ts      # 管理员 CRUD
 └── client/                   # 前端（Vite + TypeScript）
     ├── package.json
     ├── tsconfig.json
@@ -96,11 +111,13 @@ project/
         ├── main.ts           # 入口
         ├── api/client.ts     # API 请求封装
         ├── game/
-        │   ├── data.ts       # 实体/词条定义
+        │   ├── data.ts       # 实体/词条数据（API 加载）
         │   └── engine.ts     # 游戏引擎
         └── ui/
             ├── auth.ts       # 登录界面
             ├── panels.ts     # 主界面 + 所有面板
+            ├── admin.ts      # 管理员制作物品
+            ├── sim-battle.ts # 模拟对战
             └── dragDrop.ts   # 拖拽系统
 ```
 
@@ -121,6 +138,21 @@ project/
 | PUT | `/api/saves` | 保存存档（覆盖） | 是 |
 | DELETE | `/api/saves` | 删除存档 | 是 |
 | GET | `/api/health` | 健康检查 | 否 |
+
+### 管理员 API
+
+| 方法 | 路径 | 说明 | 认证 |
+|------|------|------|------|
+| GET | `/api/admin/check` | 检查管理员权限 | 是 |
+| GET | `/api/admin/entities` | 获取所有实体 | 是（管理员） |
+| POST | `/api/admin/entities` | 新增实体 | 是（管理员） |
+| PUT | `/api/admin/entities/:id` | 更新实体 | 是（管理员） |
+| DELETE | `/api/admin/entities/:id` | 删除实体 | 是（管理员） |
+| GET | `/api/admin/affixes` | 获取所有词条 | 是（管理员） |
+| POST | `/api/admin/affixes` | 新增词条 | 是（管理员） |
+| PUT | `/api/admin/affixes/:id` | 更新词条 | 是（管理员） |
+| DELETE | `/api/admin/affixes/:id` | 删除词条 | 是（管理员） |
+| POST | `/api/admin/reset` | 重置为种子数据 | 是（管理员） |
 
 ---
 
@@ -166,13 +198,16 @@ project/
 ## 常见问题
 
 ### Q: 启动报错 "数据库未初始化"？
-A: 确保 `server/data/` 目录存在且有写入权限。程序会自动创建。
+A: 确保 `server/data/` 目录存在且有写入权限。首次启动会自动创建 `game.db` 并从 `game_data.json` 导入种子数据。
+
+### Q: npm install 报错（better-sqlite3 编译失败）？
+A: better-sqlite3 是原生 C++ 模块，需要编译工具链。Windows 上安装 [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022)（勾选"C++ 桌面开发"），macOS 上安装 Xcode Command Line Tools（`xcode-select --install`）。
 
 ### Q: 前端页面空白？
-A: 检查后端是否正常启动（访问 http://localhost:3000/api/health），确认 Vite 代理配置正确。
+A: 检查后端是否正常启动（访问 http://localhost:3000/api/health），确认 Vite 代理配置正确。也可能是因为客户端无法从 API 加载游戏数据——打开浏览器控制台查看错误。
 
 ### Q: 如何重置数据？
-A: 删除 `server/data/game.db` 文件后重启后端即可。
+A: 管理员用户登录后，在开始界面点击"制作物品"→ 使用"重置为默认数据"功能。或者删除 `server/data/game.db` 文件后重启后端（种子数据会自动重新导入）。
 
 ### Q: 端口被占用？
 A: 修改 `server/src/config.ts` 中的 PORT，以及 `client/vite.config.ts` 中的 proxy target。
@@ -185,7 +220,7 @@ A: 修改 `server/src/config.ts` 中的 PORT，以及 `client/vite.config.ts` �
 |----|------|
 | 前端 | TypeScript + Vite + 原生 HTML5 DnD |
 | 后端 | Node.js + Express + TypeScript |
-| 数据库 | SQLite（sql.js，纯 JS 无需安装） |
+| 数据库 | SQLite（better-sqlite3 + Drizzle ORM） |
 | 认证 | bcrypt 密码哈希 + JWT Token |
 
 ---
@@ -193,7 +228,7 @@ A: 修改 `server/src/config.ts` 中的 PORT，以及 `client/vite.config.ts` �
 ## v0.1 功能清单
 
 - [x] 玩家注册/登录
-- [x] 实体 & 词条数据（17 实体 + 30 词条）
+- [x] 实体 & 词条数据（74 实体 + 85 词条）
 - [x] 出场面板拖拽搭配 BD
 - [x] 仓库管理
 - [x] 固定商人商店
@@ -204,6 +239,8 @@ A: 修改 `server/src/config.ts` 中的 PORT，以及 `client/vite.config.ts` �
 - [x] 云端存档/读档
 - [x] 活力值限制
 - [x] 成长词条效果
+- [x] 管理员制作物品系统
+- [x] 模拟对战（沙盒战斗模拟器）
 
 ### 后续版本计划
 - [ ] 完整的耐力/负重系统

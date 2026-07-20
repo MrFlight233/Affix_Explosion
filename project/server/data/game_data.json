@@ -29,6 +29,9 @@
       "targetOrder": null,
       "priorityTarget": null,
       "targetFaction": null,
+      "preloadedDynamicAffixes": [
+        "strength"
+      ],
       "regenBonus": 0,
       "hpBonus": 0
     },
@@ -3109,5 +3112,5 @@
       "effect": "所有友方 +5% 吸血"
     }
   ],
-  "version": 8
+  "version": 9
 }

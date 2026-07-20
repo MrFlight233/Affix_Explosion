@@ -1,150 +1,133 @@
-import initSqlJs, { Database as SqlJsDatabase, Statement } from 'sql.js';
-import fs from 'fs';
-import path from 'path';
-import { CONFIG } from '../config';
+// ============================================================
+// Drizzle ORM Schema — 表定义
+// + 过渡兼容层：保持旧路由 import 不报错
+// ============================================================
 
-let _sqlDb: SqlJsDatabase | null = null;
-let _saveTimer: NodeJS.Timeout | null = null;
+import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
+import { getDB as _getDB, initDB as _initDB } from './connection';
+import { initTables, seedFromJson } from './seed';
+import { templateCache } from './cache';
 
-// 防抖保存
-function scheduleSave() {
-  if (_saveTimer) clearTimeout(_saveTimer);
-  _saveTimer = setTimeout(() => {
-    if (!_sqlDb) return;
-    const dir = path.dirname(CONFIG.DB_PATH);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(CONFIG.DB_PATH, Buffer.from(_sqlDb.export()));
-  }, 100);
-}
+// ========== 模板表 ==========
 
-// 立即保存
-function saveNow() {
-  if (!_sqlDb) return;
-  const dir = path.dirname(CONFIG.DB_PATH);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(CONFIG.DB_PATH, Buffer.from(_sqlDb.export()));
-}
+export const entities = sqliteTable('entities', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  slotCost: integer('slot_cost').notNull().default(1),
+  entitySlots: integer('entity_slots').notNull().default(0),
+  weight: integer('weight').notNull().default(0),
+  value: integer('value').notNull().default(0),
+  fixedAffixes: text('fixed_affixes').notNull().default('[]'),
+  dynamicAffixSlots: integer('dynamic_affix_slots').notNull().default(0),
+  poolPrerequisite: text('pool_prerequisite').notNull().default('[]'),
+  defaultChildren: text('default_children'),
+  preloadedDynamicAffixes: text('preloaded_dynamic_affixes'),
+  hp: integer('hp').notNull().default(10),
+  maxStamina: integer('max_stamina').notNull().default(50),
+  staminaRegen: integer('stamina_regen').notNull().default(5),
+  maxLoad: integer('max_load').notNull().default(20),
+  isActive: integer('is_active').notNull().default(0),
+  staminaCost: integer('stamina_cost').notNull().default(0),
+  actionTime: integer('action_time').notNull().default(0),
+  damage: integer('damage').notNull().default(0),
+  targetType: text('target_type'),
+  targetOrder: text('target_order'),
+  priorityTarget: integer('priority_target'),
+  targetFaction: text('target_faction'),
+  regenBonus: integer('regen_bonus').notNull().default(0),
+  hpBonus: integer('hp_bonus').notNull().default(0),
+  createdAt: text('created_at').notNull().default("(datetime('now'))"),
+  updatedAt: text('updated_at').notNull().default("(datetime('now'))"),
+});
 
-// 将 sql.js 包装成兼容 better-sqlite3 的 API
-class DbWrapper {
-  prepare(sql: string) {
-    const self = this;
-    return {
-      run(...params: any[]) {
-        const s = _sqlDb!;
-        s.run(sql, params);
-        const rows = s.exec('SELECT last_insert_rowid() as id');
-        const lastId = rows.length > 0 ? rows[0].values[0][0] as number : 0;
-        const changes = s.getRowsModified();
-        scheduleSave();
-        return { lastInsertRowid: lastId, changes };
-      },
-      get(...params: any[]): any {
-        try {
-          const s = _sqlDb!;
-          const stmt: Statement = s.prepare(sql);
-          stmt.bind(params);
-          if (stmt.step()) {
-            const cols = stmt.getColumnNames();
-            const vals = stmt.get();
-            stmt.free();
-            const row: any = {};
-            cols.forEach((c: string, i: number) => row[c] = vals[i]);
-            return row;
-          }
-          stmt.free();
-          return undefined;
-        } catch (e) {
-          console.error('DB get error:', e);
-          return undefined;
-        }
-      },
-      all(...params: any[]): any[] {
-        try {
-          const s = _sqlDb!;
-          const stmt: Statement = s.prepare(sql);
-          stmt.bind(params);
-          const results: any[] = [];
-          while (stmt.step()) {
-            const cols = stmt.getColumnNames();
-            const vals = stmt.get();
-            const row: any = {};
-            cols.forEach((c: string, i: number) => row[c] = vals[i]);
-            results.push(row);
-          }
-          stmt.free();
-          return results;
-        } catch (e) {
-          console.error('DB all error:', e);
-          return [];
-        }
-      },
-    };
-  }
-  exec(sql: string) {
-    _sqlDb!.run(sql);
-    scheduleSave();
-  }
-}
+export const affixes = sqliteTable('affixes', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  category: text('category').notNull().default('特殊'),
+  value: integer('value').notNull().default(0),
+  costValue: integer('cost_value').notNull().default(0),
+  slotCost: integer('slot_cost').notNull().default(1),
+  repeatable: integer('repeatable').notNull().default(0),
+  prerequisite: text('prerequisite').notNull().default('[]'),
+  poolPrerequisite: text('pool_prerequisite').notNull().default('[]'),
+  target: text('target').notNull().default('self'),
+  effect: text('effect').notNull().default(''),
+  createdAt: text('created_at').notNull().default("(datetime('now'))"),
+  updatedAt: text('updated_at').notNull().default("(datetime('now'))"),
+});
 
-let _wrapper: DbWrapper | null = null;
+export const dataVersion = sqliteTable('data_version', {
+  id: integer('id').primaryKey(),
+  version: integer('version').notNull().default(1),
+});
 
+// ========== 业务表 ==========
+
+export const users = sqliteTable('users', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  username: text('username').notNull().unique(),
+  password: text('password').notNull(),
+  createdAt: text('created_at').notNull().default("(datetime('now'))"),
+});
+
+export const saves = sqliteTable('saves', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: integer('user_id').notNull().unique().references(() => users.id),
+  dataJson: text('data_json').notNull(),
+  updatedAt: text('updated_at').notNull().default("(datetime('now'))"),
+});
+
+export const battlePool = sqliteTable(
+  'battle_pool',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    userId: integer('user_id').notNull().references(() => users.id),
+    username: text('username').notNull(),
+    floor: integer('floor').notNull(),
+    round: integer('round').notNull(),
+    bdJson: text('bd_json').notNull(),
+    powerScore: integer('power_score').notNull().default(0),
+    winCount: integer('win_count').notNull().default(0),
+    lossCount: integer('loss_count').notNull().default(0),
+    uploadedAt: text('uploaded_at').notNull().default("(datetime('now'))"),
+  },
+  (table) => [
+    index('idx_battle_pool_floor_round').on(table.floor, table.round),
+    index('idx_battle_pool_power').on(table.powerScore),
+  ],
+);
+
+// ============================================================
+// 过渡兼容层 — 保持旧路由 (save.ts, auth.ts, data.ts) 不报错
+// ============================================================
+
+/** 保持旧 API：异步 initDB（内部调用新同步版 + 建表 + 种子导入） */
 export async function initDB(): Promise<void> {
-  const SQL = await initSqlJs();
+  _initDB();
+  initTables();
 
-  const dbDir = path.dirname(CONFIG.DB_PATH);
-  if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
-
-  if (fs.existsSync(CONFIG.DB_PATH)) {
-    const buffer = fs.readFileSync(CONFIG.DB_PATH);
-    _sqlDb = new SQL.Database(buffer);
+  const db = _getDB();
+  const countRow = db.prepare('SELECT COUNT(*) as cnt FROM entities').get() as any;
+  if (countRow && countRow.cnt === 0) {
+    seedFromJson();
   } else {
-    _sqlDb = new SQL.Database();
+    templateCache.load();
   }
-
-  _wrapper = new DbWrapper();
-
-  _wrapper.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      username    TEXT    NOT NULL UNIQUE,
-      password    TEXT    NOT NULL,
-      created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS saves (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id     INTEGER NOT NULL UNIQUE REFERENCES users(id),
-      data_json   TEXT    NOT NULL,
-      updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS battle_pool (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id     INTEGER NOT NULL REFERENCES users(id),
-      username    TEXT    NOT NULL,
-      floor       INTEGER NOT NULL,
-      round       INTEGER NOT NULL,
-      bd_json     TEXT    NOT NULL,
-      power_score INTEGER NOT NULL DEFAULT 0,
-      uploaded_at TEXT    NOT NULL DEFAULT (datetime('now'))
-    );
-  `);
-
-  console.log('[DB] 数据库初始化完成');
 }
 
-export function getDB(): DbWrapper {
-  if (!_wrapper) throw new Error('数据库未初始化');
-  return _wrapper;
-}
-
-// 单例导出（兼容路由中的 import db from '../db/schema'）
-const db = new Proxy({} as DbWrapper, {
+/**
+ * 懒加载 Proxy：延迟绑定 better-sqlite3 Database 实例
+ * 与旧 DbWrapper 的 prepare/run/get/all/exec API 兼容
+ */
+const dbProxy = new Proxy({} as any, {
   get(_target, prop) {
-    if (!_wrapper) throw new Error('数据库未初始化');
-    return (_wrapper as any)[prop];
+    const db = _getDB();
+    const val = (db as any)[prop];
+    if (typeof val === 'function') {
+      return val.bind(db);
+    }
+    return val;
   },
 });
 
-export default db as DbWrapper;
+export default dbProxy;
