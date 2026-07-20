@@ -169,13 +169,6 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
     requestAnimationFrame(() => { el.scrollTop = st; });
   }
 
-  function updateBDZone(side: 'player' | 'enemy') {
-    const zoneId = side === 'player' ? 'sb-player-bd' : 'sb-enemy-bd';
-    updateZone(zoneId, renderDeployArea(side));
-    // 只对该侧 BD 重绑拖拽/折叠/tooltip 事件
-    bindBDEvents(side);
-  }
-
   function createBuildSkeleton() {
     const poolBtn = state.poolCollapsed ? '▶' : '◀';
     app.innerHTML = `
@@ -455,8 +448,13 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       updateZone('sb-header', renderHeaderContent());
       updateZone('sb-pool', renderPoolContent());
       bindPoolEvents();
-      updateBDZone('player');
-      updateBDZone('enemy');
+      // 更新两个 BD zone（仅内容，不绑事件）
+      updateZone('sb-player-bd', renderDeployArea('player'));
+      updateZone('sb-enemy-bd', renderDeployArea('enemy'));
+      // 一次性绑所有 BD 事件（避免双绑）
+      bindDragEvents();
+      bindTooltipEvents();
+      bindCardCollapseEvents();
     }
   }
 
@@ -685,7 +683,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
     const dragAttr = mode === 'build' ? ` data-instance="${instanceId}" data-side="${side}" draggable="true"` : '';
     const collapseLabel = cardCollapsed ? '展开' : '收起';
     const dropAttr = mode === 'build' ? ` data-dropzone="card" data-instance="${instanceId}" data-side="${side}"` : '';
-    h += `<div class="sb-card-header" data-cardtoggle="${instanceId}"${dragAttr}${dropAttr} style="cursor:pointer;">`;
+    h += `<div class="sb-card-header" data-cardtoggle="${instanceId}" data-defid="${isEntity ? edef!.id : ''}"${dragAttr}${dropAttr} style="cursor:pointer;">`;
     h += `<span class="sb-card-header-name">${isEntity ? edef!.name : (def as AffixDef).name}</span>`;
     h += '<span class="sb-card-header-keyinfo sb-card-keyinfo">';
     h += renderCardKeyInfo(item, mode, combatUnit);
@@ -702,15 +700,15 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       const hp = combatUnit ? `${Math.max(combatUnit.currentHp, 0)}/${combatUnit.totalHp}` : `${edef!.hp}/${edef!.hp}`;
       const stam = combatUnit ? `${Math.floor(combatUnit.currentStamina)}/${combatUnit.maxStamina}` : `${edef!.maxStamina}/${edef!.maxStamina}`;
       h += '<div class="sb-card-stats">';
-      h += `HP: <span id="cu-hp-${sideFirst}-${instanceId}">${hp}</span>`;
-      h += `  耐力: <span id="cu-sta-${sideFirst}-${instanceId}">${stam}</span>`;
+      h += `HP: <span id="cu-hp-${sideFirst}-${edef!.id}">${hp}</span>`;
+      h += `  耐力: <span id="cu-sta-${sideFirst}-${edef!.id}">${stam}</span>`;
       h += `  耐力回复: ${edef!.staminaRegen}/s`;
       h += '</div>';
       h += '<div class="sb-card-stats">';
       h += `负重: ${edef!.maxLoad}  槽耗: ${edef!.slotCost}`;
       if (mode === 'build') h += `  价值: ${edef!.value}`;
-      h += `<span id="cu-ov-${sideFirst}-${instanceId}" style="${combatUnit?.isOverloaded ? '' : 'display:none'}">  超重</span>`;
-      h += `<span id="cu-dead-${sideFirst}-${instanceId}" style="${combatUnit && combatUnit.currentHp <= 0 ? '' : 'display:none'}">  阵亡</span>`;
+      h += `<span id="cu-ov-${sideFirst}-${edef!.id}" style="${combatUnit?.isOverloaded ? '' : 'display:none'}">  超重</span>`;
+      h += `<span id="cu-dead-${sideFirst}-${edef!.id}" style="${combatUnit && combatUnit.currentHp <= 0 ? '' : 'display:none'}">  阵亡</span>`;
       h += '</div>';
     } else if (isEntity && edef) {
       h += '<div class="sb-card-stats">';
@@ -729,7 +727,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
         const matched = combatUnit.weapons.find(w => w.name === edef.name);
         if (matched) {
           const wIdx = combatUnit.weapons.indexOf(matched);
-          h += `伤:${matched.damage}  倒计时:<span id="cu-cd-${sideFirst}-${instanceId}-${wIdx}">${(Math.max(matched.remainingTime, 0) / 1000).toFixed(1)}s</span>  耐耗:${matched.staminaCost}  ${matched.targetType}${matched.priorityTarget ? ' 优先' + matched.priorityTarget : ''}`;
+          h += `伤:${matched.damage}  倒计时:<span id="cu-cd-${sideFirst}-${combatUnit!.entityId}-${wIdx}">${(Math.max(matched.remainingTime, 0) / 1000).toFixed(1)}s</span>  耐耗:${matched.staminaCost}  ${matched.targetType}${matched.priorityTarget ? ' 优先' + matched.priorityTarget : ''}`;
         } else {
           h += `伤:${edef.damage}  耗时:${edef.actionTime}ms  耐耗:${edef.staminaCost}  ${edef.targetType || ''}${edef.priorityTarget ? ' 优先' + edef.priorityTarget : ''}`;
         }
@@ -928,12 +926,9 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       if (!sideEl) return;
       const isPlayer = sideEl.id === 'sb-player-units';
       const units = isPlayer ? pu : eu;
-      const instId = (card.querySelector('[data-cardtoggle]') as HTMLElement)?.dataset.cardtoggle;
-      if (!instId || !units) return;
-      const unit = units.find(u => {
-        const edef = getEntityDef(u.entityId);
-        return edef && edef.id === instId;
-      });
+      const defId = (card.querySelector('[data-cardtoggle]') as HTMLElement)?.dataset.defid;
+      if (!defId || !units) return;
+      const unit = units.find(u => u.entityId === defId);
       card.classList.toggle('dead', !!(unit && unit.currentHp <= 0));
     });
     // 追加战斗日志
@@ -1012,17 +1007,6 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
     }
 
     bindPoolItemEvents();
-  }
-
-  // ============================================================
-  // BD 区事件（BD zone 更新后调用）
-  // ============================================================
-
-  function bindBDEvents(side: 'player' | 'enemy') {
-    // 拖拽、tooltip、折叠覆盖全局（双向独立 zone 但事件穿透），保留原有逻辑
-    bindDragEvents();
-    bindTooltipEvents();
-    bindCardCollapseEvents();
   }
 
   function bindPoolItemEvents() {
