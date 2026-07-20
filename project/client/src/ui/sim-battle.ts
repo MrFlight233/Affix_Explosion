@@ -72,10 +72,11 @@ function showSimTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affix', 
   const tip = ensureTooltip();
   const inner = tip.querySelector('.sb-tip-inner')!;
 
-  // 尝试获取实例（BD 中已有的物品）
+  // 尝试获取实例（BD 中已有的物品）— 优先 instanceId，fallback cardtoggle
   let inst: ItemInstance | null = null;
-  if (instanceId) {
-    inst = findItemInSlots(state.playerSlots, instanceId) || findItemInSlots(state.enemySlots, instanceId);
+  const lookupId = instanceId || null;
+  if (lookupId) {
+    inst = findItemInSlots(state.playerSlots, lookupId) || findItemInSlots(state.enemySlots, lookupId);
   }
 
   if (type === 'entity') {
@@ -125,28 +126,36 @@ function showSimTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affix', 
       h += '</div>';
     }
 
-    // 实例动态数据：词条 + 子实体
-    if (inst) {
-      const dynAffixes = (inst.children || []).filter(c => c.type === 'affix');
-      if (dynAffixes.length > 0) {
-        h += section(`动态词条 (${dynAffixes.length})`);
-        h += '<div class="sb-tip-chips">';
-        for (const a of dynAffixes) {
-          const ad = getAffixDef(a.defId);
-          h += `<span class="sb-tip-chip">${ad?.name || a.defId}</span>`;
-        }
-        h += '</div>';
+    // 实例动态数据：词条 + 子实体（有实例用实例，无实例用 defaultChildren）
+    const dynAffixes = (inst?.children || []).filter(c => c.type === 'affix');
+    const childEntities = (inst?.children || []).filter(c => c.type === 'entity');
+    // 无实例时（池物品），展示 defaultChildren
+    const defaultKids: string[] = !inst ? (def as any).defaultChildren || [] : [];
+    if (dynAffixes.length > 0) {
+      h += section(`动态词条 (${dynAffixes.length})`);
+      h += '<div class="sb-tip-chips">';
+      for (const a of dynAffixes) {
+        const ad = getAffixDef(a.defId);
+        h += `<span class="sb-tip-chip">${ad?.name || a.defId}</span>`;
       }
-      const children = (inst.children || []).filter(c => c.type === 'entity');
-      if (children.length > 0) {
-        h += section(`子实体 (${children.length})`);
-        h += '<div class="sb-tip-chips">';
-        for (const c of children) {
+      h += '</div>';
+    }
+    if (childEntities.length > 0 || defaultKids.length > 0) {
+      const count = childEntities.length || defaultKids.length;
+      h += section(`子实体 (${count})`);
+      h += '<div class="sb-tip-chips">';
+      if (childEntities.length > 0) {
+        for (const c of childEntities) {
           const cd = getEntityDef(c.defId);
           h += `<span class="sb-tip-chip">${cd?.name || c.defId}</span>`;
         }
-        h += '</div>';
+      } else {
+        for (const kidId of defaultKids) {
+          const cd = getEntityDef(kidId);
+          h += `<span class="sb-tip-chip">${cd?.name || kidId}</span>`;
+        }
       }
+      h += '</div>';
     }
 
     h += '<div class="sb-tip-footer">';
@@ -1664,12 +1673,12 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
   }
 
   function bindTooltipEvents() {
-    // BD 树中的实体/词条行 (有 data-defid 属性，可能有 data-instance)
+    // BD 树中的实体/词条行 (有 data-defid 属性，优先 data-instance/cardtoggle 做实例查询)
     document.querySelectorAll('#sb-player-bd [data-defid], #sb-enemy-bd [data-defid]').forEach(el => {
       const htmlEl = el as HTMLElement;
       const defId = htmlEl.dataset.defid!;
       const type = (htmlEl.dataset.type || 'entity') as 'entity' | 'affix';
-      const instId = htmlEl.dataset.instance || null;
+      const instId = htmlEl.dataset.instance || htmlEl.dataset.cardtoggle || null;
       htmlEl.addEventListener('mouseenter', (e) => showSimTooltip(e as MouseEvent, defId, type, instId));
       htmlEl.addEventListener('mouseleave', hideSimTooltip);
     });
@@ -1850,7 +1859,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       const hEl = el as HTMLElement;
       const defId = hEl.dataset.defid!;
       const type = (hEl.dataset.type || 'entity') as 'entity' | 'affix';
-      const instId = hEl.dataset.instance || null;
+      const instId = hEl.dataset.instance || hEl.dataset.cardtoggle || null;
       hEl.addEventListener('mouseenter', (ev) => showSimTooltip(ev as MouseEvent, defId, type, instId));
       hEl.addEventListener('mouseleave', hideSimTooltip);
     });
