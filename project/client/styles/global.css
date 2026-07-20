@@ -756,6 +756,7 @@ body {
 .sb-card.sb-card-collapsed .sb-card-body-collapsed { display: block; }
 /* 折叠态卡片标题样式调整 */
 .sb-card.sb-card-collapsed .sb-card-header-name { display: none; }
+.sb-card.sb-card-collapsed .sb-card-header-keyinfo { display: inline !important; }
 .sb-card:not(.sb-card-collapsed) .sb-card-header-keyinfo { display: none; }
 
 .sb-block-title {

@@ -170,6 +170,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
   }
 
   function createBuildSkeleton() {
+    stableDragBound = false;  // 重置稳定容器绑定标记
     const poolBtn = state.poolCollapsed ? '▶' : '◀';
     app.innerHTML = `
       <div id="sb-page">
@@ -595,8 +596,8 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
 
   // ---- 统一实体卡片渲染 ----
 
-  /** 返回实体一行关键信息（折叠视图用） */
-  function renderCardKeyInfo(item: ItemInstance, mode: 'build' | 'battle', combatUnit?: CombatUnitRuntime | null): string {
+  /** 返回实体一行关键信息（折叠视图用）。battle 模式下包含 cu-* span 以支持实时更新 */
+  function renderCardKeyInfo(item: ItemInstance, mode: 'build' | 'battle', combatUnit?: CombatUnitRuntime | null, sideFirst?: string): string {
     const edef = getEntityDef(item.defId);
     if (!edef) return item.defId;
     const isSt = isStarter(edef);
@@ -605,7 +606,12 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
     if (isSt) {
       const hp = combatUnit ? `${Math.max(combatUnit.currentHp, 0)}/${combatUnit.totalHp}` : `${edef.hp}/${edef.hp}`;
       const stam = combatUnit ? `${Math.floor(combatUnit.currentStamina)}/${combatUnit.maxStamina}` : `${edef.maxStamina}/${edef.maxStamina}`;
-      let s = `${edef.name}  HP:${hp}  耐力:${stam}`;
+      let s: string;
+      if (mode === 'battle' && combatUnit && sideFirst) {
+        s = `${edef.name}  HP:<span id="cu-hp-${sideFirst}-${edef.id}">${hp}</span>  耐力:<span id="cu-sta-${sideFirst}-${edef.id}">${stam}</span>`;
+      } else {
+        s = `${edef.name}  HP:${hp}  耐力:${stam}`;
+      }
       if (combatUnit?.isOverloaded) s += '  超重';
       if (combatUnit && combatUnit.currentHp <= 0) s += '  阵亡';
       return s;
@@ -615,7 +621,12 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
         const matched = combatUnit.weapons.find(w => w.name === edef.name);
         if (matched) {
           dmg = matched.damage;
-          time = `倒计时:${(Math.max(matched.remainingTime, 0) / 1000).toFixed(1)}s`;
+          if (sideFirst) {
+            const wIdx = combatUnit.weapons.indexOf(matched);
+            time = `倒计时:<span id="cu-cd-${sideFirst}-${combatUnit.entityId}-${wIdx}">${(Math.max(matched.remainingTime, 0) / 1000).toFixed(1)}s</span>`;
+          } else {
+            time = `倒计时:${(Math.max(matched.remainingTime, 0) / 1000).toFixed(1)}s`;
+          }
           order = matched.targetOrder;
         } else {
           dmg = edef.damage;
@@ -629,27 +640,26 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       }
       return `${edef.name}  伤:${dmg}  ${time}  顺序:${order}${edef.priorityTarget ? ' 优先' + edef.priorityTarget : ''}`;
     } else {
-      // passive
       const cat = getEntityCategory(edef);
       return `${edef.name}  重:${edef.weight}  ${cat}`;
     }
   }
 
-  /** 折叠状态下递归渲染子实体缩进树（纯文本行，无展开/折叠按钮） */
+  /** 折叠状态下递归渲染子实体缩进树 */
   function renderCollapsedChildTree(
     item: ItemInstance, depth: number, side: string,
     mode: 'build' | 'battle', combatUnit?: CombatUnitRuntime | null,
+    sideFirst?: string,
   ): string {
     const edef = getEntityDef(item.defId);
     if (!edef) return '';
     const ml = `margin-left:${Math.min(depth, 5) * 16}px;`;
     let h = `<div class="sb-collapsed-child" style="${ml}">`;
-    h += renderCardKeyInfo(item, mode, combatUnit);
+    h += renderCardKeyInfo(item, mode, combatUnit, sideFirst);
     h += '</div>';
-    // 继续递归子实体的子实体
     const entityChildren = (item.children || []).filter(c => c.type === 'entity');
     for (const child of entityChildren) {
-      h += renderCollapsedChildTree(child, depth + 1, side, mode, combatUnit);
+      h += renderCollapsedChildTree(child, depth + 1, side, mode, combatUnit, sideFirst);
     }
     return h;
   }
@@ -686,7 +696,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
     h += `<div class="sb-card-header" data-cardtoggle="${instanceId}" data-defid="${isEntity ? edef!.id : ''}"${dragAttr}${dropAttr} style="cursor:pointer;">`;
     h += `<span class="sb-card-header-name">${isEntity ? edef!.name : (def as AffixDef).name}</span>`;
     h += '<span class="sb-card-header-keyinfo sb-card-keyinfo">';
-    h += renderCardKeyInfo(item, mode, combatUnit);
+    h += renderCardKeyInfo(item, mode, combatUnit, sideFirst);
     h += '</span>';
     h += ` <span class="sb-card-collapse-btn">${collapseLabel}</span></div>`;
 
@@ -828,7 +838,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
     h += '<div class="sb-card-body-collapsed">';
     const foldedEntityChildren = (item.children || []).filter(c => c.type === 'entity');
     for (const child of foldedEntityChildren) {
-      h += renderCollapsedChildTree(child, depth + 1, side, mode, combatUnit);
+      h += renderCollapsedChildTree(child, depth + 1, side, mode, combatUnit, sideFirst);
     }
     h += '</div>'; // sb-card-body-collapsed
 
@@ -1044,27 +1054,51 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
     });
   }
 
+  // ============================================================
+  // 拖拽系统 — 模块级共享状态（避免闭包隔离导致的多 handler 竞争）
+  // ============================================================
+
+  let dropPlaceholder: HTMLElement | null = null;
+  let lastHover: { cardEl: HTMLElement; insertBefore: boolean } | null = null;
+  let stableDragBound = false;
+
+  function ensurePlaceholder(): HTMLElement {
+    if (!dropPlaceholder) {
+      dropPlaceholder = document.createElement('div');
+      dropPlaceholder.className = 'sb-drop-placeholder';
+    }
+    return dropPlaceholder;
+  }
+  function clearPlaceholder() {
+    lastHover = null;
+    if (dropPlaceholder) {
+      dropPlaceholder.classList.remove('active');
+      if (dropPlaceholder.parentNode) dropPlaceholder.parentNode.removeChild(dropPlaceholder);
+    }
+  }
+
   function bindDragEvents() {
-    // 第一层 drop zones: 整个 BD 面板 + .sb-deploy-area
-    const bdZones = [
-      { el: document.getElementById('sb-player-bd')!, side: 'player' as const },
-      { el: document.getElementById('sb-enemy-bd')!, side: 'enemy' as const },
-    ];
-    for (const { el, side } of bdZones) {
-      if (!el) continue;
-      bindDropZone(el, 'sim-battle', (payload, _zone, _slotIdx, e) => {
-        // 仅 BD 内部移动 + 曾靠近卡片标题 → 走排序
-        if (lastHover) {
-          const hdr = (lastHover.cardEl.matches('[data-dropzone="card"]') ? lastHover.cardEl : lastHover.cardEl.querySelector('[data-dropzone="card"]')) as HTMLElement;
-          if (hdr) {
-            const ib = lastHover.insertBefore;
-            const err = handleDropOnCard(payload, hdr.dataset.side as 'player'|'enemy', hdr.dataset.instance!, e, ib);
-            if (err) showToast('排序错误:'+err);
-            setDragPayload(null); clearPlaceholder(); return null;
+    // 第一层 drop zones: 整个 BD 面板（稳定容器，只绑一次避免事件累积）
+    if (!stableDragBound) {
+      const bdZones = [
+        { el: document.getElementById('sb-player-bd')!, side: 'player' as const },
+        { el: document.getElementById('sb-enemy-bd')!, side: 'enemy' as const },
+      ];
+      for (const { el, side } of bdZones) {
+        if (!el) continue;
+        bindDropZone(el, 'sim-battle', (payload, _zone, _slotIdx, e) => {
+          if (lastHover) {
+            const hdr = (lastHover.cardEl.matches('[data-dropzone="card"]') ? lastHover.cardEl : lastHover.cardEl.querySelector('[data-dropzone="card"]')) as HTMLElement;
+            if (hdr) {
+              const ib = lastHover.insertBefore;
+              const err = handleDropOnCard(payload, hdr.dataset.side as 'player'|'enemy', hdr.dataset.instance!, e, ib);
+              if (err) showToast('排序错误:'+err);
+              setDragPayload(null); clearPlaceholder(); return null;
+            }
           }
-        }
-        return handleDropInDeploy(payload, side, undefined, null, e);
-      });
+          return handleDropInDeploy(payload, side, undefined, null, e);
+        });
+      }
     }
 
     // 子实体区 drop zones — 若有 lastHover 走排序
@@ -1086,24 +1120,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       });
     });
 
-    // 卡片标题 drop zones（排序 + 词条挂载，占位符只在目标变化时移动）
-    let dropPlaceholder: HTMLElement | null = null;
-    let lastHover: { cardEl: HTMLElement; insertBefore: boolean } | null = null;
-    function ensurePlaceholder(): HTMLElement {
-      if (!dropPlaceholder) {
-        dropPlaceholder = document.createElement('div');
-        dropPlaceholder.className = 'sb-drop-placeholder';
-      }
-      return dropPlaceholder;
-    }
-    function clearPlaceholder() {
-      lastHover = null;
-      if (dropPlaceholder) {
-        dropPlaceholder.classList.remove('active');
-        if (dropPlaceholder.parentNode) dropPlaceholder.parentNode.removeChild(dropPlaceholder);
-      }
-    }
-
+    // 卡片标题 drop zones（排序 + 词条挂载）
     document.querySelectorAll('[data-dropzone="card"]').forEach(el => {
       const htmlEl = el as HTMLElement;
       const side = htmlEl.dataset.side as 'player' | 'enemy';
@@ -1192,46 +1209,47 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       });
     });
 
-    // BD 面板 dragleave — 完全离开时清除占位符
-    for (const id of ['sb-player-bd', 'sb-enemy-bd']) {
-      const bdEl = document.getElementById(id);
-      if (bdEl) {
-        bdEl.addEventListener('dragleave', (e) => {
-          if (!bdEl.contains(e.relatedTarget as Node)) {
-            clearPlaceholder();
-          }
-        });
+    // BD 面板 dragleave / 物品池移除目标 — 稳定容器，只绑一次
+    if (!stableDragBound) {
+      for (const id of ['sb-player-bd', 'sb-enemy-bd']) {
+        const bdEl = document.getElementById(id);
+        if (bdEl) {
+          bdEl.addEventListener('dragleave', (e) => {
+            if (!bdEl.contains(e.relatedTarget as Node)) {
+              clearPlaceholder();
+            }
+          });
+        }
       }
-    }
 
-    // 物品池面板作为移除目标
-    const poolEl = document.getElementById('sb-pool')!;
-    poolEl.addEventListener('dragover', (e) => {
-      const payload = getDragPayload();
-      // 只有从 BD 拖出的才显示移除提示
-      if (payload && payload.source === 'sim-battle') {
+      const poolEl = document.getElementById('sb-pool')!;
+      poolEl.addEventListener('dragover', (e) => {
+        const payload = getDragPayload();
+        if (payload && payload.source === 'sim-battle') {
+          e.preventDefault();
+          poolEl.classList.add('remove-target');
+        }
+      });
+      poolEl.addEventListener('dragleave', (e) => {
+        if (!poolEl.contains(e.relatedTarget as Node)) {
+          poolEl.classList.remove('remove-target');
+        }
+      });
+      poolEl.addEventListener('drop', (e) => {
         e.preventDefault();
-        poolEl.classList.add('remove-target');
-      }
-    });
-    poolEl.addEventListener('dragleave', (e) => {
-      if (!poolEl.contains(e.relatedTarget as Node)) {
         poolEl.classList.remove('remove-target');
-      }
-    });
-    poolEl.addEventListener('drop', (e) => {
-      e.preventDefault();
-      poolEl.classList.remove('remove-target');
-      const instanceId = e.dataTransfer!.getData('text/plain');
-      if (!instanceId) return;
-      // 判断是玩家方还是敌对方
-      let removed = removeFromSlots(state.playerSlots, instanceId);
-      if (!removed) removed = removeFromSlots(state.enemySlots, instanceId);
-      if (removed) {
-        setDragPayload(null);
-        renderZones();
-      }
-    });
+        const instanceId = e.dataTransfer!.getData('text/plain');
+        if (!instanceId) return;
+        let removed = removeFromSlots(state.playerSlots, instanceId);
+        if (!removed) removed = removeFromSlots(state.enemySlots, instanceId);
+        if (removed) {
+          setDragPayload(null);
+          renderZones();
+        }
+      });
+
+      stableDragBound = true;
+    }
   }
 
   function bindDropZone(
