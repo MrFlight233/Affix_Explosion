@@ -1744,6 +1744,26 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
         if (lbl) lbl.textContent = c ? '展开' : '收起';
       });
     });
+    // 固定词条 — rebuildSingleCard 后需重绑
+    card.querySelectorAll('[data-fixtoggle]').forEach(t => {
+      t.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const fi = (t as HTMLElement).dataset.fixtoggle!;
+        if (state.collapsedFixedAffixRows.has(fi)) state.collapsedFixedAffixRows.delete(fi);
+        else state.collapsedFixedAffixRows.add(fi);
+        rebuildSingleCard(fi);
+      });
+    });
+    // 动态词条 — rebuildSingleCard 后需重绑
+    card.querySelectorAll('[data-dyntoggle]').forEach(t => {
+      t.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const fi = (t as HTMLElement).dataset.dyntoggle!;
+        if (state.collapsedDynAffixRows.has(fi)) state.collapsedDynAffixRows.delete(fi);
+        else state.collapsedDynAffixRows.add(fi);
+        rebuildSingleCard(fi);
+      });
+    });
   }
 
   function bindBattleTooltipsOnCard(card: HTMLElement) {
