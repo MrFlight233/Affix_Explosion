@@ -46,67 +46,108 @@ interface SimBattleState {
 // Tooltip（紧凑格式）
 // ============================================================
 
+// ── Tooltip 辅助 ──
+function kv(k: string, v: string | number): string {
+  return `<span class="sb-tip-kv"><span class="sb-tip-key">${k}</span><span class="sb-tip-val">${v}</span></span>`;
+}
+function section(title: string): string {
+  return `<div class="sb-tip-section">${title}</div>`;
+}
+
 let tooltipEl: HTMLElement | null = null;
+let tipShowTimer: ReturnType<typeof setTimeout> | null = null;
 
 function ensureTooltip(): HTMLElement {
   if (!tooltipEl) {
     tooltipEl = document.createElement('div');
     tooltipEl.id = 'sb-tooltip';
-    tooltipEl.style.cssText = 'display:none;position:fixed;z-index:999;background:#fff;border:1px solid #e5e5e5;border-radius:6px;padding:8px 10px;font-size:12px;line-height:1.6;max-width:240px;pointer-events:none;box-shadow:0 2px 12px rgba(0,0,0,0.08);';
+    tooltipEl.innerHTML = '<div class="sb-tip-inner"></div>';
     document.body.appendChild(tooltipEl);
   }
   return tooltipEl;
 }
 
 function showSimTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affix') {
+  if (tipShowTimer) clearTimeout(tipShowTimer);
   const tip = ensureTooltip();
+  const inner = tip.querySelector('.sb-tip-inner')!;
+
   if (type === 'entity') {
     const def = getEntityDef(defId);
     if (!def) return;
     const cat = getEntityCategory(def);
-    const hasStarter = isStarter(def);
-    let h = `<div style="font-weight:bold;">${def.name}</div>`;
-    h += `<div style="color:#888;">${cat}${hasStarter ? ' · 启动端' : ''}</div>`;
-    h += '<div style="margin-top:4px;">';
-    if (hasStarter) {
-      h += `HP ${def.hp} &nbsp; 耐力 ${def.maxStamina}<br>`;
-      h += `回复 ${def.staminaRegen}/s &nbsp; 负重 ${def.maxLoad}<br>`;
+    const isSt = isStarter(def);
+    let h = `<div class="sb-tip-header"><span class="sb-tip-name">${def.name}</span><span class="sb-tip-badge">${cat}${isSt ? ' · 启动端' : def.isActive ? ' · 主动' : ' · 被动'}</span></div>`;
+
+    if (isSt) {
+      h += section('生存');
+      h += '<div class="sb-tip-grid">';
+      h += kv('HP', def.hp) + kv('耐力', def.maxStamina);
+      h += kv('回复', def.staminaRegen + '/s') + kv('负重', def.maxLoad);
+      h += '</div>';
     }
-    if (!hasStarter && def.isActive) {
-      h += `伤害 ${def.damage} &nbsp; 耗时 ${def.actionTime}ms<br>`;
-      h += `耐耗 ${def.staminaCost} &nbsp; ${def.targetType || ''}<br>`;
+    if (!isSt && def.isActive) {
+      h += section('攻击');
+      h += '<div class="sb-tip-grid">';
+      h += kv('伤害', def.damage) + kv('耗时', def.actionTime + 'ms');
+      h += kv('耐耗', def.staminaCost) + kv('目标', def.targetType || '—');
+      if (def.targetOrder) h += kv('顺序', def.targetOrder);
+      if (def.priorityTarget != null) h += kv('优先目标', def.priorityTarget);
+      h += '</div>';
     }
-    if (!hasStarter && !def.isActive) {
-      if (def.damage) h += `伤害加成 +${def.damage}<br>`;
-      if (def.regenBonus) h += `回复加成 +${def.regenBonus}/s<br>`;
-      if (def.hpBonus) h += `HP 加成 ${def.hpBonus > 0 ? '+' : ''}${def.hpBonus}<br>`;
-      h += `重量 ${def.weight}<br>`;
+    if (!isSt && !def.isActive) {
+      h += section('属性');
+      h += '<div class="sb-tip-grid">';
+      if (def.damage) h += kv('伤害加成', '+' + def.damage);
+      if (def.regenBonus) h += kv('回复加成', '+' + def.regenBonus + '/s');
+      if (def.hpBonus) h += kv('HP 加成', (def.hpBonus > 0 ? '+' : '') + def.hpBonus);
+      h += kv('重量', def.weight);
+      h += '</div>';
     }
-    h += `子实体槽 ${def.entitySlots} &nbsp; 词条槽 ${def.dynamicAffixSlots}<br>`;
-    h += `槽耗 ${def.slotCost}<br>`;
+    h += section('槽位');
+    h += '<div class="sb-tip-grid">';
+    h += kv('子实体槽', def.entitySlots) + kv('词条槽', def.dynamicAffixSlots);
+    h += kv('自身槽耗', def.slotCost);
+    h += '</div>';
     if (def.fixedAffixes.length > 0) {
-      const names = def.fixedAffixes.map(a => getAffixDef(a)?.name || a).join(', ');
-      h += `固定词条: ${names}<br>`;
+      h += section('固定词条');
+      h += '<div class="sb-tip-chips">';
+      for (const fa of def.fixedAffixes) {
+        const fd = getAffixDef(fa);
+        h += `<span class="sb-tip-chip">${fd?.name || fa}</span>`;
+      }
+      h += '</div>';
     }
-    h += `价值 ${def.value}</div>`;
-    tip.innerHTML = h;
+    h += '<div class="sb-tip-footer">';
+    h += `<span>价值</span><span>${def.value}</span>`;
+    h += '</div>';
+
+    inner.innerHTML = h;
   } else {
     const def = getAffixDef(defId);
     if (!def) return;
-    let h = `<div style="font-weight:bold;">${def.name}</div>`;
-    h += `<div style="color:#888;">${def.category}</div>`;
-    h += '<div style="margin-top:4px;">';
-    h += `${def.effect}<br>`;
-    h += `目标 ${def.target} &nbsp; 槽耗 ${def.slotCost}<br>`;
-    if (def.repeatable) h += '可重复<br>';
-    h += `价值 ${Math.abs(def.costValue)}</div>`;
-    tip.innerHTML = h;
+    let h = `<div class="sb-tip-header"><span class="sb-tip-name">${def.name}</span><span class="sb-tip-badge">${def.category}</span></div>`;
+    h += section('效果');
+    h += `<div class="sb-tip-effect">${def.effect}</div>`;
+    h += section('参数');
+    h += '<div class="sb-tip-grid">';
+    h += kv('目标', def.target) + kv('槽耗', def.slotCost);
+    if (def.repeatable) h += kv('可重复', '是');
+    h += '</div>';
+    h += '<div class="sb-tip-footer">';
+    h += `<span>价值</span><span>${Math.abs(def.costValue)}</span>`;
+    h += '</div>';
+    inner.innerHTML = h;
   }
-  tip.style.display = 'block';
+
+  // 显示 + 入场动画
+  tip.classList.add('sb-tip-visible');
+  tip.classList.remove('sb-tip-hiding');
   // 定位
-  const gap = 12;
+  const gap = 10;
   let left = e.clientX + gap;
   let top = e.clientY + gap;
+  tip.style.display = 'block';
   const rect = tip.getBoundingClientRect();
   if (left + rect.width > window.innerWidth - 10) left = e.clientX - rect.width - gap;
   if (top + rect.height > window.innerHeight - 10) top = e.clientY - rect.height - gap;
@@ -115,7 +156,13 @@ function showSimTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affix') 
 }
 
 function hideSimTooltip() {
-  if (tooltipEl) tooltipEl.style.display = 'none';
+  // 延迟隐藏以允许鼠标移动到 tooltip 上（虽然是 pointer-events:none）
+  tipShowTimer = setTimeout(() => {
+    if (tooltipEl) {
+      tooltipEl.classList.add('sb-tip-hiding');
+      tooltipEl.classList.remove('sb-tip-visible');
+    }
+  }, 50);
 }
 
 // ============================================================

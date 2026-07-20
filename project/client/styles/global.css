@@ -882,15 +882,79 @@ body {
   background: #fef2f2; border-color: #fecaca; color: #dc2626;
 }
 
-/* ── Tooltip ── */
+/* ── Tooltip（悬浮详情卡）── */
 #sb-tooltip {
-  border-radius: 6px !important;
-  border: 1px solid var(--sb-border) !important;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.08) !important;
-  font-size: 12px !important;
-  line-height: 1.6 !important;
-  max-width: 240px !important;
+  position: fixed; z-index: 999; pointer-events: none;
+  opacity: 0; transform: translateY(4px);
+  transition: opacity 150ms var(--sb-ease-out), transform 150ms var(--sb-ease-out);
 }
+#sb-tooltip.sb-tip-visible { opacity: 1; transform: translateY(0); }
+#sb-tooltip.sb-tip-hiding { opacity: 0; transform: translateY(-2px); }
+
+.sb-tip-inner {
+  background: var(--sb-surface); border: 1px solid var(--sb-border);
+  border-radius: 8px; padding: 0;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.10), 0 0 0 0.5px rgba(0,0,0,0.04);
+  min-width: 200px; max-width: 280px;
+  font-size: 12px; line-height: 1.55;
+  color: var(--sb-text); overflow: hidden;
+}
+
+/* 头部 */
+.sb-tip-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--sb-border);
+}
+.sb-tip-name { font-weight: 600; font-size: 13px; color: var(--sb-text); }
+.sb-tip-badge {
+  font-size: 10px; font-weight: 500; color: var(--sb-text-muted);
+  background: #f5f5f5; padding: 2px 8px; border-radius: 10px;
+  white-space: nowrap;
+}
+
+/* 分组标题 */
+.sb-tip-section {
+  font-size: 10px; font-weight: 600; color: var(--sb-text-muted);
+  text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 8px 12px 2px;
+}
+
+/* 键值网格 */
+.sb-tip-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 2px 16px;
+  padding: 2px 12px 6px;
+}
+.sb-tip-kv { display: flex; justify-content: space-between; gap: 8px; }
+.sb-tip-key { color: var(--sb-text-muted); font-size: 11px; white-space: nowrap; }
+.sb-tip-val {
+  color: var(--sb-text); font-size: 12px; font-weight: 500;
+  white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+
+/* 效果描述 */
+.sb-tip-effect {
+  padding: 2px 12px 6px;
+  font-size: 12px; color: var(--sb-text-secondary); line-height: 1.55;
+}
+
+/* 固定词条 chips */
+.sb-tip-chips {
+  display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 12px 8px;
+}
+.sb-tip-chip {
+  font-size: 10px; padding: 1px 8px;
+  background: #f5f5f5; border: 1px solid var(--sb-border);
+  border-radius: 3px; color: var(--sb-text-secondary);
+}
+
+/* 底部 */
+.sb-tip-footer {
+  display: flex; justify-content: space-between;
+  padding: 6px 12px 8px; border-top: 1px solid var(--sb-border);
+  font-size: 11px; color: var(--sb-text-muted);
+}
+.sb-tip-footer span:last-child { font-weight: 600; color: var(--sb-text); }
 
 /* ── Toast ── */
 #sb-toast {
