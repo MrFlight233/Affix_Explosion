@@ -46,12 +46,163 @@ interface SimBattleState {
 // Tooltip（紧凑格式）
 // ============================================================
 
-// ── Tooltip 辅助 ──
-function kv(k: string, v: string | number): string {
+// ── Tooltip ──
+function tipkv(k: string, v: string | number): string {
   return `<span class="sb-tip-kv"><span class="sb-tip-key">${k}</span><span class="sb-tip-val">${v}</span></span>`;
 }
-function section(title: string): string {
+function tipSection(title: string): string {
   return `<div class="sb-tip-section">${title}</div>`;
+}
+function tipIndent(depth: number): string {
+  return `margin-left:${depth * 12}px;`;
+}
+
+/** 递归计算实体总值：自身 + 固定词条 + 动态词条 + 子孙实体 */
+function computeTotalValue(item: ItemInstance): number {
+  const def = getEntityDef(item.defId);
+  let total = def?.value || 0;
+  if (def) {
+    for (const fa of def.fixedAffixes) {
+      const ad = getAffixDef(fa);
+      if (ad) total += Math.abs(ad.costValue);
+    }
+  }
+  for (const c of (item.children || [])) {
+    if (c.type === 'affix') {
+      const ad = getAffixDef(c.defId);
+      if (ad) total += Math.abs(ad.costValue);
+    } else if (c.type === 'entity') {
+      total += computeTotalValue(c);
+    }
+  }
+  return total;
+}
+
+/** 从固定+动态词条中提取所有类型标签 */
+function getTypeBadges(def: EntityDef, inst?: ItemInstance | null): string[] {
+  const tags: string[] = [];
+  const allAffixIds = new Set(def.fixedAffixes);
+  if (inst) {
+    for (const c of (inst.children || [])) {
+      if (c.type === 'affix') allAffixIds.add(c.defId);
+    }
+  }
+  const map: Record<string, string> = {
+    starter: '启动端', follower: '随从', weapon_type: '武器',
+    armor_type: '防具', accessory_type: '饰品',
+    container1: '容器', container2: '容器', container3: '容器', container4: '容器',
+  };
+  const seen = new Set<string>();
+  for (const aid of allAffixIds) {
+    const label = map[aid];
+    if (label && !seen.has(label)) { seen.add(label); tags.push(label); }
+  }
+  tags.push(def.isActive ? '主动' : '被动');
+  return tags;
+}
+
+/** 递归渲染实例子树（tooltip 用），depth=0 为顶层 */
+function renderTooltipTree(
+  item: ItemInstance, def: EntityDef, depth: number,
+  sideFirst?: string, combatUnit?: CombatUnitRuntime | null,
+): string {
+  const isSt = isStarter(def);
+  const indent = tipIndent(depth);
+  let h = '';
+
+  if (depth === 0) {
+    // 顶层属性
+    if (isSt) {
+      const hp = combatUnit ? `${Math.max(combatUnit.currentHp, 0)}/${combatUnit.totalHp}` : `${def.hp}/${def.hp}`;
+      const stam = combatUnit ? `${Math.floor(combatUnit.currentStamina)}/${combatUnit.maxStamina}` : `${def.maxStamina}/${def.maxStamina}`;
+      h += tipSection('生存');
+      h += '<div class="sb-tip-grid">';
+      h += tipkv('HP', hp) + tipkv('耐力', stam);
+      h += tipkv('回复', def.staminaRegen + '/s') + tipkv('负重', def.maxLoad);
+      h += '</div>';
+    }
+    if (def.isActive) {
+      h += tipSection('攻击');
+      h += '<div class="sb-tip-grid">';
+      let dmg = def.damage, time = def.actionTime + 'ms';
+      if (combatUnit) {
+        const matched = combatUnit.weapons.find(w => w.name === def.name);
+        if (matched) { dmg = matched.damage; time = `${(Math.max(matched.remainingTime, 0) / 1000).toFixed(1)}s`; }
+      }
+      h += tipkv('伤害', dmg) + tipkv('耗时', time);
+      h += tipkv('耐耗', def.staminaCost) + tipkv('目标', def.targetType || '—');
+      if (def.targetOrder) h += tipkv('顺序', def.targetOrder);
+      if (def.priorityTarget != null) h += tipkv('优先目标', def.priorityTarget);
+      h += '</div>';
+    }
+    if (!isSt && !def.isActive) {
+      h += tipSection('属性');
+      h += '<div class="sb-tip-grid">';
+      if (def.damage) h += tipkv('伤害加成', '+' + def.damage);
+      if (def.regenBonus) h += tipkv('回复加成', '+' + def.regenBonus + '/s');
+      if (def.hpBonus) h += tipkv('HP 加成', (def.hpBonus > 0 ? '+' : '') + def.hpBonus);
+      h += tipkv('重量', def.weight);
+      h += '</div>';
+    }
+    // 自身槽耗
+    h += `<div class="sb-tip-slotcost">自身槽耗 ${def.slotCost}</div>`;
+
+    // 固定词条 — 一行一条
+    if (def.fixedAffixes.length > 0) {
+      h += tipSection('固定词条');
+      for (const fa of def.fixedAffixes) {
+        const fd = getAffixDef(fa);
+        h += `<div class="sb-tip-fixed-row" style="${indent}">${fd?.name || fa}  <span class="sb-tip-fixed-effect">${fd?.effect || ''}</span></div>`;
+      }
+    }
+  }
+
+  // children: 先词条后实体
+  const affixes = (item.children || []).filter(c => c.type === 'affix');
+  const entities = (item.children || []).filter(c => c.type === 'entity');
+  const affixSlots = def.dynamicAffixSlots || 0;
+  const effSlots = getEffectiveEntitySlots(def, item);
+  const usedSlots = countUsedSlots(item);
+
+  if (depth === 0 && (affixSlots > 0 || affixes.length > 0)) {
+    h += tipSection(`动态词条 (${affixes.length}/${affixSlots} 槽位)`);
+    for (const a of affixes) {
+      const ad = getAffixDef(a.defId);
+      h += `<div class="sb-tip-tree-row" style="${tipIndent(1)}">${ad?.name || a.defId}  <span class="sb-tip-muted">[${ad?.category || ''}]</span>  ${ad?.effect || ''}</div>`;
+    }
+  }
+  if (depth > 0 && affixes.length > 0) {
+    for (const a of affixes) {
+      const ad = getAffixDef(a.defId);
+      h += `<div class="sb-tip-tree-row" style="${indent}">${ad?.name || a.defId}  <span class="sb-tip-muted">[${ad?.category || ''}]</span>  ${ad?.effect || ''}</div>`;
+    }
+  }
+
+  if (entities.length > 0) {
+    if (depth === 0) {
+      h += tipSection(`子实体 (${usedSlots}/${effSlots} 槽位)`);
+    }
+    for (const child of entities) {
+      const cd = getEntityDef(child.defId);
+      if (!cd) continue;
+      let row = `<div class="sb-tip-tree-row" style="${depth === 0 ? tipIndent(1) : indent}">`;
+      row += `<span class="sb-tip-entity-name">${cd.name}</span>`;
+      if (isStarter(cd)) {
+        row += `  HP:${cd.hp}/${cd.hp}  耐力:${cd.maxStamina}/${cd.maxStamina}`;
+      } else if (cd.isActive) {
+        row += `  伤:${cd.damage}  ${cd.actionTime}ms  顺序:${cd.targetOrder || ''}`;
+      } else {
+        row += `  重:${cd.weight}  ${getEntityCategory(cd)}`;
+      }
+      row += `  <span class="sb-tip-muted">槽耗${cd.slotCost}</span>`;
+      row += '</div>';
+      h += row;
+      // 递归子实体的子实体
+      h += renderTooltipTree(child, cd, depth + 1, sideFirst, combatUnit);
+    }
+  }
+
+  return h;
 }
 
 let tooltipEl: HTMLElement | null = null;
@@ -72,107 +223,85 @@ function showSimTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affix', 
   const tip = ensureTooltip();
   const inner = tip.querySelector('.sb-tip-inner')!;
 
-  // 尝试获取实例（BD 中已有的物品）— 优先 instanceId，fallback cardtoggle
-  let inst: ItemInstance | null = null;
-  const lookupId = instanceId || null;
-  if (lookupId) {
-    inst = findItemInSlots(state.playerSlots, lookupId) || findItemInSlots(state.enemySlots, lookupId);
-  }
-
   if (type === 'entity') {
     const def = getEntityDef(defId);
     if (!def) return;
-    const cat = getEntityCategory(def);
-    const isSt = isStarter(def);
-    let h = `<div class="sb-tip-header"><span class="sb-tip-name">${def.name}</span><span class="sb-tip-badge">${cat}${isSt ? ' · 启动端' : def.isActive ? ' · 主动' : ' · 被动'}</span></div>`;
+    // 优先查找实例
+    let inst: ItemInstance | null = null;
+    if (instanceId) {
+      inst = findItemInSlots(state.playerSlots, instanceId) || findItemInSlots(state.enemySlots, instanceId);
+    }
+    const badges = getTypeBadges(def, inst);
+    let h = `<div class="sb-tip-header"><div class="sb-tip-name">${def.name}</div>`;
+    h += `<div class="sb-tip-badges">${badges.join(' · ')}</div></div>`;
 
-    if (isSt) {
-      h += section('生存');
-      h += '<div class="sb-tip-grid">';
-      h += kv('HP', def.hp) + kv('耐力', def.maxStamina);
-      h += kv('回复', def.staminaRegen + '/s') + kv('负重', def.maxLoad);
+    if (inst) {
+      // 实例模式：递归渲染完整树
+      let cu: CombatUnitRuntime | null | undefined = undefined;
+      h += renderTooltipTree(inst, def, 0, undefined, cu);
+      h += '<div class="sb-tip-footer">';
+      h += `<span>价值</span><span>${computeTotalValue(inst)}</span>`;
       h += '</div>';
-    }
-    if (!isSt && def.isActive) {
-      h += section('攻击');
-      h += '<div class="sb-tip-grid">';
-      h += kv('伤害', def.damage) + kv('耗时', def.actionTime + 'ms');
-      h += kv('耐耗', def.staminaCost) + kv('目标', def.targetType || '—');
-      if (def.targetOrder) h += kv('顺序', def.targetOrder);
-      if (def.priorityTarget != null) h += kv('优先目标', def.priorityTarget);
-      h += '</div>';
-    }
-    if (!isSt && !def.isActive) {
-      h += section('属性');
-      h += '<div class="sb-tip-grid">';
-      if (def.damage) h += kv('伤害加成', '+' + def.damage);
-      if (def.regenBonus) h += kv('回复加成', '+' + def.regenBonus + '/s');
-      if (def.hpBonus) h += kv('HP 加成', (def.hpBonus > 0 ? '+' : '') + def.hpBonus);
-      h += kv('重量', def.weight);
-      h += '</div>';
-    }
-    h += section('槽位');
-    h += '<div class="sb-tip-grid">';
-    h += kv('子实体槽', def.entitySlots) + kv('词条槽', def.dynamicAffixSlots);
-    h += kv('自身槽耗', def.slotCost);
-    h += '</div>';
-    if (def.fixedAffixes.length > 0) {
-      h += section('固定词条');
-      h += '<div class="sb-tip-chips">';
-      for (const fa of def.fixedAffixes) {
-        const fd = getAffixDef(fa);
-        h += `<span class="sb-tip-chip">${fd?.name || fa}</span>`;
+    } else {
+      // 池物品模式：静态定义 + defaultChildren
+      const isSt = isStarter(def);
+      if (isSt) {
+        h += tipSection('生存');
+        h += '<div class="sb-tip-grid">';
+        h += tipkv('HP', def.hp) + tipkv('耐力', def.maxStamina);
+        h += tipkv('回复', def.staminaRegen + '/s') + tipkv('负重', def.maxLoad);
+        h += '</div>';
       }
-      h += '</div>';
-    }
-
-    // 实例动态数据：词条 + 子实体（有实例用实例，无实例用 defaultChildren）
-    const dynAffixes = (inst?.children || []).filter(c => c.type === 'affix');
-    const childEntities = (inst?.children || []).filter(c => c.type === 'entity');
-    // 无实例时（池物品），展示 defaultChildren
-    const defaultKids: string[] = !inst ? (def as any).defaultChildren || [] : [];
-    if (dynAffixes.length > 0) {
-      h += section(`动态词条 (${dynAffixes.length})`);
-      h += '<div class="sb-tip-chips">';
-      for (const a of dynAffixes) {
-        const ad = getAffixDef(a.defId);
-        h += `<span class="sb-tip-chip">${ad?.name || a.defId}</span>`;
+      if (def.isActive) {
+        h += tipSection('攻击');
+        h += '<div class="sb-tip-grid">';
+        h += tipkv('伤害', def.damage) + tipkv('耗时', def.actionTime + 'ms');
+        h += tipkv('耐耗', def.staminaCost) + tipkv('目标', def.targetType || '—');
+        if (def.targetOrder) h += tipkv('顺序', def.targetOrder);
+        if (def.priorityTarget != null) h += tipkv('优先目标', def.priorityTarget);
+        h += '</div>';
       }
-      h += '</div>';
-    }
-    if (childEntities.length > 0 || defaultKids.length > 0) {
-      const count = childEntities.length || defaultKids.length;
-      h += section(`子实体 (${count})`);
-      h += '<div class="sb-tip-chips">';
-      if (childEntities.length > 0) {
-        for (const c of childEntities) {
-          const cd = getEntityDef(c.defId);
-          h += `<span class="sb-tip-chip">${cd?.name || c.defId}</span>`;
+      if (!isSt && !def.isActive) {
+        h += tipSection('属性');
+        h += '<div class="sb-tip-grid">';
+        if (def.damage) h += tipkv('伤害加成', '+' + def.damage);
+        if (def.regenBonus) h += tipkv('回复加成', '+' + def.regenBonus + '/s');
+        if (def.hpBonus) h += tipkv('HP 加成', (def.hpBonus > 0 ? '+' : '') + def.hpBonus);
+        h += tipkv('重量', def.weight);
+        h += '</div>';
+      }
+      h += `<div class="sb-tip-slotcost">自身槽耗 ${def.slotCost}</div>`;
+      if (def.fixedAffixes.length > 0) {
+        h += tipSection('固定词条');
+        for (const fa of def.fixedAffixes) {
+          const fd = getAffixDef(fa);
+          h += `<div class="sb-tip-fixed-row">${fd?.name || fa}  <span class="sb-tip-fixed-effect">${fd?.effect || ''}</span></div>`;
         }
-      } else {
+      }
+      const defaultKids: string[] = (def as any).defaultChildren || [];
+      if (defaultKids.length > 0) {
+        h += tipSection(`子实体 (${defaultKids.length})`);
         for (const kidId of defaultKids) {
           const cd = getEntityDef(kidId);
-          h += `<span class="sb-tip-chip">${cd?.name || kidId}</span>`;
+          h += `<div class="sb-tip-tree-row" style="${tipIndent(1)}"><span class="sb-tip-entity-name">${cd?.name || kidId}</span></div>`;
         }
       }
+      h += '<div class="sb-tip-footer">';
+      h += `<span>价值</span><span>${def.value}</span>`;
       h += '</div>';
     }
-
-    h += '<div class="sb-tip-footer">';
-    h += `<span>价值</span><span>${def.value}</span>`;
-    h += '</div>';
-
     inner.innerHTML = h;
   } else {
     const def = getAffixDef(defId);
     if (!def) return;
-    let h = `<div class="sb-tip-header"><span class="sb-tip-name">${def.name}</span><span class="sb-tip-badge">${def.category}</span></div>`;
-    h += section('效果');
+    let h = `<div class="sb-tip-header"><div class="sb-tip-name">${def.name}</div>`;
+    h += `<div class="sb-tip-badges">${def.category}</div></div>`;
+    h += tipSection('效果');
     h += `<div class="sb-tip-effect">${def.effect}</div>`;
-    h += section('参数');
+    h += tipSection('参数');
     h += '<div class="sb-tip-grid">';
-    h += kv('目标', def.target) + kv('槽耗', def.slotCost);
-    if (def.repeatable) h += kv('可重复', '是');
+    h += tipkv('目标', def.target) + tipkv('槽耗', def.slotCost);
+    if (def.repeatable) h += tipkv('可重复', '是');
     h += '</div>';
     h += '<div class="sb-tip-footer">';
     h += `<span>价值</span><span>${Math.abs(def.costValue)}</span>`;
@@ -180,10 +309,9 @@ function showSimTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affix', 
     inner.innerHTML = h;
   }
 
-  // 显示 + 入场动画
+  // 入场动画 + 定位
   tip.classList.add('sb-tip-visible');
   tip.classList.remove('sb-tip-hiding');
-  // 定位
   const gap = 10;
   let left = e.clientX + gap;
   let top = e.clientY + gap;
@@ -196,7 +324,6 @@ function showSimTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affix', 
 }
 
 function hideSimTooltip() {
-  // 延迟隐藏以允许鼠标移动到 tooltip 上（虽然是 pointer-events:none）
   tipShowTimer = setTimeout(() => {
     if (tooltipEl) {
       tooltipEl.classList.add('sb-tip-hiding');
@@ -972,11 +1099,12 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
   // ---- 战斗 Tooltip ----
 
   function bindBattleTooltips() {
-    document.querySelectorAll('#sb-battle-body [data-defid]').forEach(el => {
+    document.querySelectorAll('#sb-battle-body .sb-card-header[data-defid]').forEach(el => {
       const htmlEl = el as HTMLElement;
       const defId = htmlEl.dataset.defid!;
       const type = (htmlEl.dataset.type || 'entity') as 'entity' | 'affix';
-      htmlEl.addEventListener('mouseenter', (e) => showSimTooltip(e as MouseEvent, defId, type));
+      const instId = htmlEl.dataset.cardtoggle || null;
+      htmlEl.addEventListener('mouseenter', (e) => showSimTooltip(e as MouseEvent, defId, type, instId));
       htmlEl.addEventListener('mouseleave', hideSimTooltip);
     });
   }
@@ -1673,8 +1801,8 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
   }
 
   function bindTooltipEvents() {
-    // BD 树中的实体/词条行 (有 data-defid 属性，优先 data-instance/cardtoggle 做实例查询)
-    document.querySelectorAll('#sb-player-bd [data-defid], #sb-enemy-bd [data-defid]').forEach(el => {
+    // BD 树中的卡片标题行（不匹配卡体内词条行，避免 getEntityDef 失败）
+    document.querySelectorAll('#sb-player-bd .sb-card-header[data-defid], #sb-enemy-bd .sb-card-header[data-defid]').forEach(el => {
       const htmlEl = el as HTMLElement;
       const defId = htmlEl.dataset.defid!;
       const type = (htmlEl.dataset.type || 'entity') as 'entity' | 'affix';

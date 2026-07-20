@@ -908,15 +908,13 @@ body {
 
 /* 头部 */
 .sb-tip-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 12px 8px;
+  padding: 10px 12px 6px;
   border-bottom: 1px solid var(--sb-border);
 }
-.sb-tip-name { font-weight: 600; font-size: 13px; color: var(--sb-text); }
-.sb-tip-badge {
+.sb-tip-name { font-weight: 600; font-size: 13px; color: var(--sb-text); margin-bottom: 4px; }
+.sb-tip-badges {
   font-size: 10px; font-weight: 500; color: var(--sb-text-muted);
-  background: #f5f5f5; padding: 2px 8px; border-radius: 10px;
-  white-space: nowrap;
+  display: flex; flex-wrap: wrap; gap: 2px 4px;
 }
 
 /* 分组标题 */
@@ -944,16 +942,6 @@ body {
   font-size: 12px; color: var(--sb-text-secondary); line-height: 1.55;
 }
 
-/* 固定词条 chips */
-.sb-tip-chips {
-  display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 12px 8px;
-}
-.sb-tip-chip {
-  font-size: 10px; padding: 1px 8px;
-  background: #f5f5f5; border: 1px solid var(--sb-border);
-  border-radius: 3px; color: var(--sb-text-secondary);
-}
-
 /* 底部 */
 .sb-tip-footer {
   display: flex; justify-content: space-between;
@@ -961,6 +949,26 @@ body {
   font-size: 11px; color: var(--sb-text-muted);
 }
 .sb-tip-footer span:last-child { font-weight: 600; color: var(--sb-text); }
+
+/* 自身槽耗 */
+.sb-tip-slotcost {
+  padding: 4px 12px; font-size: 11px; color: var(--sb-text-secondary);
+}
+
+/* 固定词条行 */
+.sb-tip-fixed-row {
+  padding: 2px 12px; font-size: 11px; color: var(--sb-text-secondary);
+  line-height: 1.55;
+}
+.sb-tip-fixed-effect { color: var(--sb-text-muted); }
+
+/* 树行（动态词条/子实体） */
+.sb-tip-tree-row {
+  padding: 2px 12px; font-size: 11px; color: var(--sb-text-secondary);
+  line-height: 1.55;
+}
+.sb-tip-entity-name { font-weight: 500; color: var(--sb-text); }
+.sb-tip-muted { color: var(--sb-text-muted); }
 
 /* ── Toast ── */
 #sb-toast {
