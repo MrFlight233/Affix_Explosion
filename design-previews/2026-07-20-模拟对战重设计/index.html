@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>模拟对战 · 设计方向预览</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif; }
+
+  body {
+    background: #f5f3f0;
+    color: #333;
+    min-height: 100dvh;
+  }
+
+  /* ── Top Bar ── */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 24px;
+    background: #fff; border-bottom: 1px solid #e8e4df;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .topbar h1 { font-size: 15px; font-weight: 600; }
+  .topbar .note { font-size: 12px; color: #999; }
+
+  /* ── Dials Row ── */
+  .dials-row {
+    display: flex; gap: 24px; align-items: center; padding: 16px 24px;
+    background: #faf9f7; border-bottom: 1px solid #eee;
+    flex-wrap: wrap;
+  }
+  .dial-group { display: flex; align-items: center; gap: 8px; }
+  .dial-group label { font-size: 12px; color: #666; white-space: nowrap; min-width: 70px; }
+  .dial-group input[type=range] { width: 120px; accent-color: #555; }
+  .dial-group .dial-val {
+    font-size: 11px; color: #999; min-width: 28px; text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── Grid ── */
+  .preview-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    padding: 24px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  @media (max-width: 860px) { .preview-grid { grid-template-columns: 1fr; } }
+
+  /* ── Direction Card ── */
+  .dir-card {
+    background: #fff; border: 1px solid #e8e4df; border-radius: 8px;
+    overflow: hidden;
+    transition: box-shadow 0.2s, border-color 0.2s;
+  }
+  .dir-card:hover { box-shadow: 0 2px 16px rgba(0,0,0,0.08); border-color: #ccc; }
+  .dir-card.recommended { border-color: #c4a574; }
+  .dir-card.recommended::before {
+    content: '★ 推荐'; display: block;
+    font-size: 11px; font-weight: 600; color: #fff; background: #c4a574;
+    padding: 4px 12px; text-align: center; letter-spacing: 0.5px;
+  }
+
+  /* ── Mockup Stage ── */
+  .mockup-stage {
+    padding: 12px;
+    min-height: 340px;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+  }
+
+  /* ── Card Footer ── */
+  .dir-footer {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px; border-top: 1px solid #f0eee9;
+    gap: 10px;
+  }
+  .dir-info { flex: 1; }
+  .dir-label { font-size: 13px; font-weight: 600; }
+  .dir-tagline { font-size: 11px; color: #888; margin-top: 2px; }
+
+  .qmdp-pick-button {
+    flex-shrink: 0;
+    padding: 6px 18px; border: 1px solid #ccc; border-radius: 6px;
+    background: #fff; font-size: 13px; cursor: pointer; font-weight: 500;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .qmdp-pick-button:hover { background: #f5f5f5; border-color: #999; }
+
+  /* ── Explanation Panel ── */
+  .explain-panel {
+    max-width: 1400px; margin: 0 auto; padding: 0 24px 32px;
+  }
+  .explain-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+  }
+  @media (max-width: 860px) { .explain-grid { grid-template-columns: 1fr; } }
+  .explain-card {
+    padding: 14px; border: 1px solid #e8e4df; border-radius: 6px;
+    background: #faf9f7; font-size: 12px; line-height: 1.8;
+  }
+  .explain-card h4 { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .explain-card .meta { color: #888; font-size: 11px; }
+  .explain-card .rec-reason { color: #8b6914; font-size: 11px; margin-top: 6px; padding-top: 6px; border-top: 1px solid #e8e4df; }
+
+  /* ── Confirm Modal ── */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.3);
+    z-index: 999; align-items: center; justify-content: center;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal-box {
+    background: #fff; border-radius: 12px; padding: 28px 32px;
+    max-width: 420px; width: 90%; box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+  }
+  .modal-box h3 { font-size: 16px; margin-bottom: 16px; }
+  .modal-box .chosen-label { font-size: 14px; color: #888; margin-bottom: 4px; }
+  .modal-box .chosen-name { font-size: 18px; font-weight: 700; margin-bottom: 14px; }
+  .modal-box .dial-summary { font-size: 12px; color: #666; margin-bottom: 16px; line-height: 1.8; }
+  .modal-box textarea {
+    width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px;
+    font-size: 13px; resize: vertical; min-height: 56px; font-family: inherit;
+  }
+  .modal-box .modal-actions { display: flex; gap: 10px; margin-top: 16px; justify-content: flex-end; }
+  .modal-box .modal-actions button {
+    padding: 8px 20px; border-radius: 6px; font-size: 13px; cursor: pointer; border: none;
+  }
+  .modal-box .btn-cancel { background: #f0f0f0; color: #555; }
+  .modal-box .btn-confirm { background: #333; color: #fff; }
+
+  /* ── Toast ── */
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: #333; color: #fff; padding: 10px 24px; border-radius: 8px;
+    font-size: 13px; z-index: 2000; display: none;
+    animation: toastIn 0.3s ease-out;
+  }
+  @keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(12px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+
+  /* ═══════════════════════════════════════════
+     DIRECTION A STYLES — 渐进优化
+     ═══════════════════════════════════════════ */
+  .dir-a { --bg: #fafaf9; --card-bg: #fff; --border: #e6e4e0; --text: #3d3a35;
+    --muted: #8a8478; --accent: #4a6fa5; --header-bg: #f5f4f1; }
+  .dir-a .mock { display: flex; flex-direction: column; gap: 0; width: 100%;
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 12px; color: var(--text); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .dir-a .mock-hdr {
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+    background: var(--header-bg); border-bottom: 1px solid var(--border);
+    font-size: 11px;
+  }
+  .dir-a .mock-hdr strong { font-size: 13px; font-weight: 600; }
+  .dir-a .mock-hdr .btn { font-size: 10px; padding: 3px 10px; border: 1px solid var(--border); border-radius: 4px; background: #fff; cursor: default; }
+  .dir-a .mock-hdr .btn.start { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .dir-a .mock-hdr select { font-size: 10px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 3px; }
+  .dir-a .mock-body { display: flex; flex: 1; min-height: 180px; }
+  .dir-a .mock-pool {
+    width: 130px; border-right: 1px solid var(--border); padding: 6px;
+    background: #fdfdfc; overflow: hidden;
+  }
+  .dir-a .mock-pool .filters { display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 6px; }
+  .dir-a .mock-pool .fil-btn { font-size: 8px; padding: 1px 5px; border: 1px solid var(--border); border-radius: 3px; background: #fafaf9; color: var(--muted); }
+  .dir-a .mock-pool .fil-btn.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .dir-a .mock-pool .pool-item { font-size: 10px; padding: 2px 4px; border-bottom: 1px solid #f5f4f1; display: flex; justify-content: space-between; }
+  .dir-a .mock-pool .pool-item .dim { color: var(--muted); font-size: 8px; }
+  .dir-a .mock-bd { flex: 1; padding: 8px; overflow: hidden; }
+  .dir-a .mock-bd .bd-title { font-size: 11px; color: var(--muted); margin-bottom: 6px; font-weight: 600; }
+  .dir-a .mock-card {
+    border: 1px solid var(--border); border-radius: 5px;
+    background: var(--card-bg); padding: 0; margin-bottom: 4px;
+  }
+  .dir-a .mock-card .card-hdr {
+    font-size: 11px; font-weight: 600; padding: 5px 8px;
+    background: var(--header-bg); border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between;
+  }
+  .dir-a .mock-card .card-stats { font-size: 10px; color: var(--muted); padding: 4px 8px; }
+  .dir-a .mock-card .card-row { font-size: 10px; color: #555; padding: 2px 12px; }
+
+  /* ═══════════════════════════════════════════
+     DIRECTION B STYLES — 暗色工具
+     ═══════════════════════════════════════════ */
+  .dir-b { --bg: #1a1b1e; --card-bg: #222327; --border: #2e2f33; --text: #d4d4d4;
+    --muted: #6b6d75; --accent: #6ba4f0; --header-bg: #202124;
+    --green: #7ec99c; --orange: #e8a76a; --red: #e0676b; }
+  .dir-b .mock { display: flex; flex-direction: column; gap: 0; width: 100%;
+    font-family: "JetBrains Mono", "Cascadia Code", "SF Mono", monospace;
+    font-size: 10px; color: var(--text); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .dir-b .mock-hdr {
+    display: flex; align-items: center; gap: 10px; padding: 6px 12px;
+    background: var(--header-bg); border-bottom: 1px solid var(--border);
+    font-size: 10px;
+  }
+  .dir-b .mock-hdr strong { font-size: 12px; color: #e0e0e0; }
+  .dir-b .mock-hdr .btn { font-size: 9px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 3px; background: var(--card-bg); color: var(--text); cursor: default; }
+  .dir-b .mock-hdr .btn.start { background: var(--accent); color: #111; border-color: var(--accent); font-weight: 600; }
+  .dir-b .mock-hdr select { font-size: 9px; padding: 2px 4px; border: 1px solid var(--border); border-radius: 3px; background: var(--card-bg); color: var(--text); }
+  .dir-b .mock-body { display: flex; flex: 1; min-height: 180px; }
+  .dir-b .mock-pool {
+    width: 130px; border-right: 1px solid var(--border); padding: 6px;
+    background: #1d1e21; overflow: hidden;
+  }
+  .dir-b .mock-pool .filters { display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 6px; }
+  .dir-b .mock-pool .fil-btn { font-size: 8px; padding: 1px 5px; border: 1px solid var(--border); border-radius: 3px; background: var(--card-bg); color: var(--muted); }
+  .dir-b .mock-pool .fil-btn.on { background: var(--accent); color: #111; border-color: var(--accent); }
+  .dir-b .mock-pool .pool-item { font-size: 9px; padding: 2px 4px; border-bottom: 1px solid #2a2b2e; display: flex; justify-content: space-between; }
+  .dir-b .mock-pool .pool-item .dim { color: var(--muted); font-size: 8px; }
+  .dir-b .mock-bd { flex: 1; padding: 8px; overflow: hidden; }
+  .dir-b .mock-bd .bd-title { font-size: 10px; color: var(--muted); margin-bottom: 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+  .dir-b .mock-card {
+    border: 1px solid var(--border); border-radius: 4px;
+    background: var(--card-bg); padding: 0; margin-bottom: 4px;
+  }
+  .dir-b .mock-card .card-hdr {
+    font-size: 10px; font-weight: 600; padding: 4px 8px;
+    background: var(--header-bg); border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; color: #e0e0e0;
+  }
+  .dir-b .mock-card .card-stats { font-size: 9px; color: var(--muted); padding: 3px 8px; }
+  .dir-b .mock-card .card-row { font-size: 9px; color: #a0a0a0; padding: 2px 12px; }
+  .dir-b .highlight { color: var(--green); }
+  .dir-b .warn { color: var(--orange); }
+
+  /* ═══════════════════════════════════════════
+     DIRECTION C STYLES — 游戏感工作台
+     ═══════════════════════════════════════════ */
+  .dir-c { --bg: #f5efe6; --card-bg: #fffcf7; --border: #d9cbb8; --text: #3d3028;
+    --muted: #8c7865; --accent: #c47f3a; --header-bg: #ede3d5;
+    --gold: #b8935a; --red: #c4554d; --green: #5a8a6a; }
+  .dir-c .mock { display: flex; flex-direction: column; gap: 0; width: 100%;
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 12px; color: var(--text); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .dir-c .mock-hdr {
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+    background: linear-gradient(180deg, #f0e8da, var(--header-bg));
+    border-bottom: 1px solid var(--border); font-size: 11px;
+  }
+  .dir-c .mock-hdr strong {
+    font-size: 13px; font-weight: 700; color: var(--accent);
+    text-shadow: 0 1px 0 rgba(255,255,255,0.5);
+  }
+  .dir-c .mock-hdr .btn {
+    font-size: 10px; padding: 3px 10px; border: 1px solid var(--border);
+    border-radius: 4px; background: linear-gradient(180deg, #fffcf7, #ede3d5);
+    color: var(--text); cursor: default; box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+  }
+  .dir-c .mock-hdr .btn.start {
+    background: linear-gradient(180deg, #d4944a, var(--accent));
+    color: #fff; border-color: #a05a20; text-shadow: 0 1px 0 rgba(0,0,0,0.15);
+  }
+  .dir-c .mock-hdr select { font-size: 10px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 3px; background: #fffcf7; }
+  .dir-c .mock-body { display: flex; flex: 1; min-height: 180px; }
+  .dir-c .mock-pool {
+    width: 130px; border-right: 1px solid var(--border); padding: 6px;
+    background: #fdfaf5; overflow: hidden;
+  }
+  .dir-c .mock-pool .filters { display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 6px; }
+  .dir-c .mock-pool .fil-btn { font-size: 8px; padding: 1px 5px; border: 1px solid var(--border); border-radius: 3px; background: #fffcf7; color: var(--muted); }
+  .dir-c .mock-pool .fil-btn.on { background: var(--accent); color: #fff; border-color: var(--accent); box-shadow: 0 1px 3px rgba(196,127,58,0.3); }
+  .dir-c .mock-pool .pool-item { font-size: 10px; padding: 2px 4px; border-bottom: 1px solid #f0e8da; display: flex; justify-content: space-between; }
+  .dir-c .mock-pool .pool-item .dim { color: var(--muted); font-size: 8px; }
+  .dir-c .mock-bd { flex: 1; padding: 8px; overflow: hidden; }
+  .dir-c .mock-bd .bd-title {
+    font-size: 11px; color: var(--gold); margin-bottom: 6px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 1px; text-align: center;
+  }
+  .dir-c .mock-card {
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--card-bg); padding: 0; margin-bottom: 4px;
+    box-shadow: 0 2px 6px rgba(139,100,60,0.08);
+  }
+  .dir-c .mock-card .card-hdr {
+    font-size: 11px; font-weight: 700; padding: 5px 8px;
+    background: linear-gradient(180deg, #fdfaf5, #f5efe6);
+    border-bottom: 1px solid var(--border); border-radius: 6px 6px 0 0;
+    display: flex; justify-content: space-between;
+  }
+  .dir-c .mock-card .card-stats { font-size: 10px; color: var(--muted); padding: 4px 8px; }
+  .dir-c .mock-card .card-row { font-size: 10px; color: #6b5d4f; padding: 2px 12px; }
+
+  /* ═══════════════════════════════════════════
+     DIRECTION D STYLES — 驾驶舱
+     ═══════════════════════════════════════════ */
+  .dir-d { --bg: #f2f4f5; --card-bg: #fff; --border: #d5d9dc; --text: #1e293b;
+    --muted: #64748b; --accent: #2563eb; --header-bg: #e8ecf0;
+    --red: #dc2626; --green: #16a34a; }
+  .dir-d .mock { display: flex; flex-direction: column; gap: 0; width: 100%;
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 11px; color: var(--text); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .dir-d .mock-hdr {
+    display: flex; align-items: center; gap: 10px; padding: 6px 14px;
+    background: #1e293b; border-bottom: none; font-size: 10px; color: #e2e8f0;
+  }
+  .dir-d .mock-hdr strong { font-size: 13px; color: #fff; }
+  .dir-d .mock-hdr .btn { font-size: 9px; padding: 3px 10px; border: 1px solid #475569; border-radius: 4px; background: #334155; color: #e2e8f0; cursor: default; }
+  .dir-d .mock-hdr .btn.start { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .dir-d .mock-hdr .badge { font-size: 9px; padding: 2px 8px; background: #334155; border-radius: 10px; }
+  .dir-d .mock-body { display: flex; flex: 1; min-height: 180px; }
+  .dir-d .mock-pool {
+    width: 130px; border-right: 1px solid var(--border); padding: 6px;
+    background: #f8f9fa; overflow: hidden;
+  }
+  .dir-d .mock-pool .filters { display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 6px; }
+  .dir-d .mock-pool .fil-btn { font-size: 8px; padding: 1px 5px; border: 1px solid var(--border); border-radius: 3px; background: #fff; color: var(--muted); }
+  .dir-d .mock-pool .fil-btn.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .dir-d .mock-pool .pool-item { font-size: 9px; padding: 2px 4px; border-bottom: 1px solid #eef0f2; display: flex; justify-content: space-between; }
+  .dir-d .mock-pool .pool-item .dim { color: var(--muted); font-size: 8px; }
+  .dir-d .mock-main { display: flex; flex: 1; }
+  .dir-d .mock-bd { flex: 1; padding: 8px; overflow: hidden; }
+  .dir-d .mock-bd:nth-child(2) { border-left: 1px solid var(--border); background: #fdfdff; }
+  .dir-d .mock-bd .bd-title {
+    font-size: 11px; color: var(--text); margin-bottom: 6px; font-weight: 700;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .dir-d .mock-bd .bd-title .vs-dot {
+    width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+  }
+  .dir-d .mock-bd .bd-title .vs-dot.p1 { background: var(--accent); }
+  .dir-d .mock-bd .bd-title .vs-dot.p2 { background: var(--red); }
+  .dir-d .mock-card {
+    border: 1px solid var(--border); border-radius: 4px;
+    background: var(--card-bg); padding: 0; margin-bottom: 4px;
+  }
+  .dir-d .mock-card .card-hdr {
+    font-size: 11px; font-weight: 600; padding: 5px 8px;
+    background: var(--header-bg); border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between;
+  }
+  .dir-d .mock-card .card-stats { font-size: 10px; color: var(--muted); padding: 4px 8px; }
+  .dir-d .mock-card .card-row { font-size: 10px; color: #555; padding: 2px 12px; }
+  .dir-d .stat-bar {
+    height: 4px; border-radius: 2px; background: #e5e7eb; margin: 2px 8px 4px;
+    overflow: hidden;
+  }
+  .dir-d .stat-bar .fill { height: 100%; border-radius: 2px; }
+  .dir-d .stat-bar .fill.hp { background: var(--green); width: 72%; }
+  .dir-d .stat-bar .fill.stamina { background: var(--accent); width: 55%; }
+
+  /* ── A helper line ── */
+  .preview-disclaimer {
+    text-align: center; color: #aaa; font-size: 11px;
+    padding: 4px 0 8px; /* one low-key line */
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>模拟对战 · 设计方向预览</h1>
+  <span class="note">方向样机，不是最终页面；选择方向后才进入正式实现</span>
+</div>
+
+<div class="dials-row" id="dials-row">
+  <div class="dial-group">
+    <label for="dial-variance">视觉冒险度</label>
+    <input type="range" id="dial-variance" min="1" max="10" value="4">
+    <span class="dial-val" id="val-variance">4/10</span>
+  </div>
+  <div class="dial-group">
+    <label for="dial-motion">动效强度</label>
+    <input type="range" id="dial-motion" min="1" max="10" value="3">
+    <span class="dial-val" id="val-motion">3/10</span>
+  </div>
+  <div class="dial-group">
+    <label for="dial-density">信息密度</label>
+    <input type="range" id="dial-density" min="1" max="10" value="7">
+    <span class="dial-val" id="val-density">7/10</span>
+  </div>
+</div>
+
+<div class="preview-grid" id="preview-grid">
+
+  <!-- ═══ DIRECTION A ═══ -->
+  <div class="dir-card" data-dir="A">
+    <div class="mockup-stage dir-a">
+      <div class="mock">
+        <div class="mock-hdr">
+          <span class="btn">← 返回</span>
+          <strong>模拟对战</strong>
+          <select><option>回合3 (槽位3)</option></select>
+          <span class="btn start">开始模拟战斗</span>
+        </div>
+        <div class="mock-body">
+          <div class="mock-pool">
+            <div class="filters">
+              <span class="fil-btn on">全部</span><span class="fil-btn">实体</span><span class="fil-btn">词条</span>
+            </div>
+            <div class="filters">
+              <span class="fil-btn on">随从</span><span class="fil-btn">武器</span><span class="fil-btn">防具</span>
+            </div>
+            <div class="pool-item"><span>铁剑</span><span class="dim">武器 伤15</span></div>
+            <div class="pool-item"><span>皮甲</span><span class="dim">防具 重8</span></div>
+            <div class="pool-item"><span>轻步</span><span class="dim">[属性] 移速</span></div>
+            <div style="padding:4px 4px;font-size:9px;color:var(--muted);">── 容器 (2) ──</div>
+            <div class="pool-item"><span>背包</span><span class="dim">容器 槽4</span></div>
+            <div class="pool-item"><span>褡裢</span><span class="dim">容器 槽2</span></div>
+          </div>
+          <div class="mock-bd">
+            <div class="bd-title">玩家 BD · 第一层 1/3 槽位</div>
+            <div class="mock-card">
+              <div class="card-hdr"><span>剑士</span><span>[-]</span></div>
+              <div class="card-stats">HP: 280/280 &nbsp; 耐力: 120/120 &nbsp; 回复: 8/s</div>
+              <div class="card-stats">负重: 80 &nbsp; 槽耗: 1 &nbsp; 价值: 450</div>
+              <div class="card-row" style="color:var(--muted);">══ 词条 (0/3槽位已用) ══</div>
+              <div class="card-row" style="color:var(--muted);">══ 子实体 (0/2槽位已用) ══</div>
+            </div>
+          </div>
+          <div class="mock-bd">
+            <div class="bd-title">敌人 BD · 第一层 2/3 槽位</div>
+            <div class="mock-card">
+              <div class="card-hdr"><span>哥布林</span><span>[-]</span></div>
+              <div class="card-stats">HP: 120/120 &nbsp; 耐力: 60/60 &nbsp; 回复: 4/s</div>
+              <div class="card-stats">负重: 30 &nbsp; 槽耗: 1 &nbsp; 价值: 120</div>
+            </div>
+            <div class="mock-card" style="margin-left:14px;">
+              <div class="card-hdr"><span>木盾</span><span>[-]</span></div>
+              <div class="card-stats">重: 12 &nbsp; 槽耗: 1 &nbsp; 防具</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="dir-footer">
+      <div class="dir-info">
+        <div class="dir-label">方向 A · 渐进优化</div>
+        <div class="dir-tagline">保持结构，只提升视觉品质</div>
+      </div>
+      <button class="qmdp-pick-button" data-dir="A" data-name="渐进优化">选择 A</button>
+    </div>
+  </div>
+
+  <!-- ═══ DIRECTION B ═══ -->
+  <div class="dir-card" data-dir="B">
+    <div class="mockup-stage dir-b">
+      <div class="mock">
+        <div class="mock-hdr">
+          <span class="btn">← 返回</span>
+          <strong>▶ 模拟对战</strong>
+          <select><option>回合 3</option></select>
+          <span class="btn start">▶ 开始战斗</span>
+        </div>
+        <div class="mock-body">
+          <div class="mock-pool">
+            <div class="filters">
+              <span class="fil-btn on">ALL</span><span class="fil-btn">ENT</span><span class="fil-btn">AFX</span>
+            </div>
+            <div class="filters">
+              <span class="fil-btn on">随从</span><span class="fil-btn">武器</span><span class="fil-btn">防具</span>
+            </div>
+            <div class="pool-item"><span>铁剑</span><span class="dim">15dmg</span></div>
+            <div class="pool-item"><span>皮甲</span><span class="dim">w:8</span></div>
+            <div class="pool-item"><span>轻步</span><span class="dim highlight">+SPD</span></div>
+            <div style="padding:3px 4px;font-size:8px;color:var(--muted);">/* 容器 */</div>
+            <div class="pool-item"><span>背包</span><span class="dim">4⏚</span></div>
+            <div class="pool-item"><span>褡裢</span><span class="dim">2⏚</span></div>
+          </div>
+          <div class="mock-bd">
+            <div class="bd-title">▸ PLAYER &nbsp; 1/3 slots used</div>
+            <div class="mock-card">
+              <div class="card-hdr"><span>⚔ 剑士</span><span>[-]</span></div>
+              <div class="card-stats">HP <span class="highlight">280/280</span> &nbsp; STA <span class="highlight">120/120</span> &nbsp; REG <span class="highlight">8/s</span></div>
+              <div class="card-stats">LOAD 80 &nbsp; COST 1 &nbsp; VAL 450</div>
+              <div class="card-row" style="color:var(--muted);">affix 0/3 | child 0/2</div>
+            </div>
+          </div>
+          <div class="mock-bd">
+            <div class="bd-title">▸ ENEMY &nbsp; 2/3 slots used</div>
+            <div class="mock-card">
+              <div class="card-hdr"><span>⚔ 哥布林</span><span>[-]</span></div>
+              <div class="card-stats">HP <span class="warn">120/120</span> &nbsp; STA <span class="warn">60/60</span> &nbsp; REG <span class="warn">4/s</span></div>
+              <div class="card-stats">LOAD 30 &nbsp; COST 1 &nbsp; VAL 120</div>
+            </div>
+            <div class="mock-card" style="margin-left:12px;">
+              <div class="card-hdr"><span>🛡 木盾</span><span>[-]</span></div>
+              <div class="card-stats">W:12 &nbsp; COST 1 &nbsp; armor</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="dir-footer">
+      <div class="dir-info">
+        <div class="dir-label">方向 B · 暗色工具</div>
+        <div class="dir-tagline">深色底 + 等宽数字 + IDE 式高亮</div>
+      </div>
+      <button class="qmdp-pick-button" data-dir="B" data-name="暗色工具">选择 B</button>
+    </div>
+  </div>
+
+  <!-- ═══ DIRECTION C ═══ -->
+  <div class="dir-card recommended" data-dir="C">
+    <div class="mockup-stage dir-c">
+      <div class="mock">
+        <div class="mock-hdr">
+          <span class="btn">← 返回</span>
+          <strong>⚔ 模拟对战</strong>
+          <select><option>回合 3 · 槽位 3</option></select>
+          <span class="btn start">开始模拟战斗</span>
+        </div>
+        <div class="mock-body">
+          <div class="mock-pool">
+            <div class="filters">
+              <span class="fil-btn on">全部</span><span class="fil-btn">实体</span><span class="fil-btn">词条</span>
+            </div>
+            <div class="filters">
+              <span class="fil-btn on">随从</span><span class="fil-btn">武器</span><span class="fil-btn">防具</span>
+            </div>
+            <div class="pool-item"><span>🗡 铁剑</span><span class="dim">伤15</span></div>
+            <div class="pool-item"><span>🛡 皮甲</span><span class="dim">重8</span></div>
+            <div class="pool-item"><span>✦ 轻步</span><span class="dim">移速</span></div>
+            <div style="padding:3px 4px;font-size:9px;color:var(--muted);">— 容器 —</div>
+            <div class="pool-item"><span>🎒 背包</span><span class="dim">槽4</span></div>
+            <div class="pool-item"><span>💰 褡裢</span><span class="dim">槽2</span></div>
+          </div>
+          <div class="mock-bd">
+            <div class="bd-title">✦ 玩家构筑</div>
+            <div class="mock-card">
+              <div class="card-hdr"><span>⚔ 剑士</span><span>收起 ▾</span></div>
+              <div class="card-stats">❤ HP 280/280 &nbsp; ⚡ 耐力 120/120 &nbsp; ↻ 回复 8/s</div>
+              <div class="card-stats">🏋 负重 80 &nbsp; ◈ 槽耗 1 &nbsp; ⭐ 价值 450</div>
+              <div class="card-row" style="color:var(--muted);">词条 0/3 已用 &nbsp; ▸</div>
+              <div class="card-row" style="color:var(--muted);">子实体 0/2 已用 &nbsp; ▸</div>
+            </div>
+          </div>
+          <div class="mock-bd">
+            <div class="bd-title">☠ 敌方构筑</div>
+            <div class="mock-card">
+              <div class="card-hdr"><span>👹 哥布林</span><span>收起 ▾</span></div>
+              <div class="card-stats">❤ HP 120/120 &nbsp; ⚡ 耐力 60/60 &nbsp; ↻ 回复 4/s</div>
+              <div class="card-stats">🏋 负重 30 &nbsp; ◈ 槽耗 1 &nbsp; ⭐ 价值 120</div>
+            </div>
+            <div class="mock-card" style="margin-left:14px;">
+              <div class="card-hdr"><span>🛡 木盾</span><span>收起 ▾</span></div>
+              <div class="card-stats">⚖ 重 12 &nbsp; ◈ 槽耗 1 &nbsp; 防具</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="dir-footer">
+      <div class="dir-info">
+        <div class="dir-label">方向 C · 游戏感工作台</div>
+        <div class="dir-tagline">品牌色 + 质感卡片 + 游戏氛围</div>
+      </div>
+      <button class="qmdp-pick-button" data-dir="C" data-name="游戏感工作台">选择 C</button>
+    </div>
+  </div>
+
+  <!-- ═══ DIRECTION D ═══ -->
+  <div class="dir-card" data-dir="D">
+    <div class="mockup-stage dir-d">
+      <div class="mock">
+        <div class="mock-hdr">
+          <span class="btn">← 编辑</span>
+          <strong>模拟对战</strong>
+          <span class="badge">回合 3</span>
+          <span class="badge">槽位 3</span>
+          <span class="btn start">▶ 开始战斗</span>
+        </div>
+        <div class="mock-body">
+          <div class="mock-pool">
+            <div class="filters">
+              <span class="fil-btn on">全部</span><span class="fil-btn">实体</span><span class="fil-btn">词条</span>
+            </div>
+            <div class="pool-item"><span>铁剑</span><span class="dim">15dmg</span></div>
+            <div class="pool-item"><span>皮甲</span><span class="dim">w8</span></div>
+            <div class="pool-item"><span>轻步</span><span class="dim">[属性]</span></div>
+          </div>
+          <div class="mock-main">
+            <div class="mock-bd">
+              <div class="bd-title"><span class="vs-dot p1"></span> 玩家 · 1/3</div>
+              <div class="mock-card">
+                <div class="card-hdr"><span>剑士</span><span>▼</span></div>
+                <div class="card-stats">HP 280/280</div>
+                <div class="stat-bar"><div class="fill hp"></div></div>
+                <div class="card-stats">耐力 120/120</div>
+                <div class="stat-bar"><div class="fill stamina"></div></div>
+                <div class="card-stats">负重 80 · 回复 8/s · 价值 450</div>
+              </div>
+            </div>
+            <div class="mock-bd">
+              <div class="bd-title"><span class="vs-dot p2"></span> 敌人 · 2/3</div>
+              <div class="mock-card">
+                <div class="card-hdr"><span>哥布林</span><span>▼</span></div>
+                <div class="card-stats">HP 120/120</div>
+                <div class="stat-bar"><div class="fill hp" style="width:60%;background:#f59e0b;"></div></div>
+                <div class="card-stats">耐力 60/60</div>
+                <div class="stat-bar"><div class="fill stamina" style="width:45%;background:#f59e0b;"></div></div>
+                <div class="card-stats">负重 30 · 回复 4/s · 价值 120</div>
+              </div>
+              <div class="mock-card" style="margin-left:12px;">
+                <div class="card-hdr"><span>木盾</span><span>▼</span></div>
+                <div class="card-stats">重 12 · 槽耗 1 · 防具</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="dir-footer">
+      <div class="dir-info">
+        <div class="dir-label">方向 D · 驾驶舱</div>
+        <div class="dir-tagline">暗顶栏 + 双方对称 + 仪表盘数据条</div>
+      </div>
+      <button class="qmdp-pick-button" data-dir="D" data-name="驾驶舱">选择 D</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- Explanation area -->
+<div class="explain-panel">
+  <div class="explain-grid">
+    <div class="explain-card">
+      <h4>A · 渐进优化</h4>
+      <div class="meta">视觉冒险 3/10 &nbsp; 动效 3/10 &nbsp; 密度 6/10</div>
+      <p>最小改动路径。保留三栏结构，用暖灰体系替代纯灰度，加入蓝色重音色。字号提升到 12-13px。间距统一为 4px 基准。改动仅限 CSS，TS 模板不动。</p>
+      <p style="color:#888;">优点：风险最低，半天可上线<br>代价：个性有限，与其他工具页差异不大</p>
+    </div>
+    <div class="explain-card">
+      <h4>B · 暗色工具</h4>
+      <div class="meta">视觉冒险 7/10 &nbsp; 动效 2/10 &nbsp; 密度 9/10</div>
+      <p>深色主题 + 等宽字体，营造 IDE/终端式的专业工具感。HP/耐力等数值用语义高亮色（绿/橙/红）。简练的英文缩写标签。极简动效。</p>
+      <p style="color:#888;">优点：最专业、差异化最大、眼睛疲劳低<br>代价：与游戏主体亮色风格不一致</p>
+    </div>
+    <div class="explain-card">
+      <h4>C · 游戏感工作台 <span style="color:#c4a574;">★ 推荐</span></h4>
+      <div class="meta">视觉冒险 6/10 &nbsp; 动效 5/10 &nbsp; 密度 6/10</div>
+      <p>为工具注入游戏世界感。暖羊皮纸底色调，铜金色品牌重音。卡片有微妙阴影和渐变标题栏。实体/词条用 emoji 图标前缀。展开/折叠用平滑过渡。按钮有按压反馈。</p>
+      <div class="rec-reason">推荐理由：这是「游戏」的数值工具，应该传递游戏世界的气质。<br>
+      比 A 多了个性和温度，比 B 少了风格割裂，比 D 更有人情味。<br>
+      适合作为"Affix Explosion 工具台"的品牌页面。</div>
+    </div>
+    <div class="explain-card">
+      <h4>D · 驾驶舱</h4>
+      <div class="meta">视觉冒险 5/10 &nbsp; 动效 4/10 &nbsp; 密度 7/10</div>
+      <p>暗色顶栏 + 亮色内容区，左右完全对称布局。HP/耐力条用进度条替代纯数字。双方 BD 视觉权重精确相等，方便数值对比。最接近"数据看板"的体验。</p>
+      <p style="color:#888;">优点：对比最直观、数据可读性最强<br>代价：过于理性，缺少"游戏"的感觉</p>
+    </div>
+  </div>
+</div>
+
+<div class="preview-disclaimer">
+  方向样机，不是最终页面；选定方向后才进入正式实现。
+</div>
+
+<!-- Confirm Modal -->
+<div class="modal-overlay" id="confirm-modal">
+  <div class="modal-box">
+    <h3>确认选择</h3>
+    <div class="chosen-label">选定方向</div>
+    <div class="chosen-name" id="chosen-name">—</div>
+    <div class="dial-summary" id="chosen-dials">—</div>
+    <textarea id="adjust-input" placeholder="调整建议（可选）：如"更稳一点"、"要 B 的配色 + A 的布局""></textarea>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="btn-cancel">取消</button>
+      <button class="btn-confirm" id="btn-confirm">确认选择</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function() {
+  // Dials
+  const dials = {
+    variance: document.getElementById('dial-variance'),
+    motion: document.getElementById('dial-motion'),
+    density: document.getElementById('dial-density'),
+  };
+
+  function updateDialVal(id) {
+    const v = dials[id].value;
+    document.getElementById('val-' + (id === 'variance' ? 'variance' : id === 'motion' ? 'motion' : 'density')).textContent = v + '/10';
+  }
+
+  dials.variance.addEventListener('input', () => updateDialVal('variance'));
+  dials.motion.addEventListener('input', () => updateDialVal('motion'));
+  dials.density.addEventListener('input', () => updateDialVal('density'));
+
+  // Modal
+  const modal = document.getElementById('confirm-modal');
+  const chosenName = document.getElementById('chosen-name');
+  const chosenDials = document.getElementById('chosen-dials');
+  const adjustInput = document.getElementById('adjust-input');
+  let pendingDir = null;
+
+  function showModal(dir, name) {
+    pendingDir = dir;
+    chosenName.textContent = '方向 ' + dir + ' · ' + name;
+    chosenDials.innerHTML =
+      '视觉冒险度 ' + dials.variance.value + '/10 &nbsp;|&nbsp; ' +
+      '动效强度 ' + dials.motion.value + '/10 &nbsp;|&nbsp; ' +
+      '信息密度 ' + dials.density.value + '/10';
+    adjustInput.value = '';
+    modal.classList.add('active');
+  }
+
+  function hideModal() {
+    modal.classList.remove('active');
+    pendingDir = null;
+  }
+
+  document.getElementById('btn-cancel').addEventListener('click', hideModal);
+  modal.addEventListener('click', function(e) {
+    if (e.target === modal) hideModal();
+  });
+
+  // Pick buttons
+  document.querySelectorAll('.qmdp-pick-button').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      showModal(btn.dataset.dir, btn.dataset.name);
+    });
+  });
+
+  // Confirm
+  document.getElementById('btn-confirm').addEventListener('click', function() {
+    if (!pendingDir) return;
+    var payload = {
+      id: pendingDir,
+      label: '方向 ' + pendingDir,
+      name: document.querySelector('.qmdp-pick-button[data-dir="' + pendingDir + '"]').dataset.name,
+      notes: adjustInput.value.trim(),
+      dials: {
+        variance: parseInt(dials.variance.value),
+        motion: parseInt(dials.motion.value),
+        density: parseInt(dials.density.value),
+      },
+      adjustments: adjustInput.value.trim(),
+    };
+
+    // Try posting to preview server
+    fetch('/api/select', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).then(function(r) {
+      if (r.ok) {
+        showToast('已提交选择：' + payload.label + ' · ' + payload.name);
+      } else {
+        showToast('选择已记录：' + payload.label + ' · ' + payload.name + '（本地）');
+      }
+    }).catch(function() {
+      showToast('选择已记录：' + payload.label + ' · ' + payload.name + '（离线模式）');
+    });
+
+    hideModal();
+  });
+
+  // Keyboard
+  document.addEventListener('keydown', function(e) {
+    if (modal.classList.contains('active')) {
+      if (e.key === 'Escape') hideModal();
+      if (e.key === 'Enter') document.getElementById('btn-confirm').click();
+      return;
+    }
+    var map = { '1': 'A', '2': 'B', '3': 'C', '4': 'D' };
+    if (map[e.key]) {
+      var btn = document.querySelector('.qmdp-pick-button[data-dir="' + map[e.key] + '"]');
+      if (btn) showModal(map[e.key], btn.dataset.name);
+    }
+  });
+
+  function showToast(msg) {
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.style.display = 'block';
+    setTimeout(function() { t.style.display = 'none'; }, 3000);
+  }
+})();
+</script>
+
+</body>
+</html>

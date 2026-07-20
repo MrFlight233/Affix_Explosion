@@ -52,7 +52,7 @@ function ensureTooltip(): HTMLElement {
   if (!tooltipEl) {
     tooltipEl = document.createElement('div');
     tooltipEl.id = 'sb-tooltip';
-    tooltipEl.style.cssText = 'display:none;position:fixed;z-index:9999;background:#fff;border:1px solid #ccc;padding:8px 10px;font-size:12px;line-height:1.6;max-width:220px;pointer-events:none;box-shadow:1px 2px 6px rgba(0,0,0,0.15);';
+    tooltipEl.style.cssText = 'display:none;position:fixed;z-index:999;background:#fff;border:1px solid #e5e5e5;border-radius:6px;padding:8px 10px;font-size:12px;line-height:1.6;max-width:240px;pointer-events:none;box-shadow:0 2px 12px rgba(0,0,0,0.08);';
     document.body.appendChild(tooltipEl);
   }
   return tooltipEl;
@@ -335,7 +335,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
           <div id="sb-player-bd">${renderDeployArea('player')}</div>
           <div id="sb-enemy-bd">${renderDeployArea('enemy')}</div>
         </div>
-        <div id="sb-toast" style="display:none;position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:8px 20px;font-size:13px;z-index:3000;">${state.toast || ''}</div>
+        <div id="sb-toast" style="display:none;position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#404040;color:#fff;padding:10px 24px;border-radius:8px;font-size:13px;z-index:2000;box-shadow:0 2px 12px rgba(0,0,0,0.12);">${state.toast || ''}</div>
       </div>
     `;
 
@@ -389,14 +389,14 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
         grouped.get(cat)!.push(e);
       }
       for (const [cat, items] of grouped) {
-        h += `<div class="sb-pool-cat-header">── ${cat} (${items.length}) ──</div>`;
+        h += `<div class="sb-pool-cat-header">${cat} <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${items.length}</span></div>`;
         for (const e of items) {
           h += renderPoolEntityRow(e);
         }
       }
     }
     if (state.poolTab === 'all' || state.poolTab === 'affix') {
-      h += `<div class="sb-pool-cat-header">── 词条 (${affixes.length}) ──</div>`;
+      h += `<div class="sb-pool-cat-header">词条 <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${affixes.length}</span></div>`;
       for (const a of affixes) {
         h += renderPoolAffixRow(a);
       }
@@ -540,7 +540,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
 
     // ── 卡片标题行 (折叠时显示关键信息，展开时只显示名称) ──
     const dragAttr = mode === 'build' ? ` data-instance="${instanceId}" data-side="${side}" draggable="true"` : '';
-    const collapseLabel = cardCollapsed ? '展开卡片' : '收起卡片';
+    const collapseLabel = cardCollapsed ? '展开' : '收起';
     const headerId = mode === 'battle' && isSt ? ` id="cu-header-${side}-${instanceId}"` : '';
     // build 模式下卡片标题也作为 drop target（接收同级排序 + 词条拖放）
     const dropAttr = mode === 'build' ? ` data-dropzone="card" data-instance="${instanceId}" data-side="${side}"` : '';
@@ -553,7 +553,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
     } else {
       h += `<span>${isEntity ? edef!.name : (def as AffixDef).name}</span>`;
     }
-    h += ` <span class="sb-card-collapse-btn">[${collapseLabel}]</span></div>`;
+    h += ` <span class="sb-card-collapse-btn">${collapseLabel}</span></div>`;
 
     if (cardCollapsed) {
       // ── 折叠状态：标题行已显示关键信息，下方递归展示子实体的缩进树 ──
@@ -566,7 +566,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
 
       // ══ Block 1: 基本属性 ══
       h += '<div class="sb-card-block">';
-      h += '<div class="sb-block-title">══ 基本属性 ══</div>';
+      h += '<div class="sb-block-title">属性</div>';
       if (isSt) {
         const hp = combatUnit ? `${Math.max(combatUnit.currentHp, 0)}/${combatUnit.totalHp}` : `${edef!.hp}/${edef!.hp}`;
         const stam = combatUnit ? `${Math.floor(combatUnit.currentStamina)}/${combatUnit.maxStamina}` : `${edef!.maxStamina}/${edef!.maxStamina}`;
@@ -592,7 +592,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       // ══ Block 2: 主动动作（仅 isActive） ══
       if (isActive && edef) {
         h += '<div class="sb-card-block">';
-        h += '<div class="sb-block-title">══ 主动动作 ══</div>';
+        h += '<div class="sb-block-title">主动动作</div>';
         h += '<div class="sb-card-stats">';
         if (mode === 'battle' && combatUnit) {
           const matched = combatUnit.weapons.find(w => w.name === edef.name);
@@ -618,14 +618,14 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
           h += `<div data-dropzone="affix" data-instance="${instanceId}" data-side="${side}" style="min-height:4px;">`;
         }
         h += `<div class="sb-block-title" data-affixblocktoggle="${instanceId}" style="cursor:pointer;">`;
-        h += `══ 词条 (${dynAffixCount}/${affixSlots}槽位已用) ══ [${affixBlockCollapsed ? '展开词条' : '收起词条'}]</div>`;
+        h += `词条 · ${dynAffixCount}/${affixSlots} 槽位 <span style="font-weight:400;color:var(--sb-text-muted,inherit);margin-left:2px;">${affixBlockCollapsed ? '展开' : '收起'}</span></div>`;
         if (!affixBlockCollapsed) {
           // 固定词条
           if (edef && edef.fixedAffixes.length > 0) {
             const fixCollapsed = state.collapsedFixedAffixRows.has(instanceId);
             const fnames = edef.fixedAffixes.map(a => getAffixDef(a)?.name || a).join('、');
             h += `<div class="sb-card-stats" data-fixtoggle="${instanceId}" style="cursor:pointer;">`;
-            h += `[${fixCollapsed ? '展开固定词条' : '收起固定词条'}] (${edef.fixedAffixes.length})`;
+            h += `固定词条 (${edef.fixedAffixes.length}) <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${fixCollapsed ? '展开' : '收起'}</span>`;
             if (fixCollapsed) h += ` ${fnames}`;
             h += '</div>';
             if (!fixCollapsed) {
@@ -642,7 +642,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
               ? (item.children || []).filter(c => c.type === 'affix').map(c => { const ad = getAffixDef(c.defId); return ad ? ad.name : c.defId; }).join('、')
               : '';
             h += `<div class="sb-card-stats" data-dyntoggle="${instanceId}" style="cursor:pointer;">`;
-            h += `[${dynCollapsed ? '展开动态词条' : '收起动态词条'}] (${dynAffixCount})`;
+            h += `动态词条 (${dynAffixCount}) <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${dynCollapsed ? '展开' : '收起'}</span>`;
             if (dynCollapsed && dynAffixCount > 0) h += ` ${dnames}`;
             h += '</div>';
             if (!dynCollapsed) {
@@ -670,7 +670,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       if (hasChildBlock) {
         h += '<div class="sb-card-block">';
         h += `<div class="sb-block-title" data-childblocktoggle="${instanceId}" style="cursor:pointer;">`;
-        h += `══ 子实体 (${usedSlots}/${effSlots}槽位已用) ══ [${childBlockCollapsed ? '展开子实体' : '收起子实体'}]</div>`;
+        h += `子实体 · ${usedSlots}/${effSlots} 槽位 <span style="font-weight:400;color:var(--sb-text-muted,inherit);margin-left:2px;">${childBlockCollapsed ? '展开' : '收起'}</span></div>`;
         if (childBlockCollapsed) {
           // 收起：名称列表
           const childNames = entityChildren.map(c => (getEntityDef(c.defId) || { name: c.defId }).name).join(', ');
@@ -730,7 +730,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
         </div>
         <div id="sb-battle-log">${renderBattleLog()}</div>
         ${state.battleFinished ? `<div id="sb-battle-result">${state.playerWin ? '玩家胜利！' : '玩家失败'}</div>` : ''}
-        <div id="sb-toast" style="display:none;position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:8px 20px;font-size:13px;z-index:3000;"></div>
+        <div id="sb-toast" style="display:none;position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#404040;color:#fff;padding:10px 24px;border-radius:8px;font-size:13px;z-index:2000;box-shadow:0 2px 12px rgba(0,0,0,0.12);"></div>
       </div>
     `;
 
