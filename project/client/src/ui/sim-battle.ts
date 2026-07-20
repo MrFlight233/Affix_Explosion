@@ -155,6 +155,127 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
   let draggingType: 'entity' | 'affix' | null = null;
 
   // ============================================================
+  // Zone 渲染系统 — 骨架常驻 + 分区更新
+  // ============================================================
+
+  let buildSkeletonReady = false;
+  let battleSkeletonReady = false;
+
+  function updateZone(id: string, html: string) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const st = el.scrollTop;
+    el.innerHTML = html;
+    requestAnimationFrame(() => { el.scrollTop = st; });
+  }
+
+  function updateBDZone(side: 'player' | 'enemy') {
+    const zoneId = side === 'player' ? 'sb-player-bd' : 'sb-enemy-bd';
+    updateZone(zoneId, renderDeployArea(side));
+    // 只对该侧 BD 重绑拖拽/折叠/tooltip 事件
+    bindBDEvents(side);
+  }
+
+  function createBuildSkeleton() {
+    const poolBtn = state.poolCollapsed ? '▶' : '◀';
+    app.innerHTML = `
+      <div id="sb-page">
+        <div id="sb-header"></div>
+        <div id="sb-main" style="position:relative;display:flex;flex:1;overflow:hidden;">
+          <div id="sb-pool" class="${state.poolCollapsed ? 'collapsed' : ''}" style="position:relative;"></div>
+          <button id="sb-pool-toggle" style="position:absolute;left:${state.poolCollapsed ? '0' : '280px'};top:50%;transform:translateY(-50%);z-index:10;">${poolBtn}</button>
+          <div id="sb-player-bd"></div>
+          <div id="sb-enemy-bd"></div>
+        </div>
+        <div id="sb-toast"></div>
+      </div>
+    `;
+    // 一次性绑定骨架级事件
+    bindSkeletonEvents();
+    buildSkeletonReady = true;
+    battleSkeletonReady = false;
+  }
+
+  function createBattleSkeleton() {
+    app.innerHTML = `
+      <div id="sb-battle-view">
+        <div id="sb-battle-header"></div>
+        <div id="sb-battle-body"></div>
+        <div id="sb-battle-log"></div>
+        <div id="sb-battle-result"></div>
+        <div id="sb-toast"></div>
+      </div>
+    `;
+    bindBattleSkeletonEvents();
+    battleSkeletonReady = true;
+    buildSkeletonReady = false;
+  }
+
+  function bindSkeletonEvents() {
+    // 返回按钮委托
+    document.getElementById('sb-header')!.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest('#sb-btn-back');
+      if (btn) {
+        hideSimTooltip();
+        if (state.battleUpdateTimer) clearInterval(state.battleUpdateTimer);
+        onBack();
+      }
+    });
+    // 回合选择委托
+    document.getElementById('sb-header')!.addEventListener('change', (e) => {
+      const sel = (e.target as HTMLElement).closest('#sb-round');
+      if (sel) {
+        state.round = parseInt((sel as HTMLSelectElement).value);
+        renderZones();
+      }
+    });
+    // 开始战斗委托
+    document.getElementById('sb-header')!.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest('#sb-btn-start');
+      if (btn) startSimBattle();
+    });
+    // Pool 折叠按钮
+    document.getElementById('sb-pool-toggle')!.addEventListener('click', () => {
+      state.poolCollapsed = !state.poolCollapsed;
+      const poolEl = document.getElementById('sb-pool')!;
+      const toggleEl = document.getElementById('sb-pool-toggle')!;
+      if (state.poolCollapsed) {
+        poolEl.classList.add('collapsed');
+        toggleEl.style.left = '0';
+        toggleEl.textContent = '▶';
+      } else {
+        poolEl.classList.remove('collapsed');
+        toggleEl.style.left = '280px';
+        toggleEl.textContent = '◀';
+      }
+    });
+  }
+
+  function bindBattleSkeletonEvents() {
+    document.getElementById('sb-battle-header')!.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      const backBtn = target.closest('#sb-btn-edit-back');
+      const pauseBtn = target.closest('#sb-btn-pause');
+      const speedBtn = target.closest('[data-speed]');
+      if (backBtn) {
+        if (state.battleUpdateTimer) { clearInterval(state.battleUpdateTimer); state.battleUpdateTimer = null; }
+        state.inBattle = false; state.battleFinished = false; state.battlePaused = false;
+        state.battleLog = [];
+        renderZones();
+      }
+      if (pauseBtn) {
+        state.battlePaused = !state.battlePaused;
+        updateZone('sb-battle-header', renderBattleHeader());
+      }
+      if (speedBtn) {
+        state.combatSpeed = parseFloat((speedBtn as HTMLElement).dataset.speed!);
+        if (state.battlePaused) state.battlePaused = false;
+        updateZone('sb-battle-header', renderBattleHeader());
+      }
+    });
+  }
+
+  // ============================================================
   // 槽位校验
   // ============================================================
 
@@ -264,14 +385,20 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
   // Toast
   // ============================================================
 
+  let toastTimer: ReturnType<typeof setTimeout> | null = null;
+
   function showToast(msg: string) {
-    state.toast = msg;
     const el = document.getElementById('sb-toast');
-    if (el) {
-      el.textContent = msg;
-      el.style.display = 'block';
-      setTimeout(() => { el.style.display = 'none'; }, 2000);
-    }
+    if (!el) return;
+    state.toast = msg;
+    el.textContent = msg;
+    el.classList.remove('sb-toast-out');
+    el.classList.add('sb-toast-visible');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      el.classList.add('sb-toast-out');
+      el.classList.remove('sb-toast-visible');
+    }, 2000);
   }
 
   // ============================================================
@@ -301,45 +428,59 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
   }
 
   // ============================================================
-  // 渲染
+  // 渲染入口 — zone 系统
   // ============================================================
 
-  function render() {
+  function renderZones() {
     if (state.inBattle) {
-      renderBattleView();
+      if (!battleSkeletonReady) createBattleSkeleton();
+      updateZone('sb-battle-header', renderBattleHeader());
+      const pu = getCombatUnits('player');
+      const eu = getCombatUnits('enemy');
+      document.getElementById('sb-battle-body')!.innerHTML =
+        `<div class="sb-battle-side" id="sb-player-units">${renderBattleSideCards('player', pu)}</div>` +
+        `<div class="sb-battle-side" id="sb-enemy-units">${renderBattleSideCards('enemy', eu)}</div>`;
+      document.getElementById('sb-battle-log')!.innerHTML = renderBattleLog();
+      const resultEl = document.getElementById('sb-battle-result')!;
+      if (state.battleFinished) {
+        resultEl.innerHTML = state.playerWin ? '玩家胜利！' : '玩家失败';
+        resultEl.style.display = '';
+      } else {
+        resultEl.style.display = 'none';
+      }
+      bindCardCollapseEvents();
+      bindBattleTooltips();
     } else {
-      renderBuildView();
+      if (!buildSkeletonReady) createBuildSkeleton();
+      updateZone('sb-header', renderHeaderContent());
+      updateZone('sb-pool', renderPoolContent());
+      bindPoolEvents();
+      updateBDZone('player');
+      updateBDZone('enemy');
     }
   }
 
-  // ---- 组建视图 ----
-
-  function renderBuildView() {
-    const poolBtn = state.poolCollapsed ? '▶' : '◀';
-    app.innerHTML = `
-      <div id="sb-page">
-        <div id="sb-header">
-          <button class="btn" id="sb-btn-back">← 返回</button>
-          <strong>模拟对战</strong>
-          <span>回合:</span>
-          <select id="sb-round" style="padding:2px 4px;font-size:13px;">
-            ${ODD_ROUNDS.map(r => `<option value="${r}"${state.round === r ? ' selected' : ''}>回合${r} (探险, 槽位${r})</option>`).join('')}
-          </select>
-          <button class="btn" id="sb-btn-start" style="font-weight:bold;">开始模拟战斗</button>
-        </div>
-        <div style="position:relative;display:flex;flex:1;overflow:hidden;">
-          <div id="sb-pool" class="${state.poolCollapsed ? 'collapsed' : ''}" style="position:relative;">
-            ${renderPoolContent()}
-          </div>
-          <button id="sb-pool-toggle" style="position:absolute;left:${state.poolCollapsed ? '0' : '280px'};top:50%;transform:translateY(-50%);z-index:10;background:#f0f0f0;border:1px solid #ccc;cursor:pointer;font-size:11px;padding:3px 3px;line-height:1;">${poolBtn}</button>
-          <div id="sb-player-bd">${renderDeployArea('player')}</div>
-          <div id="sb-enemy-bd">${renderDeployArea('enemy')}</div>
-        </div>
-        <div id="sb-toast" style="display:none;position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#404040;color:#fff;padding:10px 24px;border-radius:8px;font-size:13px;z-index:2000;box-shadow:0 2px 12px rgba(0,0,0,0.12);">${state.toast || ''}</div>
-      </div>
+  function renderHeaderContent(): string {
+    return `
+      <button class="btn" id="sb-btn-back">← 返回</button>
+      <strong>模拟对战</strong>
+      <span>回合:</span>
+      <select id="sb-round" style="padding:2px 4px;font-size:13px;">
+        ${ODD_ROUNDS.map(r => `<option value="${r}"${state.round === r ? ' selected' : ''}>回合${r} (探险, 槽位${r})</option>`).join('')}
+      </select>
+      <button class="btn" id="sb-btn-start" style="font-weight:bold;">开始模拟战斗</button>
     `;
+  }
 
-    bindBuildEvents();
+  function renderBattleHeader(): string {
+    return `
+      <button class="btn" id="sb-btn-edit-back">← 返回编辑</button>
+      <strong>模拟对战 · 回合${state.round}</strong>
+      ${state.battleFinished ? '<span>战斗结束</span>' : `<span>模拟时间: ${state.battleLog.length > 0 ? state.battleLog[state.battleLog.length - 1].time + 'ms' : '0ms'}</span>`}
+      <span style="flex:1;"></span>
+      <button class="sb-speed-btn${state.battlePaused ? ' paused' : ''}" id="sb-btn-pause">${state.battlePaused ? '已暂停' : '暂停'}</button>
+      ${[0.5, 1, 2].map(s => `<button class="sb-speed-btn${state.combatSpeed === s ? ' active' : ''}" data-speed="${s}">${s}x</button>`).join('')}
+    `;
   }
 
   function renderPoolContent(): string {
@@ -527,6 +668,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
     if (!def) return '';
 
     const instanceId = item.instanceId;
+    const sideFirst = side === 'player' ? 'p' : 'e';
     const ml = depth > 0 ? `margin-left:${Math.min(depth, 3) * 16}px;` : '';
     const cardCollapsed = state.collapsedCards.has(instanceId);
     const affixBlockCollapsed = state.collapsedAffixBlocks.has(instanceId);
@@ -535,169 +677,162 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
     const isActive = isEntity && !isSt && (def as EntityDef).isActive;
     const edef = isEntity ? (def as EntityDef) : null;
 
-    const cardCls = (combatUnit && combatUnit.currentHp <= 0) ? ' sb-card dead' : ' sb-card';
-    let h = `<div class="${cardCls}" style="${ml}">`;
+    const deadClass = (combatUnit && combatUnit.currentHp <= 0) ? ' dead' : '';
+    const collapsedClass = cardCollapsed ? ' sb-card-collapsed' : '';
+    let h = `<div class="sb-card${deadClass}${collapsedClass}" style="${ml}" data-depth="${depth}" data-side="${side}" data-mode="${mode}">`;
 
-    // ── 卡片标题行 (折叠时显示关键信息，展开时只显示名称) ──
+    // ── 卡片标题行（始终渲染名称和关键信息，CSS 控制显隐）──
     const dragAttr = mode === 'build' ? ` data-instance="${instanceId}" data-side="${side}" draggable="true"` : '';
     const collapseLabel = cardCollapsed ? '展开' : '收起';
-    const headerId = mode === 'battle' && isSt ? ` id="cu-header-${side}-${instanceId}"` : '';
-    // build 模式下卡片标题也作为 drop target（接收同级排序 + 词条拖放）
     const dropAttr = mode === 'build' ? ` data-dropzone="card" data-instance="${instanceId}" data-side="${side}"` : '';
-    h += `<div class="sb-card-header" data-cardtoggle="${instanceId}"${dragAttr}${headerId}${dropAttr} style="cursor:pointer;">`;
-    if (cardCollapsed) {
-      // 折叠时：标题行 = 关键信息行
-      h += '<span class="sb-card-keyinfo">';
-      h += renderCardKeyInfo(item, mode, combatUnit);
-      h += '</span>';
-    } else {
-      h += `<span>${isEntity ? edef!.name : (def as AffixDef).name}</span>`;
-    }
+    h += `<div class="sb-card-header" data-cardtoggle="${instanceId}"${dragAttr}${dropAttr} style="cursor:pointer;">`;
+    h += `<span class="sb-card-header-name">${isEntity ? edef!.name : (def as AffixDef).name}</span>`;
+    h += '<span class="sb-card-header-keyinfo sb-card-keyinfo">';
+    h += renderCardKeyInfo(item, mode, combatUnit);
+    h += '</span>';
     h += ` <span class="sb-card-collapse-btn">${collapseLabel}</span></div>`;
 
-    if (cardCollapsed) {
-      // ── 折叠状态：标题行已显示关键信息，下方递归展示子实体的缩进树 ──
-      const entityChildren = (item.children || []).filter(c => c.type === 'entity');
-      for (const child of entityChildren) {
-        h += renderCollapsedChildTree(child, depth + 1, side, mode, combatUnit);
-      }
-    } else {
-      // ── 卡片展开：四个区块 ──
+    // ── 展开态内容 ──
+    h += '<div class="sb-card-body-expanded">';
 
-      // ══ Block 1: 基本属性 ══
-      h += '<div class="sb-card-block">';
-      h += '<div class="sb-block-title">属性</div>';
-      if (isSt) {
-        const hp = combatUnit ? `${Math.max(combatUnit.currentHp, 0)}/${combatUnit.totalHp}` : `${edef!.hp}/${edef!.hp}`;
-        const stam = combatUnit ? `${Math.floor(combatUnit.currentStamina)}/${combatUnit.maxStamina}` : `${edef!.maxStamina}/${edef!.maxStamina}`;
-        const staminaRegen = edef!.staminaRegen;
-        const loadStr = `${edef!.maxLoad}`; // 简单显示
-        h += `<div class="sb-card-stats" id="${mode === 'battle' && combatUnit ? `cu-b1-${side}-${instanceId}` : ''}">`;
-        h += `HP: ${hp}  耐力: ${stam}  耐力回复: ${staminaRegen}/s`;
-        h += '</div>';
-        h += `<div class="sb-card-stats">负重: ${loadStr}  槽耗: ${edef!.slotCost}`;
-        if (mode === 'build') h += `  价值: ${edef!.value}`;
-        // overload/death
-        if (combatUnit?.isOverloaded) h += '  超重';
-        if (combatUnit && combatUnit.currentHp <= 0) h += '  阵亡';
-        h += '</div>';
-      } else if (isEntity && edef) {
-        h += '<div class="sb-card-stats">';
-        h += `槽耗: ${edef.slotCost}  重: ${edef.weight}`;
-        if (mode === 'build') h += `  价值: ${edef.value}`;
-        h += '</div>';
-      }
+    // Block 1: 属性
+    h += '<div class="sb-card-block">';
+    h += '<div class="sb-block-title">属性</div>';
+    if (isSt) {
+      const hp = combatUnit ? `${Math.max(combatUnit.currentHp, 0)}/${combatUnit.totalHp}` : `${edef!.hp}/${edef!.hp}`;
+      const stam = combatUnit ? `${Math.floor(combatUnit.currentStamina)}/${combatUnit.maxStamina}` : `${edef!.maxStamina}/${edef!.maxStamina}`;
+      h += '<div class="sb-card-stats">';
+      h += `HP: <span id="cu-hp-${sideFirst}-${instanceId}">${hp}</span>`;
+      h += `  耐力: <span id="cu-sta-${sideFirst}-${instanceId}">${stam}</span>`;
+      h += `  耐力回复: ${edef!.staminaRegen}/s`;
       h += '</div>';
+      h += '<div class="sb-card-stats">';
+      h += `负重: ${edef!.maxLoad}  槽耗: ${edef!.slotCost}`;
+      if (mode === 'build') h += `  价值: ${edef!.value}`;
+      h += `<span id="cu-ov-${sideFirst}-${instanceId}" style="${combatUnit?.isOverloaded ? '' : 'display:none'}">  超重</span>`;
+      h += `<span id="cu-dead-${sideFirst}-${instanceId}" style="${combatUnit && combatUnit.currentHp <= 0 ? '' : 'display:none'}">  阵亡</span>`;
+      h += '</div>';
+    } else if (isEntity && edef) {
+      h += '<div class="sb-card-stats">';
+      h += `槽耗: ${edef.slotCost}  重: ${edef.weight}`;
+      if (mode === 'build') h += `  价值: ${edef.value}`;
+      h += '</div>';
+    }
+    h += '</div>';
 
-      // ══ Block 2: 主动动作（仅 isActive） ══
-      if (isActive && edef) {
-        h += '<div class="sb-card-block">';
-        h += '<div class="sb-block-title">主动动作</div>';
-        h += '<div class="sb-card-stats">';
-        if (mode === 'battle' && combatUnit) {
-          const matched = combatUnit.weapons.find(w => w.name === edef.name);
-          if (matched) {
-            h += `伤:${matched.damage}  倒计时:${(Math.max(matched.remainingTime, 0) / 1000).toFixed(1)}s  耐耗:${matched.staminaCost}  ${matched.targetType}${matched.priorityTarget ? ' 优先' + matched.priorityTarget : ''}`;
-          } else {
-            h += `伤:${edef.damage}  耗时:${edef.actionTime}ms  耐耗:${edef.staminaCost}  ${edef.targetType || ''}${edef.priorityTarget ? ' 优先' + edef.priorityTarget : ''}`;
-          }
+    // Block 2: 主动动作
+    if (isActive && edef) {
+      h += '<div class="sb-card-block">';
+      h += '<div class="sb-block-title">主动动作</div>';
+      h += '<div class="sb-card-stats">';
+      if (mode === 'battle' && combatUnit) {
+        const matched = combatUnit.weapons.find(w => w.name === edef.name);
+        if (matched) {
+          const wIdx = combatUnit.weapons.indexOf(matched);
+          h += `伤:${matched.damage}  倒计时:<span id="cu-cd-${sideFirst}-${instanceId}-${wIdx}">${(Math.max(matched.remainingTime, 0) / 1000).toFixed(1)}s</span>  耐耗:${matched.staminaCost}  ${matched.targetType}${matched.priorityTarget ? ' 优先' + matched.priorityTarget : ''}`;
         } else {
           h += `伤:${edef.damage}  耗时:${edef.actionTime}ms  耐耗:${edef.staminaCost}  ${edef.targetType || ''}${edef.priorityTarget ? ' 优先' + edef.priorityTarget : ''}`;
         }
-        h += '</div></div>';
+      } else {
+        h += `伤:${edef.damage}  耗时:${edef.actionTime}ms  耐耗:${edef.staminaCost}  ${edef.targetType || ''}${edef.priorityTarget ? ' 优先' + edef.priorityTarget : ''}`;
       }
+      h += '</div></div>';
+    }
 
-      // ══ Block 3: 词条 ══ (可接收词条拖放)
-      const dynAffixCount = (item.children || []).filter(c => c.type === 'affix').length;
-      const hasAffixBlock = (edef && edef.dynamicAffixSlots > 0) || dynAffixCount > 0 || (edef && edef.fixedAffixes.length > 0);
-      if (hasAffixBlock) {
-        h += '<div class="sb-card-block">';
-        const affixSlots = edef ? edef.dynamicAffixSlots : 0;
-        // 词条区块作为 drop zone
-        if (mode === 'build') {
-          h += `<div data-dropzone="affix" data-instance="${instanceId}" data-side="${side}" style="min-height:4px;">`;
-        }
-        h += `<div class="sb-block-title" data-affixblocktoggle="${instanceId}" style="cursor:pointer;">`;
-        h += `词条 · ${dynAffixCount}/${affixSlots} 槽位 <span style="font-weight:400;color:var(--sb-text-muted,inherit);margin-left:2px;">${affixBlockCollapsed ? '展开' : '收起'}</span></div>`;
-        if (!affixBlockCollapsed) {
-          // 固定词条
-          if (edef && edef.fixedAffixes.length > 0) {
-            const fixCollapsed = state.collapsedFixedAffixRows.has(instanceId);
-            const fnames = edef.fixedAffixes.map(a => getAffixDef(a)?.name || a).join('、');
-            h += `<div class="sb-card-stats" data-fixtoggle="${instanceId}" style="cursor:pointer;">`;
-            h += `固定词条 (${edef.fixedAffixes.length}) <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${fixCollapsed ? '展开' : '收起'}</span>`;
-            if (fixCollapsed) h += ` ${fnames}`;
-            h += '</div>';
-            if (!fixCollapsed) {
-              for (const fa of edef.fixedAffixes) {
-                const fd = getAffixDef(fa);
-                if (fd) h += `<div class="sb-card-stats" style="margin-left:12px;" data-defid="${fa}" data-type="affix">${fd.name}  效果:${fd.effect}</div>`;
-              }
-            }
-          }
-          // 动态词条区（始终展示，只要有词条槽位）
-          if (affixSlots > 0) {
-            const dynCollapsed = state.collapsedDynAffixRows.has(instanceId);
-            const dnames = dynAffixCount > 0
-              ? (item.children || []).filter(c => c.type === 'affix').map(c => { const ad = getAffixDef(c.defId); return ad ? ad.name : c.defId; }).join('、')
-              : '';
-            h += `<div class="sb-card-stats" data-dyntoggle="${instanceId}" style="cursor:pointer;">`;
-            h += `动态词条 (${dynAffixCount}) <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${dynCollapsed ? '展开' : '收起'}</span>`;
-            if (dynCollapsed && dynAffixCount > 0) h += ` ${dnames}`;
-            h += '</div>';
-            if (!dynCollapsed) {
-              for (const ac of (item.children || []).filter(c => c.type === 'affix')) {
-                const ad = getAffixDef(ac.defId);
-                if (ad) h += `<div class="sb-card-stats" style="margin-left:12px;" data-instance="${ac.instanceId}" data-defid="${ac.defId}" data-type="affix" data-side="${side}" data-dropzone="card" draggable="${mode === 'build'}">${ad.name}  效果:${ad.effect}  数值:${ad.value}</div>`;
-              }
-              if (mode === 'build') {
-                for (let i = 0; i < affixSlots - dynAffixCount; i++) {
-                  h += `<div class="sb-empty-slot" data-dropzone="affix" data-instance="${instanceId}" data-side="${side}" style="margin-left:12px;">空槽位, 拖入词条</div>`;
-                }
-              }
-            }
-          }
-        }
-        if (mode === 'build') h += '</div>'; // close affix drop zone
+    // Block 3: 词条
+    const dynAffixCount = (item.children || []).filter(c => c.type === 'affix').length;
+    const hasAffixBlock = (edef && edef.dynamicAffixSlots > 0) || dynAffixCount > 0 || (edef && edef.fixedAffixes.length > 0);
+    if (hasAffixBlock) {
+      h += '<div class="sb-card-block">';
+      const affixSlots = edef ? edef.dynamicAffixSlots : 0;
+      if (mode === 'build') {
+        h += `<div data-dropzone="affix" data-instance="${instanceId}" data-side="${side}" style="min-height:4px;">`;
+      }
+      h += `<div class="sb-block-title" data-affixblocktoggle="${instanceId}" style="cursor:pointer;">`;
+      h += `词条 · ${dynAffixCount}/${affixSlots} 槽位 <span style="font-weight:400;color:var(--sb-text-muted,inherit);margin-left:2px;">${affixBlockCollapsed ? '展开' : '收起'}</span></div>`;
+      h += `<div class="sb-foldable${affixBlockCollapsed ? ' sb-folded' : ''}">`;
+      // 固定词条
+      if (edef && edef.fixedAffixes.length > 0) {
+        const fixCollapsed = state.collapsedFixedAffixRows.has(instanceId);
+        const fnames = edef.fixedAffixes.map(a => getAffixDef(a)?.name || a).join('、');
+        h += `<div class="sb-card-stats" data-fixtoggle="${instanceId}" style="cursor:pointer;">`;
+        h += `固定词条 (${edef.fixedAffixes.length}) <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${fixCollapsed ? '展开' : '收起'}</span>`;
+        if (fixCollapsed) h += ` ${fnames}`;
         h += '</div>';
+        if (!fixCollapsed) {
+          for (const fa of edef.fixedAffixes) {
+            const fd = getAffixDef(fa);
+            if (fd) h += `<div class="sb-card-stats" style="margin-left:12px;" data-defid="${fa}" data-type="affix">${fd.name}  效果:${fd.effect}</div>`;
+          }
+        }
       }
-
-      // ══ Block 4: 子实体 ══
-      const effSlots = edef ? getEffectiveEntitySlots(edef, item) : 0;
-      const usedSlots = edef ? countUsedSlots(item) : 0;
-      const entityChildren = (item.children || []).filter(c => c.type === 'entity');
-      const hasChildBlock = (effSlots > 0) || entityChildren.length > 0;
-      if (hasChildBlock) {
-        h += '<div class="sb-card-block">';
-        h += `<div class="sb-block-title" data-childblocktoggle="${instanceId}" style="cursor:pointer;">`;
-        h += `子实体 · ${usedSlots}/${effSlots} 槽位 <span style="font-weight:400;color:var(--sb-text-muted,inherit);margin-left:2px;">${childBlockCollapsed ? '展开' : '收起'}</span></div>`;
-        if (childBlockCollapsed) {
-          // 收起：名称列表
-          const childNames = entityChildren.map(c => (getEntityDef(c.defId) || { name: c.defId }).name).join(', ');
-          h += `<div class="sb-card-stats">${childNames}</div>`;
-        } else {
-          // 展开：每个子实体完整卡片 + 空槽位 Drop Zone
-          if (mode === 'build') {
-            h += `<div class="sb-child-area" data-dropzone="child" data-instance="${instanceId}" data-side="${side}">`;
-          } else {
-            h += '<div class="sb-child-area">';
+      // 动态词条
+      if (affixSlots > 0) {
+        const dynCollapsed = state.collapsedDynAffixRows.has(instanceId);
+        const dnames = dynAffixCount > 0
+          ? (item.children || []).filter(c => c.type === 'affix').map(c => { const ad = getAffixDef(c.defId); return ad ? ad.name : c.defId; }).join('、')
+          : '';
+        h += `<div class="sb-card-stats" data-dyntoggle="${instanceId}" style="cursor:pointer;">`;
+        h += `动态词条 (${dynAffixCount}) <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${dynCollapsed ? '展开' : '收起'}</span>`;
+        if (dynCollapsed && dynAffixCount > 0) h += ` ${dnames}`;
+        h += '</div>';
+        if (!dynCollapsed) {
+          for (const ac of (item.children || []).filter(c => c.type === 'affix')) {
+            const ad = getAffixDef(ac.defId);
+            if (ad) h += `<div class="sb-card-stats" style="margin-left:12px;" data-instance="${ac.instanceId}" data-defid="${ac.defId}" data-type="affix" data-side="${side}" data-dropzone="card" draggable="${mode === 'build'}">${ad.name}  效果:${ad.effect}  数值:${ad.value}</div>`;
           }
-          for (const child of entityChildren) {
-            h += renderEntityCard(child, depth + 1, side, mode, combatUnit);
-          }
-          // 空槽位
           if (mode === 'build') {
-            const remaining = effSlots - usedSlots;
-            for (let i = 0; i < remaining; i++) {
-              h += `<div class="sb-empty-slot" data-dropzone="child" data-instance="${instanceId}" data-side="${side}" style="margin-left:${Math.min(depth + 1, 3) * 16}px;">空槽位, 拖入实体</div>`;
+            for (let i = 0; i < affixSlots - dynAffixCount; i++) {
+              h += `<div class="sb-empty-slot" data-dropzone="affix" data-instance="${instanceId}" data-side="${side}" style="margin-left:12px;">空槽位, 拖入词条</div>`;
             }
           }
-          h += '</div>';
         }
-        h += '</div>';
       }
+      h += '</div>'; // sb-foldable
+      if (mode === 'build') h += '</div>'; // affix drop zone
+      h += '</div>';
+    }
 
-    } // end card expanded
+    // Block 4: 子实体
+    const effSlots = edef ? getEffectiveEntitySlots(edef, item) : 0;
+    const usedSlots = edef ? countUsedSlots(item) : 0;
+    const entityChildren = (item.children || []).filter(c => c.type === 'entity');
+    const hasChildBlock = (effSlots > 0) || entityChildren.length > 0;
+    if (hasChildBlock) {
+      h += '<div class="sb-card-block">';
+      h += `<div class="sb-block-title" data-childblocktoggle="${instanceId}" style="cursor:pointer;">`;
+      h += `子实体 · ${usedSlots}/${effSlots} 槽位 <span style="font-weight:400;color:var(--sb-text-muted,inherit);margin-left:2px;">${childBlockCollapsed ? '展开' : '收起'}</span></div>`;
+      // 收起态名称预览始终在 DOM
+      h += `<div class="sb-card-stats sb-foldable-child-preview" style="${childBlockCollapsed ? '' : 'display:none'}">${entityChildren.map(c => (getEntityDef(c.defId) || { name: c.defId }).name).join(', ')}</div>`;
+      h += `<div class="sb-foldable${childBlockCollapsed ? ' sb-folded' : ''}">`;
+      if (mode === 'build') {
+        h += `<div class="sb-child-area" data-dropzone="child" data-instance="${instanceId}" data-side="${side}">`;
+      } else {
+        h += '<div class="sb-child-area">';
+      }
+      for (const child of entityChildren) {
+        h += renderEntityCard(child, depth + 1, side, mode, combatUnit);
+      }
+      if (mode === 'build') {
+        const remaining = effSlots - usedSlots;
+        for (let i = 0; i < remaining; i++) {
+          h += `<div class="sb-empty-slot" data-dropzone="child" data-instance="${instanceId}" data-side="${side}" style="margin-left:${Math.min(depth + 1, 3) * 16}px;">空槽位, 拖入实体</div>`;
+        }
+      }
+      h += '</div>'; // sb-child-area
+      h += '</div>'; // sb-foldable
+      h += '</div>';
+    }
+
+    h += '</div>'; // sb-card-body-expanded
+
+    // ── 折叠态内容（CSS 默认隐藏）──
+    h += '<div class="sb-card-body-collapsed">';
+    const foldedEntityChildren = (item.children || []).filter(c => c.type === 'entity');
+    for (const child of foldedEntityChildren) {
+      h += renderCollapsedChildTree(child, depth + 1, side, mode, combatUnit);
+    }
+    h += '</div>'; // sb-card-body-collapsed
 
     h += '</div>'; // sb-card
     return h;
@@ -708,35 +843,6 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
   function getCombatUnits(side: 'player' | 'enemy'): CombatUnitRuntime[] | null {
     if (state.battleFinished) return side === 'player' ? state.finalPlayerUnits : state.finalEnemyUnits;
     return side === 'player' ? engine.combatPlayerUnits : engine.combatEnemyUnits;
-  }
-
-  function renderBattleView() {
-    const pu = getCombatUnits('player');
-    const eu = getCombatUnits('enemy');
-
-    app.innerHTML = `
-      <div id="sb-battle-view">
-        <div id="sb-battle-header">
-          <button class="btn" id="sb-btn-edit-back">← 返回编辑</button>
-          <strong>模拟对战 · 回合${state.round}</strong>
-          ${state.battleFinished ? '<span>战斗结束</span>' : `<span>模拟时间: ${state.battleLog.length > 0 ? state.battleLog[state.battleLog.length - 1].time + 'ms' : '0ms'}</span>`}
-          <span style="flex:1;"></span>
-          <button class="sb-speed-btn${state.battlePaused ? ' paused' : ''}" id="sb-btn-pause">${state.battlePaused ? '已暂停' : '暂停'}</button>
-          ${[0.5, 1, 2].map(s => `<button class="sb-speed-btn${state.combatSpeed === s ? ' active' : ''}" data-speed="${s}">${s}x</button>`).join('')}
-        </div>
-        <div id="sb-battle-body">
-          <div class="sb-battle-side" id="sb-player-units">${renderBattleSideCards('player', pu)}</div>
-          <div class="sb-battle-side" id="sb-enemy-units">${renderBattleSideCards('enemy', eu)}</div>
-        </div>
-        <div id="sb-battle-log">${renderBattleLog()}</div>
-        ${state.battleFinished ? `<div id="sb-battle-result">${state.playerWin ? '玩家胜利！' : '玩家失败'}</div>` : ''}
-        <div id="sb-toast" style="display:none;position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#404040;color:#fff;padding:10px 24px;border-radius:8px;font-size:13px;z-index:2000;box-shadow:0 2px 12px rgba(0,0,0,0.12);"></div>
-      </div>
-    `;
-
-    bindBattleEvents();
-    bindCardCollapseEvents();
-    bindBattleTooltips();
   }
 
   function renderBattleSideCards(side: 'player' | 'enemy', units: CombatUnitRuntime[] | null): string {
@@ -782,18 +888,74 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
 
   // ---- 动态战斗数值更新（重绘 body 确保所有数值实时） ----
 
-  function updateBattleDynamicValues() {
-    // 重绘战斗 body 区域 — 所有数值从 live combat units 自然实时
-    const bodyEl = document.getElementById('sb-battle-body');
-    if (!bodyEl) return;
+  let lastLogIndex = 0;
+
+  function patchBattleValues() {
     const pu = getCombatUnits('player');
     const eu = getCombatUnits('enemy');
-    bodyEl.innerHTML =
-      `<div class="sb-battle-side" id="sb-player-units">${renderBattleSideCards('player', pu)}</div>` +
-      `<div class="sb-battle-side" id="sb-enemy-units">${renderBattleSideCards('enemy', eu)}</div>`;
-    bindCardCollapseEvents();
-    bindBattleTooltips();
-
+    // 遍历所有 cu-* 动态值 span，只更新变化的 textContent
+    document.querySelectorAll('#sb-battle-body [id^="cu-"]').forEach(el => {
+      const parts = el.id.split('-');
+      if (parts.length < 4) return;
+      const type = parts[1];      // hp | sta | cd | ov | dead
+      const side = parts[2];      // p | e
+      const instId = parts[3];
+      const units = side === 'p' ? pu : eu;
+      if (!units) return;
+      const unit = units.find(u => {
+        const edef = getEntityDef(u.entityId);
+        return edef && edef.id === instId;
+      });
+      if (!unit) return;
+      let newVal = '';
+      if (type === 'hp') newVal = `${Math.max(unit.currentHp, 0)}/${unit.totalHp}`;
+      else if (type === 'sta') newVal = `${Math.floor(unit.currentStamina)}/${unit.maxStamina}`;
+      else if (type === 'cd') {
+        const wIdx = parseInt(parts[4] || '0');
+        if (unit.weapons[wIdx]) newVal = `${(Math.max(unit.weapons[wIdx].remainingTime, 0) / 1000).toFixed(1)}s`;
+      } else if (type === 'ov') {
+        (el as HTMLElement).style.display = unit.isOverloaded ? '' : 'none';
+        return;
+      } else if (type === 'dead') {
+        (el as HTMLElement).style.display = unit.currentHp <= 0 ? '' : 'none';
+        return;
+      }
+      if (el.textContent !== newVal) el.textContent = newVal;
+    });
+    // 更新阵亡卡片的 .dead class
+    document.querySelectorAll('#sb-battle-body .sb-card').forEach(card => {
+      const sideEl = card.closest('.sb-battle-side');
+      if (!sideEl) return;
+      const isPlayer = sideEl.id === 'sb-player-units';
+      const units = isPlayer ? pu : eu;
+      const instId = (card.querySelector('[data-cardtoggle]') as HTMLElement)?.dataset.cardtoggle;
+      if (!instId || !units) return;
+      const unit = units.find(u => {
+        const edef = getEntityDef(u.entityId);
+        return edef && edef.id === instId;
+      });
+      card.classList.toggle('dead', !!(unit && unit.currentHp <= 0));
+    });
+    // 追加战斗日志
+    if (state.battleLog.length > lastLogIndex) {
+      const logEl = document.getElementById('sb-battle-log');
+      if (logEl) {
+        for (let i = lastLogIndex; i < state.battleLog.length; i++) {
+          const evt = state.battleLog[i];
+          let entryHtml: string;
+          if (evt.effects.includes('击杀')) {
+            entryHtml = `<div class="sb-log-entry kill">[${evt.time}ms] ${evt.targetName} 击杀!</div>`;
+          } else if (evt.targetName === '战斗开始') {
+            entryHtml = '<div class="sb-log-entry">[0ms] 战斗开始</div>';
+          } else {
+            entryHtml = `<div class="sb-log-entry">[${evt.time}ms] ${evt.actorName} · ${evt.weaponName} -> ${evt.targetName} 伤害 ${evt.damage} (HP:${evt.targetHpAfter}/${evt.targetMaxHp})</div>`;
+          }
+          logEl.insertAdjacentHTML('beforeend', entryHtml);
+        }
+        lastLogIndex = state.battleLog.length;
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+    }
     // 更新时间
     if (state.battleLog.length > 0 && !state.battleFinished) {
       const lastTime = state.battleLog[state.battleLog.length - 1].time;
@@ -806,65 +968,58 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
   // 拖拽事件绑定
   // ============================================================
 
-  function bindBuildEvents() {
-    // 返回
-    document.getElementById('sb-btn-back')!.addEventListener('click', () => {
-      hideSimTooltip();
-      if (state.battleUpdateTimer) clearInterval(state.battleUpdateTimer);
-      onBack();
-    });
+  // ============================================================
+  // 物品池事件（pool zone 更新后调用）
+  // ============================================================
 
-    // 回合选择
-    document.getElementById('sb-round')!.addEventListener('change', (e) => {
-      state.round = parseInt((e.target as HTMLSelectElement).value);
-      render();
-    });
+  let poolSearchTimer: ReturnType<typeof setTimeout> | null = null;
 
-    // 开始战斗
-    document.getElementById('sb-btn-start')!.addEventListener('click', () => startSimBattle());
-
-    // 物品池折叠
-    document.getElementById('sb-pool-toggle')!.addEventListener('click', () => {
-      state.poolCollapsed = !state.poolCollapsed;
-      render();
-    });
-
-    // 物品池筛选按钮
-    document.querySelectorAll('[data-pooltab]').forEach(el => {
+  function bindPoolEvents() {
+    // 筛选按钮
+    document.querySelectorAll('#sb-pool [data-pooltab]').forEach(el => {
       el.addEventListener('click', () => {
         state.poolTab = (el as HTMLElement).dataset.pooltab as 'all' | 'entity' | 'affix';
-        render();
+        updateZone('sb-pool', renderPoolContent());
+        bindPoolEvents();
       });
     });
-    document.querySelectorAll('[data-ecat]').forEach(el => {
+    document.querySelectorAll('#sb-pool [data-ecat]').forEach(el => {
       el.addEventListener('click', () => {
         state.entityCatFilter = (el as HTMLElement).dataset.ecat!;
-        render();
+        updateZone('sb-pool', renderPoolContent());
+        bindPoolEvents();
       });
     });
-    document.querySelectorAll('[data-acat]').forEach(el => {
+    document.querySelectorAll('#sb-pool [data-acat]').forEach(el => {
       el.addEventListener('click', () => {
         state.affixCatFilter = (el as HTMLElement).dataset.acat!;
-        render();
+        updateZone('sb-pool', renderPoolContent());
+        bindPoolEvents();
       });
     });
 
-    // 搜索
+    // 搜索（150ms 防抖）
     const searchInput = document.getElementById('sb-pool-search') as HTMLInputElement;
     if (searchInput) {
       searchInput.addEventListener('input', () => {
-        state.poolSearch = searchInput.value;
-        // 只更新列表，不全量渲染
-        const listEl = document.getElementById('sb-item-list');
-        const poolEl = document.getElementById('sb-pool');
-        if (listEl && poolEl) {
-          poolEl.innerHTML = renderPoolContent();
-          bindPoolItemEvents();
-        }
+        if (poolSearchTimer) clearTimeout(poolSearchTimer);
+        poolSearchTimer = setTimeout(() => {
+          state.poolSearch = searchInput.value;
+          updateZone('sb-pool', renderPoolContent());
+          bindPoolEvents();
+        }, 150);
       });
     }
 
     bindPoolItemEvents();
+  }
+
+  // ============================================================
+  // BD 区事件（BD zone 更新后调用）
+  // ============================================================
+
+  function bindBDEvents(side: 'player' | 'enemy') {
+    // 拖拽、tooltip、折叠覆盖全局（双向独立 zone 但事件穿透），保留原有逻辑
     bindDragEvents();
     bindTooltipEvents();
     bindCardCollapseEvents();
@@ -1090,7 +1245,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       if (!removed) removed = removeFromSlots(state.enemySlots, instanceId);
       if (removed) {
         setDragPayload(null);
-        render();
+        renderZones();
       }
     });
   }
@@ -1131,7 +1286,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       if (def && isStarter(def)) {
         removeFromSlots(slots, payload.instanceId);
         slots.push({ entity: item, children: [] });
-        render();
+        renderZones();
         return null;
       }
       return '非启动端不能放入第一层';
@@ -1176,7 +1331,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
         removeFromSlots(slots, instId);
         if (!tgtItem.children) tgtItem.children = [];
         tgtItem.children.push(draggedItem);
-        render(); return null;
+        renderZones(); return null;
       }
       // 词条排序
       if (draggedItem.type === 'affix' && tgtItem.type === 'affix') {
@@ -1189,7 +1344,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
         if (di >= 0 && di < ti) ti--;
         removeFromSlots(slots, instId);
         pc.splice(insertBefore ? ti : ti + 1, 0, draggedItem);
-        render(); return null;
+        renderZones(); return null;
       }
 
       // 启动端排序
@@ -1204,7 +1359,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
         for (let i = 0; i < slots.length; i++) { if (slots[i].entity.instanceId === instId) { dsi = i; break; } }
         if (dsi >= 0 && dsi < tsi) tsi--;
         slots.splice(insertBefore ? tsi : tsi + 1, 0, { entity: draggedItem, children: [] });
-        render(); return null;
+        renderZones(); return null;
       }
 
       // 普通子实体排序
@@ -1227,7 +1382,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       }
       removeFromSlots(slots, instId);
       parentChildren.splice(insertBefore ? targetIdx : targetIdx + 1, 0, draggedItem);
-      render(); return null;
+      renderZones(); return null;
     }
 
     // 从物品池拖入
@@ -1251,7 +1406,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       state.collapsedCards.add(newItem.instanceId);
       if (!targetItem.children) targetItem.children = [];
       targetItem.children.push(newItem);
-      render();
+      renderZones();
       return null;
     }
 
@@ -1351,7 +1506,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
             parent.children.push(item);
           }
         }
-        render();
+        renderZones();
         return null;
       }
       if (!def) return '未知物品';
@@ -1382,7 +1537,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
         if (!parent.children) parent.children = [];
         parent.children.push(item);
       }
-      render();
+      renderZones();
       return null;
     }
 
@@ -1424,7 +1579,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       parent.children.push(newItem);
     }
 
-    render();
+    renderZones();
     return null;
   }
 
@@ -1440,40 +1595,58 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
   }
 
   function bindCardCollapseEvents() {
-    // 卡片整体折叠
+    // 卡片整体折叠 — CSS class toggle
     document.querySelectorAll('[data-cardtoggle]').forEach(el => {
       const htmlEl = el as HTMLElement;
       const instanceId = htmlEl.dataset.cardtoggle!;
       htmlEl.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (state.collapsedCards.has(instanceId)) state.collapsedCards.delete(instanceId);
-        else state.collapsedCards.add(instanceId);
-        render();
+        const card = htmlEl.closest('.sb-card') as HTMLElement;
+        if (!card) return;
+        const collapsing = !state.collapsedCards.has(instanceId);
+        if (collapsing) state.collapsedCards.add(instanceId);
+        else state.collapsedCards.delete(instanceId);
+        card.classList.toggle('sb-card-collapsed', collapsing);
+        // 更新折叠按钮文字
+        const btn = htmlEl.querySelector('.sb-card-collapse-btn');
+        if (btn) btn.textContent = collapsing ? '展开' : '收起';
       });
     });
-    // 词条区块折叠
+    // 词条区块折叠 — CSS foldable toggle
     document.querySelectorAll('[data-affixblocktoggle]').forEach(el => {
       const htmlEl = el as HTMLElement;
       const instanceId = htmlEl.dataset.affixblocktoggle!;
       htmlEl.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (state.collapsedAffixBlocks.has(instanceId)) state.collapsedAffixBlocks.delete(instanceId);
-        else state.collapsedAffixBlocks.add(instanceId);
-        render();
+        const foldable = htmlEl.parentElement?.querySelector('.sb-foldable') as HTMLElement;
+        if (!foldable) return;
+        const collapsing = !state.collapsedAffixBlocks.has(instanceId);
+        if (collapsing) state.collapsedAffixBlocks.add(instanceId);
+        else state.collapsedAffixBlocks.delete(instanceId);
+        foldable.classList.toggle('sb-folded', collapsing);
+        const label = htmlEl.querySelector('span');
+        if (label) label.textContent = collapsing ? '展开' : '收起';
       });
     });
-    // 子实体区块折叠
+    // 子实体区块折叠 — CSS foldable toggle + 预览文案切换
     document.querySelectorAll('[data-childblocktoggle]').forEach(el => {
       const htmlEl = el as HTMLElement;
       const instanceId = htmlEl.dataset.childblocktoggle!;
       htmlEl.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (state.collapsedChildBlocks.has(instanceId)) state.collapsedChildBlocks.delete(instanceId);
-        else state.collapsedChildBlocks.add(instanceId);
-        render();
+        const foldable = htmlEl.parentElement?.querySelector('.sb-foldable') as HTMLElement;
+        const preview = htmlEl.parentElement?.querySelector('.sb-foldable-child-preview') as HTMLElement;
+        if (!foldable) return;
+        const collapsing = !state.collapsedChildBlocks.has(instanceId);
+        if (collapsing) state.collapsedChildBlocks.add(instanceId);
+        else state.collapsedChildBlocks.delete(instanceId);
+        foldable.classList.toggle('sb-folded', collapsing);
+        if (preview) preview.style.display = collapsing ? '' : 'none';
+        const label = htmlEl.querySelector('span');
+        if (label) label.textContent = collapsing ? '展开' : '收起';
       });
     });
-    // 固定词条展开/折叠
+    // 固定词条展开/折叠 — 重新渲染该卡片（结构变化较大）
     document.querySelectorAll('[data-fixtoggle]').forEach(el => {
       const htmlEl = el as HTMLElement;
       const instanceId = htmlEl.dataset.fixtoggle!;
@@ -1481,10 +1654,10 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
         e.stopPropagation();
         if (state.collapsedFixedAffixRows.has(instanceId)) state.collapsedFixedAffixRows.delete(instanceId);
         else state.collapsedFixedAffixRows.add(instanceId);
-        render();
+        rebuildSingleCard(instanceId);
       });
     });
-    // 动态词条展开/折叠
+    // 动态词条展开/折叠 — 重新渲染该卡片（结构变化较大）
     document.querySelectorAll('[data-dyntoggle]').forEach(el => {
       const htmlEl = el as HTMLElement;
       const instanceId = htmlEl.dataset.dyntoggle!;
@@ -1492,8 +1665,92 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
         e.stopPropagation();
         if (state.collapsedDynAffixRows.has(instanceId)) state.collapsedDynAffixRows.delete(instanceId);
         else state.collapsedDynAffixRows.add(instanceId);
-        render();
+        rebuildSingleCard(instanceId);
       });
+    });
+  }
+
+  /** 原地重建单张卡片（用于固定/动态词条展开折叠，因为内容结构变化） */
+  function rebuildSingleCard(instanceId: string) {
+    // 确定卡片属性
+    let side: 'player' | 'enemy' = 'player';
+    let mode: 'build' | 'battle' = state.inBattle ? 'battle' : 'build';
+    let slots: DeploySlot[] = state.playerSlots;
+    let item = findItemInSlots(slots, instanceId);
+    if (!item) { slots = state.enemySlots; item = findItemInSlots(slots, instanceId); side = 'enemy'; }
+    if (!item) return;
+    const cardEl = document.querySelector(`.sb-card:has([data-cardtoggle="${instanceId}"])`) ||
+                   (document.querySelector(`[data-cardtoggle="${instanceId}"]`)?.closest('.sb-card') as HTMLElement);
+    if (!cardEl) return;
+    const depth = parseInt(cardEl.dataset.depth || '0');
+    let combatUnit: CombatUnitRuntime | null | undefined = undefined;
+    if (mode === 'battle') {
+      const units = side === 'player' ? getCombatUnits('player') : getCombatUnits('enemy');
+      combatUnit = units?.find(u => u.entityId === getEntityDef(item.defId)?.id);
+    }
+    const newHtml = renderEntityCard(item, depth, side, mode, combatUnit);
+    const temp = document.createElement('div');
+    temp.innerHTML = newHtml;
+    const newCard = temp.firstElementChild as HTMLElement;
+    cardEl.replaceWith(newCard);
+    // 只对新卡片绑折叠事件
+    bindCardCollapseEventsOnCard(newCard);
+    if (mode === 'battle') bindBattleTooltipsOnCard(newCard);
+  }
+
+  function bindCardCollapseEventsOnCard(card: HTMLElement) {
+    // 同上逻辑，但只作用于单张卡片内的 toggle
+    const cardToggle = card.querySelector('[data-cardtoggle]') as HTMLElement;
+    if (cardToggle) {
+      cardToggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const instId = cardToggle.dataset.cardtoggle!;
+        const collapsing = !state.collapsedCards.has(instId);
+        if (collapsing) state.collapsedCards.add(instId);
+        else state.collapsedCards.delete(instId);
+        card.classList.toggle('sb-card-collapsed', collapsing);
+        const btn = cardToggle.querySelector('.sb-card-collapse-btn');
+        if (btn) btn.textContent = collapsing ? '展开' : '收起';
+      });
+    }
+    // 词条/子实体 block toggle 同理...
+    card.querySelectorAll('[data-affixblocktoggle]').forEach(t => {
+      t.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const fi = (t as HTMLElement).dataset.affixblocktoggle!;
+        const foldable = (t as HTMLElement).parentElement?.querySelector('.sb-foldable') as HTMLElement;
+        if (!foldable) return;
+        const c = !state.collapsedAffixBlocks.has(fi);
+        if (c) state.collapsedAffixBlocks.add(fi); else state.collapsedAffixBlocks.delete(fi);
+        foldable.classList.toggle('sb-folded', c);
+        const lbl = (t as HTMLElement).querySelector('span');
+        if (lbl) lbl.textContent = c ? '展开' : '收起';
+      });
+    });
+    card.querySelectorAll('[data-childblocktoggle]').forEach(t => {
+      t.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const fi = (t as HTMLElement).dataset.childblocktoggle!;
+        const foldable = (t as HTMLElement).parentElement?.querySelector('.sb-foldable') as HTMLElement;
+        const preview = (t as HTMLElement).parentElement?.querySelector('.sb-foldable-child-preview') as HTMLElement;
+        if (!foldable) return;
+        const c = !state.collapsedChildBlocks.has(fi);
+        if (c) state.collapsedChildBlocks.add(fi); else state.collapsedChildBlocks.delete(fi);
+        foldable.classList.toggle('sb-folded', c);
+        if (preview) preview.style.display = c ? '' : 'none';
+        const lbl = (t as HTMLElement).querySelector('span');
+        if (lbl) lbl.textContent = c ? '展开' : '收起';
+      });
+    });
+  }
+
+  function bindBattleTooltipsOnCard(card: HTMLElement) {
+    card.querySelectorAll('[data-defid]').forEach(el => {
+      const hEl = el as HTMLElement;
+      const defId = hEl.dataset.defid!;
+      const type = (hEl.dataset.type || 'entity') as 'entity' | 'affix';
+      hEl.addEventListener('mouseenter', (ev) => showSimTooltip(ev as MouseEvent, defId, type));
+      hEl.addEventListener('mouseleave', hideSimTooltip);
     });
   }
 
@@ -1538,52 +1795,23 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
         }
         state.battleFinished = true;
         state.playerWin = win;
-        render();
+        renderZones();
       },
       state.combatSpeed,
     );
 
     // 渲染战斗 UI（此时 runSimCombat 已设置 combatPlayerUnits/combatEnemyUnits，并过了 300ms 初始延迟）
-    render();
+    renderZones();
 
-    // 启动 100ms 轮询
+    // 启动 100ms 轮询 — 使用精准 DOM patch 而非 innerHTML 替换
+    lastLogIndex = 0;
     state.battleUpdateTimer = setInterval(() => {
       if (!state.battlePaused && !state.battleFinished) {
-        updateBattleDynamicValues();
+        patchBattleValues();
       }
     }, 100);
 
     await battlePromise;
-  }
-
-  function bindBattleEvents() {
-    document.getElementById('sb-btn-edit-back')!.addEventListener('click', () => {
-      if (state.battleUpdateTimer) {
-        clearInterval(state.battleUpdateTimer);
-        state.battleUpdateTimer = null;
-      }
-      state.inBattle = false;
-      state.battleFinished = false;
-      state.battlePaused = false;
-      state.battleLog = [];
-      render();
-    });
-
-    // 暂停
-    document.getElementById('sb-btn-pause')!.addEventListener('click', () => {
-      state.battlePaused = !state.battlePaused;
-      render();
-    });
-
-    // 速度
-    document.querySelectorAll('[data-speed]').forEach(el => {
-      el.addEventListener('click', () => {
-        const spd = parseFloat((el as HTMLElement).dataset.speed!);
-        state.combatSpeed = spd;
-        if (state.battlePaused) state.battlePaused = false;
-        render();
-      });
-    });
   }
 
   // ============================================================
@@ -1595,5 +1823,5 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
   }
 
   // 初始渲染
-  render();
+  renderZones();
 }
