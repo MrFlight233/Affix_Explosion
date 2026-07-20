@@ -884,6 +884,12 @@ body {
 
 /* ── Tooltip（悬浮详情卡）── */
 #sb-tooltip {
+  --sb-surface: #fff;
+  --sb-text: #262626;
+  --sb-text-secondary: #737373;
+  --sb-text-muted: #a3a3a3;
+  --sb-border: #e5e5e5;
+  --sb-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   position: fixed; z-index: 999; pointer-events: none;
   opacity: 0; transform: translateY(4px);
   transition: opacity 150ms var(--sb-ease-out), transform 150ms var(--sb-ease-out);

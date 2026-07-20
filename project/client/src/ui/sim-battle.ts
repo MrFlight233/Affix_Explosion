@@ -67,10 +67,16 @@ function ensureTooltip(): HTMLElement {
   return tooltipEl;
 }
 
-function showSimTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affix') {
+function showSimTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affix', instanceId?: string | null) {
   if (tipShowTimer) clearTimeout(tipShowTimer);
   const tip = ensureTooltip();
   const inner = tip.querySelector('.sb-tip-inner')!;
+
+  // 尝试获取实例（BD 中已有的物品）
+  let inst: ItemInstance | null = null;
+  if (instanceId) {
+    inst = findItemInSlots(state.playerSlots, instanceId) || findItemInSlots(state.enemySlots, instanceId);
+  }
 
   if (type === 'entity') {
     const def = getEntityDef(defId);
@@ -118,6 +124,31 @@ function showSimTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affix') 
       }
       h += '</div>';
     }
+
+    // 实例动态数据：词条 + 子实体
+    if (inst) {
+      const dynAffixes = (inst.children || []).filter(c => c.type === 'affix');
+      if (dynAffixes.length > 0) {
+        h += section(`动态词条 (${dynAffixes.length})`);
+        h += '<div class="sb-tip-chips">';
+        for (const a of dynAffixes) {
+          const ad = getAffixDef(a.defId);
+          h += `<span class="sb-tip-chip">${ad?.name || a.defId}</span>`;
+        }
+        h += '</div>';
+      }
+      const children = (inst.children || []).filter(c => c.type === 'entity');
+      if (children.length > 0) {
+        h += section(`子实体 (${children.length})`);
+        h += '<div class="sb-tip-chips">';
+        for (const c of children) {
+          const cd = getEntityDef(c.defId);
+          h += `<span class="sb-tip-chip">${cd?.name || c.defId}</span>`;
+        }
+        h += '</div>';
+      }
+    }
+
     h += '<div class="sb-tip-footer">';
     h += `<span>价值</span><span>${def.value}</span>`;
     h += '</div>';
@@ -1633,12 +1664,13 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
   }
 
   function bindTooltipEvents() {
-    // BD 树中的实体/词条行 (有 data-defid 属性)
+    // BD 树中的实体/词条行 (有 data-defid 属性，可能有 data-instance)
     document.querySelectorAll('#sb-player-bd [data-defid], #sb-enemy-bd [data-defid]').forEach(el => {
       const htmlEl = el as HTMLElement;
       const defId = htmlEl.dataset.defid!;
       const type = (htmlEl.dataset.type || 'entity') as 'entity' | 'affix';
-      htmlEl.addEventListener('mouseenter', (e) => showSimTooltip(e as MouseEvent, defId, type));
+      const instId = htmlEl.dataset.instance || null;
+      htmlEl.addEventListener('mouseenter', (e) => showSimTooltip(e as MouseEvent, defId, type, instId));
       htmlEl.addEventListener('mouseleave', hideSimTooltip);
     });
   }
@@ -1818,7 +1850,8 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       const hEl = el as HTMLElement;
       const defId = hEl.dataset.defid!;
       const type = (hEl.dataset.type || 'entity') as 'entity' | 'affix';
-      hEl.addEventListener('mouseenter', (ev) => showSimTooltip(ev as MouseEvent, defId, type));
+      const instId = hEl.dataset.instance || null;
+      hEl.addEventListener('mouseenter', (ev) => showSimTooltip(ev as MouseEvent, defId, type, instId));
       hEl.addEventListener('mouseleave', hideSimTooltip);
     });
   }
