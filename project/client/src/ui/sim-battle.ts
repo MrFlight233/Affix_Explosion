@@ -1108,7 +1108,7 @@ function hideSimTooltip() {
   // ---- 战斗 Tooltip ----
 
   function bindBattleTooltips() {
-    document.querySelectorAll('#sb-battle-body .sb-card-header[data-defid]').forEach(el => {
+    document.querySelectorAll('#sb-battle-body [data-defid]').forEach(el => {
       const htmlEl = el as HTMLElement;
       const defId = htmlEl.dataset.defid!;
       const type = (htmlEl.dataset.type || 'entity') as 'entity' | 'affix';
@@ -1810,8 +1810,8 @@ function hideSimTooltip() {
   }
 
   function bindTooltipEvents() {
-    // BD 树中的卡片标题行（不匹配卡体内词条行，避免 getEntityDef 失败）
-    document.querySelectorAll('#sb-player-bd .sb-card-header[data-defid], #sb-enemy-bd .sb-card-header[data-defid]').forEach(el => {
+    // BD 树中的实体/词条行 (有 data-defid 属性)
+    document.querySelectorAll('#sb-player-bd [data-defid], #sb-enemy-bd [data-defid]').forEach(el => {
       const htmlEl = el as HTMLElement;
       const defId = htmlEl.dataset.defid!;
       const type = (htmlEl.dataset.type || 'entity') as 'entity' | 'affix';
