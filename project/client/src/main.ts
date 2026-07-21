@@ -6,7 +6,7 @@ import { showAuthModal, hideAuthModal } from './ui/auth';
 import { UIManager } from './ui/panels';
 import { GameEngine } from './game/engine';
 import { getToken, setToken, saves as savesApi } from './api/client';
-import { ENTITY_DEFS, AFFIX_DEFS, isStarter, EntityDef, getEntityDef, getAffixDef, getEntityCategory, getEntityCategoryFilters, loadInitialData } from './game/data';
+import { ENTITY_DEFS, AFFIX_DEFS, isStarter, EntityDef, getEntityDef, getAffixDef, getEntityCategory, getEntityCategoryFilters, getCategoryName, getAffixFilterCategories, loadInitialData } from './game/data';
 // tooltip 已移至详情面板，不再需要 hover 提示
 
 const app = document.getElementById('app')!;
@@ -162,7 +162,7 @@ async function launchGame(engine: GameEngine, isNew: boolean) {
 type PoolTab = 'all' | 'entity' | 'affix';
 type EntityFilter = 'all-entity' | 'starter' | 'active' | 'passive';
 type EntityCatFilter = string;
-type AffixCatFilter = 'all' | '类别' | '属性' | '行动' | '伤害' | '防御' | '耐力' | '负重' | '容器' | '限制' | '特殊';
+type AffixCatFilter = string;
 
 function showFullItemPool() {
   let currentTab: PoolTab = 'all';
@@ -226,9 +226,10 @@ function showFullItemPool() {
       if (currentTab === 'all') {
         // 词条分类筛选
         listHtml += '<div class="filter-row" style="margin-bottom:4px;">';
-        const acats: AffixCatFilter[] = ['all', '类别', '属性', '行动', '伤害', '防御', '耐力', '负重', '容器', '限制', '特殊'];
-        for (const c of acats) {
-          listHtml += `<button class="btn btn-small ${affixCatFilter === c ? 'active' : ''}" data-acat="${c}">${c === 'all' ? '全部类别' : c}</button>`;
+        const aCatObjs = getAffixFilterCategories();
+        listHtml += `<button class="btn btn-small ${affixCatFilter === 'all' ? 'active' : ''}" data-acat="all">全部类别</button>`;
+        for (const c of aCatObjs) {
+          listHtml += `<button class="btn btn-small ${affixCatFilter === c.id ? 'active' : ''}" data-acat="${c.id}">${c.name}</button>`;
         }
         listHtml += '</div>';
       }
@@ -237,7 +238,7 @@ function showFullItemPool() {
         const sel = selectedId === a.id ? ' style="background:#f0f0f0;font-weight:bold;"' : '';
         listHtml += `<div class="item-row ip-item" data-id="${a.id}" data-type="affix"${sel}">`;
         listHtml += `<span class="item-name">${a.name}</span>`;
-        listHtml += `<span class="item-stat">[${a.category}] ${a.effect}</span>`;
+        listHtml += `<span class="item-stat">[${getCategoryName(a.category)}] ${a.effect}</span>`;
         listHtml += `<span class="item-value">价${Math.abs(a.costValue)}</span></div>`;
       }
     }
@@ -398,7 +399,7 @@ function showFullItemPool() {
       const row = (k: string, v: string) =>
         `<tr><td class="tt-label" style="white-space:nowrap;vertical-align:top;padding-right:10px;">${k}</td><td>${v}</td></tr>`;
 
-      let h = `<div class="tt-name" style="margin-bottom:8px;">${affix.name} <span style="font-size:12px;color:var(--text-dim);font-weight:normal;">[${affix.category}]</span></div>`;
+      let h = `<div class="tt-name" style="margin-bottom:8px;">${affix.name} <span style="font-size:12px;color:var(--text-dim);font-weight:normal;">[${getCategoryName(affix.category)}]</span></div>`;
       h += '<table style="font-size:13px;line-height:1.9;width:100%;">';
 
       h += '<tr><td colspan="2" style="font-weight:bold;padding-top:4px;border-bottom:1px solid #eee;">效果</td></tr>';

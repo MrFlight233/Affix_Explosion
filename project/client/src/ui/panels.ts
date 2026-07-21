@@ -181,7 +181,7 @@ export class UIManager {
         if (edef.damage) html += `<span class="item-stat">伤害加成:${edef.damage}</span>`;
         
         if (edef.hpBonus) html += `<span class="item-stat">HP:${edef.hpBonus}</span>`;
-        if (hasEntitySlots(edef)) html += `<span class="item-stat">内槽:${getEffectiveEntitySlots(edef, item)}</span>`;
+        if (hasEntitySlots(edef)) html += `<span class="item-stat">内槽:${getEffectiveEntitySlots(edef)}</span>`;
         html += `<span class="item-stat">重:${edef.weight}</span>`;
       }
       html += `<span class="item-value">价${edef.value}</span></div>`;

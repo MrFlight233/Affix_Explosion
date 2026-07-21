@@ -3,7 +3,7 @@
 // ============================================================
 
 import { admin } from '../api/client';
-import { reloadData, getEntityCategory, getEntityCategoryFilters, DefaultChildSpec } from '../game/data';
+import { reloadData, getEntityCategory, getEntityCategoryFilters, getCategoryName, getAffixFilterCategories, CATEGORIES, CategoryDef, DefaultChildSpec } from '../game/data';
 
 type TabType = 'entities' | 'affixes';
 
@@ -41,10 +41,12 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
   };
 
   try {
-    const [eRes, aRes] = await Promise.all([admin.listEntities(), admin.listAffixes()]);
+    const [eRes, aRes, cRes] = await Promise.all([
+      admin.listEntities(), admin.listAffixes(), admin.listCategories()
+    ]);
     state.entities = eRes.entities;
     state.affixes = aRes.affixes;
-    reloadData(state.entities, state.affixes);
+    reloadData(state.entities, state.affixes, cRes.categories);
   } catch (e: any) {
     app.innerHTML = `<div style="padding:40px;text-align:center;"><p style="color:var(--warn);">加载数据失败：${e.message}</p><button class="btn" id="btn-back-admin">返回</button></div>`;
     document.getElementById('btn-back-admin')!.addEventListener('click', onBack);
@@ -64,6 +66,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         <button class="btn" id="adm-btn-export-all" style="background:#fff;border:1px solid #4a90d9;color:#4a90d9;">导出全部</button>
         <button class="btn" id="adm-btn-import" style="background:#fff;border:1px solid #4a90d9;color:#4a90d9;">导入</button>
         <button class="btn btn-danger" id="adm-btn-clear-all" style="background:#fff;color:#c00;border:1px solid #c00;">删除全部实体</button>
+        <button class="btn" id="adm-btn-manage-cats" style="background:#fff;border:1px solid #4a90d9;color:#4a90d9;">管理分类</button>
       </div>
       <div style="display:flex;flex:1;overflow:hidden;">
         <div id="adm-left" style="width:320px;border-right:1px solid #ddd;display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;">
@@ -120,6 +123,132 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     setTimeout(() => { el.style.display = 'none'; }, 2000);
   }
 
+  // ---- 分类管理弹窗 ----
+
+  function showCatManager() {
+    const existing = document.querySelector('.cat-manager-overlay');
+    if (existing) existing.remove();
+
+    let editingCat: CategoryDef | null = null;
+    let newCatMode = false;
+
+    function buildForm(): string {
+      const cats = CATEGORIES;
+      let h = '<div class="cat-mgr-body"><div class="cat-mgr-list">';
+      h += '<h4 style="margin-top:0;font-size:13px;">现有分类</h4>';
+      for (const c of cats) {
+        const isEC = c.isEntityClass ? ' [实体分类]' : '';
+        h += `<div class="cat-mgr-row" data-cid="${c.id}" style="padding:4px 8px;cursor:pointer;border-bottom:1px solid #eee;display:flex;justify-content:space-between;">
+          <span>${c.name}<span style="color:#888;font-size:11px;margin-left:8px;">${c.id}${isEC}</span></span>
+        </div>`;
+      }
+      h += '</div><div class="cat-mgr-form" style="padding-left:12px;border-left:1px solid #ccc;min-width:220px;">';
+      if (newCatMode) {
+        h += '<h4 style="margin-top:0;font-size:13px;">新增分类</h4>';
+        h += '<div class="admin-field"><label>ID（英文）</label><input id="catmf-id" type="text" placeholder="e.g. aura"></div>';
+        h += '<div class="admin-field"><label>名称</label><input id="catmf-name" type="text" placeholder="e.g. 光环"></div>';
+        h += '<div class="admin-field"><label>排序序号</label><input id="catmf-sort" type="number" value="10"></div>';
+        h += '<div class="admin-field"><label><input id="catmf-isclass" type="checkbox"> 实体分类标记</label></div>';
+        h += '<div style="margin-top:8px;"><button class="btn btn-small" id="catmf-save">保存</button> <button class="btn btn-small" id="catmf-cancel">取消</button></div>';
+      } else if (editingCat) {
+        h += `<h4 style="margin-top:0;font-size:13px;">编辑：${editingCat.name}</h4>`;
+        h += `<div class="admin-field"><label>ID</label><input id="catmf-id" value="${editingCat.id}" disabled></div>`;
+        h += `<div class="admin-field"><label>名称</label><input id="catmf-name" value="${editingCat.name}"></div>`;
+        h += `<div class="admin-field"><label>排序序号</label><input id="catmf-sort" type="number" value="${editingCat.sortOrder}"></div>`;
+        h += `<div class="admin-field"><label><input id="catmf-isclass" type="checkbox"${editingCat.isEntityClass ? ' checked' : ''}> 实体分类标记</label></div>`;
+        h += '<div style="margin-top:8px;"><button class="btn btn-small" id="catmf-save">保存</button> <button class="btn btn-small btn-danger" id="catmf-delete">删除</button> <button class="btn btn-small" id="catmf-cancel">取消</button></div>';
+      } else {
+        h += '<p style="color:#888;">选择左侧分类编辑，或点击"新增"</p>';
+        h += '<button class="btn btn-small" id="catmf-new">+ 新增分类</button>';
+      }
+      h += '</div></div>';
+      return h;
+    }
+
+    async function refreshModal() {
+      try {
+        const r = await admin.listCategories();
+        CATEGORIES.length = 0;
+        CATEGORIES.push(...r.categories);
+      } catch (e) { /* keep stale data */ }
+      renderModal();
+    }
+
+    function renderModal() {
+      const overlay = document.querySelector('.cat-manager-overlay');
+      if (!overlay) return;
+      overlay.innerHTML = `
+        <div class="cat-manager-content" style="background:#fff;padding:16px;border-radius:8px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <h3 style="margin:0;font-size:15px;">分类管理</h3>
+            <button class="btn btn-small" id="catm-close">✕</button>
+          </div>
+          ${buildForm()}
+        </div>`;
+      bindCatFormEvents();
+    }
+
+    function bindCatFormEvents() {
+      document.getElementById('catm-close')?.addEventListener('click', () => {
+        editingCat = null; newCatMode = false;
+        document.querySelector('.cat-manager-overlay')?.remove();
+      });
+      // 列表点击
+      document.querySelectorAll('.cat-mgr-row').forEach(el => {
+        el.addEventListener('click', () => {
+          const cid = (el as HTMLElement).dataset.cid!;
+          editingCat = CATEGORIES.find(c => c.id === cid) || null;
+          newCatMode = false;
+          renderModal();
+        });
+      });
+      document.getElementById('catmf-new')?.addEventListener('click', () => {
+        editingCat = null; newCatMode = true; renderModal();
+      });
+      document.getElementById('catmf-cancel')?.addEventListener('click', () => {
+        editingCat = null; newCatMode = false; renderModal();
+      });
+      document.getElementById('catmf-save')?.addEventListener('click', async () => {
+        const name = (document.getElementById('catmf-name') as HTMLInputElement)?.value?.trim();
+        if (!name) { alert('名称不能为空'); return; }
+        const sortOrder = parseInt((document.getElementById('catmf-sort') as HTMLInputElement)?.value || '0', 10);
+        const isEntityClass = (document.getElementById('catmf-isclass') as HTMLInputElement)?.checked ?? false;
+        try {
+          if (newCatMode) {
+            const id = (document.getElementById('catmf-id') as HTMLInputElement)?.value?.trim();
+            if (!id) { alert('ID 不能为空'); return; }
+            await admin.createCategory({ id, name, sortOrder, isEntityClass });
+          } else if (editingCat) {
+            await admin.updateCategory(editingCat.id, { name, sortOrder, isEntityClass });
+          }
+          editingCat = null; newCatMode = false;
+          await refreshModal();
+        } catch (e: any) { alert('保存失败：' + e.message); }
+      });
+      document.getElementById('catmf-delete')?.addEventListener('click', async () => {
+        if (!editingCat) return;
+        if (!confirm(`确定要删除分类「${editingCat.name}」吗？`)) return;
+        try {
+          await admin.deleteCategory(editingCat.id);
+          editingCat = null; newCatMode = false;
+          await refreshModal();
+        } catch (e: any) { alert('删除失败：' + e.message); }
+      });
+    }
+
+    // 创建 overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'cat-manager-overlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:1000;';
+    overlay.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).className === 'cat-manager-overlay') {
+        document.querySelector('.cat-manager-overlay')?.remove();
+      }
+    });
+    document.body.appendChild(overlay);
+    renderModal();
+  }
+
   // ---- top-level events ----
   document.getElementById('adm-btn-back')!.addEventListener('click', onBack);
   document.getElementById('adm-btn-clear-all')!.addEventListener('click', async () => {
@@ -137,6 +266,9 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
       reloadData(state.entities, state.affixes); render(); showToast(`所有${label}已删除`);
     } catch (e: any) { showToast('删除失败：' + e.message); }
   });
+
+  // 管理分类按钮
+  document.getElementById('adm-btn-manage-cats')!.addEventListener('click', () => showCatManager());
 
   // ---- 导出/导入帮助函数 ----
   function exportJSON(items: any[]) {
@@ -327,10 +459,12 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         btn.addEventListener('click', () => { state.entityCatFilter = (btn as HTMLElement).dataset.ecat!; state.selectedId = null; state.selectedIds = new Set(); state.isCreating = false; render(); });
       });
     } else {
-      const cats = ['all', '属性', '行动', '伤害', '防御', '耐力', '负重', '容器', '限制', '特殊', '类别'];
-      container.innerHTML = cats.map(c =>
-        `<button class="btn btn-small" style="font-size:11px;padding:1px 6px;${state.affixCatFilter === c ? 'background:#ddd;font-weight:bold;' : ''}" data-acat="${c}">${c === 'all' ? '全部' : c}</button>`
-      ).join('');
+      const aCatObjs = getAffixFilterCategories();
+      let html = `<button class="btn btn-small" style="font-size:11px;padding:1px 6px;${state.affixCatFilter === 'all' ? 'background:#ddd;font-weight:bold;' : ''}" data-acat="all">全部</button>`;
+      for (const c of aCatObjs) {
+        html += `<button class="btn btn-small" style="font-size:11px;padding:1px 6px;${state.affixCatFilter === c.id ? 'background:#ddd;font-weight:bold;' : ''}" data-acat="${c.id}">${c.name}</button>`;
+      }
+      container.innerHTML = html;
       container.querySelectorAll('[data-acat]').forEach(btn => {
         btn.addEventListener('click', () => { state.affixCatFilter = (btn as HTMLElement).dataset.acat!; state.selectedId = null; state.selectedIds = new Set(); state.isCreating = false; render(); });
       });
@@ -363,7 +497,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         const cat = getEntityCategory(item);
         html += `<div class="adm-list-item" data-id="${item.id}"${sel}><input type="checkbox" class="adm-list-check" data-id="${item.id}" style="width:14px;height:14px;flex-shrink:0;margin-right:6px;"${checked}><span style="flex:1;">${item.name}</span><span style="font-size:10px;color:#888;">[${cat}]</span><span style="font-size:10px;color:#666;margin-left:6px;">价${item.value}</span></div>`;
       } else {
-        html += `<div class="adm-list-item" data-id="${item.id}"${sel}><input type="checkbox" class="adm-list-check" data-id="${item.id}" style="width:14px;height:14px;flex-shrink:0;margin-right:6px;"${checked}><span style="flex:1;">${item.name}</span><span style="font-size:10px;color:#888;">[${item.category}]</span><span style="font-size:10px;color:#666;margin-left:6px;">${item.costValue >= 0 ? '价' + item.costValue : '-' + Math.abs(item.costValue)}</span></div>`;
+        html += `<div class="adm-list-item" data-id="${item.id}"${sel}><input type="checkbox" class="adm-list-check" data-id="${item.id}" style="width:14px;height:14px;flex-shrink:0;margin-right:6px;"${checked}><span style="flex:1;">${item.name}</span><span style="font-size:10px;color:#888;">[${getCategoryName(item.category)}]</span><span style="font-size:10px;color:#666;margin-left:6px;">${item.costValue >= 0 ? '价' + item.costValue : '-' + Math.abs(item.costValue)}</span></div>`;
       }
     }
     listEl.innerHTML = html;
@@ -628,12 +762,12 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
   function buildAffixForm(data: any, isNew: boolean): string {
     const v = (field: string, def: any = '') => isNew ? (data[field] ?? def) : data[field];
     const sel = (field: string, val: string) => v(field) === val ? ' selected' : '';
-    const categories = ['属性','行动','伤害','防御','耐力','负重','容器','限制','特殊','类别'];
+    const allCats = CATEGORIES.sort((a,b) => a.sortOrder - b.sortOrder);
     const affixOpts = state.affixes.map((a: any) => ({ id: a.id, name: a.name }));
     let h = `<h3 style="margin-top:0;">${isNew?'新增词条':'编辑词条：'+data.name}</h3><div class="admin-form" id="affix-form"><div class="admin-form-section"><h4>基本信息</h4>`;
     h += `<div class="admin-field"><label>ID</label><input id="af-id" value="${v('id')}" ${isNew?'':'readonly'}></div>`;
     h += `<div class="admin-field"><label>名称</label><input id="af-name" value="${v('name')}"></div>`;
-    h += `<div class="admin-field"><label>分类</label><select id="af-category">${categories.map(c=>`<option value="${c}"${sel('category',c)}>${c}</option>`).join('')}</select></div>`;
+    h += `<div class="admin-field"><label>分类</label><select id="af-category">${allCats.map(c=>`<option value="${c.id}"${sel('category',c.id)}>${c.name}${c.isEntityClass ? ' (实体分类)' : ''}</option>`).join('')}</select></div>`;
     h += `<div class="admin-field"><label>效果描述</label><input id="af-effect" value="${v('effect')}"></div>`;
     h += `<div class="admin-field"><label>数值</label><input id="af-value" type="number" value="${v('value',0)}"></div>`;
     h += `<div class="admin-field"><label>价值</label><input id="af-costValue" type="number" value="${v('costValue',0)}"></div>`;

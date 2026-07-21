@@ -56,6 +56,13 @@ export interface AffixDef {
   effect: string;
 }
 
+export interface CategoryDef {
+  id: string;           // 代码标识，如 'attribute', 'entity_class'
+  name: string;         // 显示名，如 '属性', '实体分类'
+  sortOrder: number;
+  isEntityClass: boolean;
+}
+
 export interface ItemInstance {
   instanceId: string;
   defId: string;
@@ -79,6 +86,9 @@ export const ENTITY_DEFS: EntityDef[] = [];
 // ---- 词条数据（从服务端 API 加载，reloadData 填充） ----
 export const AFFIX_DEFS: AffixDef[] = [];
 
+// ---- 分类数据（从服务端 API 加载，reloadData 填充） ----
+export const CATEGORIES: CategoryDef[] = [];
+
 // ---- 数据加载状态 ----
 
 let _dataLoaded = false;
@@ -97,6 +107,8 @@ export async function loadInitialData(): Promise<void> {
   ENTITY_DEFS.push(...data.entities);
   AFFIX_DEFS.length = 0;
   AFFIX_DEFS.push(...data.affixes);
+  CATEGORIES.length = 0;
+  if (data.categories) CATEGORIES.push(...data.categories);
   _dataLoaded = true;
 }
 
@@ -108,15 +120,33 @@ export function getAffixDef(id: string): AffixDef | undefined {
   return AFFIX_DEFS.find(a => a.id === id);
 }
 
+/** 根据分类 ID 获取显示名称 */
+export function getCategoryName(categoryId: string): string {
+  const c = CATEGORIES.find(c => c.id === categoryId);
+  return c ? c.name : categoryId;
+}
+
+/** 获取用于词条筛选的分类列表（isEntityClass=false） */
+export function getAffixFilterCategories(): CategoryDef[] {
+  return CATEGORIES.filter(c => !c.isEntityClass).sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
+/** 获取实体分类标记的分类 ID 集合（isEntityClass=true） */
+export function getEntityClassCategoryIds(): Set<string> {
+  return new Set(CATEGORIES.filter(c => c.isEntityClass).map(c => c.id));
+}
+
 /**
  * 重新加载实体和词条数据（管理员修改后调用）。
  * 注意：ENTITY_DEFS 和 AFFIX_DEFS 是 const 引用，但内容可变。
  */
-export function reloadData(entities: EntityDef[], affixes: AffixDef[]): void {
+export function reloadData(entities: EntityDef[], affixes: AffixDef[], categories?: CategoryDef[]): void {
   ENTITY_DEFS.length = 0;
   ENTITY_DEFS.push(...entities);
   AFFIX_DEFS.length = 0;
   AFFIX_DEFS.push(...affixes);
+  CATEGORIES.length = 0;
+  if (categories) CATEGORIES.push(...categories);
   _dataLoaded = true;
 }
 
@@ -144,32 +174,24 @@ export function getEffectiveValue(item: ItemInstance, field: keyof EntityDef): a
   return def ? def[field] : undefined;
 }
 
-/** 从固定词条推导实体分类（动态：根据实际存在的分类/容器词条） */
+/** 从固定词条推导实体分类（动态：根据 isEntityClass 分类下的词条） */
 export function getEntityCategory(def: EntityDef): string {
-  // 1. 分类词条（category === '类别'）——纯分类标记，取固定词条中第一个匹配的
-  const classAffixes = AFFIX_DEFS.filter((a: AffixDef) => a.category === '类别');
-  const classIdSet = new Set(classAffixes.map(a => a.id));
+  // 查找 entity_class 分类下的词条（实体分类标记），取 fixedAffixes 中第一个匹配的
+  const entityClassCatIds = getEntityClassCategoryIds();
   for (const aid of def.fixedAffixes) {
-    if (classIdSet.has(aid)) {
-      const a = classAffixes.find(x => x.id === aid);
-      return a ? a.name : aid;
-    }
-  }
-  // 2. 容器类词条（category === '容器'）——功能+分类双重作用
-  const containerIdSet = new Set(
-    AFFIX_DEFS.filter((a: AffixDef) => a.category === '容器').map(a => a.id)
-  );
-  for (const aid of def.fixedAffixes) {
-    if (containerIdSet.has(aid)) return '容器';
+    const a = getAffixDef(aid);
+    if (a && entityClassCatIds.has(a.category)) return a.name;
   }
   return '未知';
 }
 
-/** 获取实体分类筛选选项列表（动态：根据实际存在的分类/容器词条） */
+/** 获取实体分类筛选选项列表（动态：根据实际存在的实体分类标记词条） */
 export function getEntityCategoryFilters(): string[] {
-  const classNames = AFFIX_DEFS.filter((a: AffixDef) => a.category === '类别').map(a => a.name);
-  const hasContainer = AFFIX_DEFS.some((a: AffixDef) => a.category === '容器');
-  return ['all', ...classNames, ...(hasContainer ? ['容器'] : [])];
+  const entityClassCatIds = getEntityClassCategoryIds();
+  const names = AFFIX_DEFS
+    .filter(a => entityClassCatIds.has(a.category))
+    .map(a => a.name);
+  return ['all', ...names];
 }
 
 /** 判断是否为启动端（fixedAffixes 包含 'starter'） */
@@ -187,31 +209,9 @@ export function hasEntitySlots(def: EntityDef): boolean {
   return def.entitySlots > 0;
 }
 
-/** 获取容器词条等级（从实体定义+已挂词条中取最高级，覆写不叠加） */
-export function getContainerLevel(def: EntityDef, item?: ItemInstance): number {
-  let level = 0;
-  for (const fa of def.fixedAffixes) {
-    if (fa === 'container1') level = Math.max(level, 1);
-    else if (fa === 'container2') level = Math.max(level, 2);
-    else if (fa === 'container3') level = Math.max(level, 3);
-    else if (fa === 'container4') level = Math.max(level, 4);
-  }
-  if (item?.children) {
-    for (const c of item.children) {
-      if (c.type === 'affix') {
-        if (c.defId === 'container1') level = Math.max(level, 1);
-        else if (c.defId === 'container2') level = Math.max(level, 2);
-        else if (c.defId === 'container3') level = Math.max(level, 3);
-        else if (c.defId === 'container4') level = Math.max(level, 4);
-      }
-    }
-  }
-  return level;
-}
-
-/** 获取实体有效槽位数（基础 + 容器词条等级） */
-export function getEffectiveEntitySlots(def: EntityDef, item?: ItemInstance): number {
-  return def.entitySlots + getContainerLevel(def, item);
+/** 获取实体有效槽位数 */
+export function getEffectiveEntitySlots(def: EntityDef): number {
+  return def.entitySlots;
 }
 
 /** 获取第一层实体槽位上限（等于当前回合数） */

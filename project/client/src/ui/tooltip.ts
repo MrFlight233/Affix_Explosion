@@ -2,7 +2,7 @@
 // 悬浮提示（v3：统一 EntityDef 渲染，不区分 actionable/equipment 分支）
 // ============================================================
 
-import { getEntityDef, getAffixDef, isStarter, EntityDef, getEntityCategory } from '../game/data';
+import { getEntityDef, getAffixDef, isStarter, EntityDef, getEntityCategory, getCategoryName } from '../game/data';
 
 let tooltipEl: HTMLElement | null = null;
 
@@ -74,7 +74,7 @@ function renderEntityTooltip(tip: HTMLElement, def: EntityDef) {
 
 function renderAffixTooltip(tip: HTMLElement, def: any) {
   tip.innerHTML = `
-    <div class="tt-name">${def.name} [${def.category}]</div>
+    <div class="tt-name">${def.name} [${getCategoryName(def.category)}]</div>
     <div class="tt-row"><span class="tt-label">效果:</span>${def.effect}</div>
     <div class="tt-row"><span class="tt-label">数值:</span>${def.value}</div>
     <div class="tt-row"><span class="tt-label">价值:</span>${Math.abs(def.costValue)}</div>

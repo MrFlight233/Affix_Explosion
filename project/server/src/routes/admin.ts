@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import { adminMiddleware, AuthRequest } from '../middleware/admin';
-import { entityRepo, affixRepo, templateCache } from '../db';
+import { entityRepo, affixRepo, categoryRepo, templateCache } from '../db';
 
 const router = Router();
 
@@ -209,6 +209,58 @@ router.delete('/affixes/:id', (req: AuthRequest, res: Response) => {
 router.delete('/affixes', (_req: AuthRequest, res: Response) => {
   affixRepo.deleteAll();
   res.json({ ok: true, message: '所有词条已删除' });
+});
+
+// ---- 分类 CRUD ----
+
+/** 获取所有分类 */
+router.get('/categories', (_req: AuthRequest, res: Response) => {
+  res.json({ categories: categoryRepo.getAll() });
+});
+
+/** 获取实体分类标记的分类 ID 列表 */
+router.get('/categories/entity-class-ids', (_req: AuthRequest, res: Response) => {
+  res.json({ ids: [...categoryRepo.getEntityClassIds()] });
+});
+
+/** 新增分类 */
+router.post('/categories', (req: AuthRequest, res: Response) => {
+  try {
+    const { category } = req.body;
+    if (!category || !category.id || !category.name) {
+      res.status(400).json({ error: '分类 ID 和名称不能为空' });
+      return;
+    }
+    const created = categoryRepo.create(category);
+    res.status(201).json({ category: created });
+  } catch (e: any) {
+    res.status(e.statusCode || 500).json({ error: e.message, refCount: e.refCount });
+  }
+});
+
+/** 更新分类 */
+router.put('/categories/:id', (req: AuthRequest, res: Response) => {
+  try {
+    const { category } = req.body;
+    if (!category) {
+      res.status(400).json({ error: '请求体需要 category 字段' });
+      return;
+    }
+    const updated = categoryRepo.update(req.params.id as string, category);
+    res.json({ category: updated });
+  } catch (e: any) {
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
+});
+
+/** 删除分类 */
+router.delete('/categories/:id', (req: AuthRequest, res: Response) => {
+  try {
+    const removed = categoryRepo.delete(req.params.id as string);
+    res.json({ ok: true, removed });
+  } catch (e: any) {
+    res.status(e.statusCode || 500).json({ error: e.message, refCount: e.refCount });
+  }
 });
 
 export default router;

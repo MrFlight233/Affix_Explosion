@@ -7,6 +7,7 @@ import {
   ENTITY_DEFS, AFFIX_DEFS, EntityDef, AffixDef, ItemInstance, DeploySlot,
   getEntityDef, getAffixDef, isStarter, getEntityCategory, getEntityCategoryFilters,
   hasEntitySlots, getEffectiveEntitySlots, countUsedSlots, getEffectiveValue,
+  getEntityClassCategoryIds, getCategoryName, getAffixFilterCategories,
 } from '../game/data';
 import { makeDraggable, makeDropZone, DragPayload, setDragPayload, getDragPayload } from './dragDrop';
 
@@ -227,7 +228,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
 
     if (isStarter(childDef)) return '启动端实体不能放入其他实体的槽位';
 
-    const effectiveSlots = getEffectiveEntitySlots(parentDef, parent);
+    const effectiveSlots = getEffectiveEntitySlots(parentDef);
     const used = countUsedSlots(parent);
     if (childDef.slotCost > effectiveSlots - used) {
       return `子实体槽位不足(剩${effectiveSlots - used},需${childDef.slotCost})`;
@@ -344,13 +345,14 @@ function getTypeBadges(def: EntityDef, inst?: ItemInstance | null): string[] {
     }
   }
   // 动态构建分类词条 ID → 名称映射
-  const classAffixes = AFFIX_DEFS.filter((a: any) => a.category === '类别');
-  const containerIds = new Set(AFFIX_DEFS.filter((a: any) => a.category === '容器').map((a: any) => a.id));
+  const entityClassCatIds = getEntityClassCategoryIds();
   const seen = new Set<string>();
   for (const aid of allAffixIds) {
-    const ca = classAffixes.find((a: any) => a.id === aid);
-    if (ca && !seen.has(ca.name)) { seen.add(ca.name); tags.push(ca.name); }
-    else if (containerIds.has(aid) && !seen.has('容器')) { seen.add('容器'); tags.push('容器'); }
+    const a = getAffixDef(aid);
+    if (a && entityClassCatIds.has(a.category) && !seen.has(a.name)) {
+      seen.add(a.name);
+      tags.push(a.name);
+    }
   }
   tags.push(def.isActive ? '主动' : '被动');
   return tags;
@@ -416,20 +418,20 @@ function renderTooltipTree(
   const affixes = (item.children || []).filter(c => c.type === 'affix');
   const entities = (item.children || []).filter(c => c.type === 'entity');
   const affixSlots = def.dynamicAffixSlots || 0;
-  const effSlots = getEffectiveEntitySlots(def, item);
+  const effSlots = getEffectiveEntitySlots(def);
   const usedSlots = countUsedSlots(item);
 
   if (depth === 0 && (affixSlots > 0 || affixes.length > 0)) {
     h += tipSection(`动态词条 (${affixes.length}/${affixSlots} 槽位)`);
     for (const a of affixes) {
       const ad = getAffixDef(a.defId);
-      h += `<div class="sb-tip-tree-row" style="${tipIndent(1)}">${ad?.name || a.defId}  <span class="sb-tip-muted">[${ad?.category || ''}]</span>  ${ad?.effect || ''}</div>`;
+      h += `<div class="sb-tip-tree-row" style="${tipIndent(1)}">${ad?.name || a.defId}  <span class="sb-tip-muted">[${getCategoryName(ad?.category || '')}]</span>  ${ad?.effect || ''}</div>`;
     }
   }
   if (depth > 0 && affixes.length > 0) {
     for (const a of affixes) {
       const ad = getAffixDef(a.defId);
-      h += `<div class="sb-tip-tree-row" style="${indent}">${ad?.name || a.defId}  <span class="sb-tip-muted">[${ad?.category || ''}]</span>  ${ad?.effect || ''}</div>`;
+      h += `<div class="sb-tip-tree-row" style="${indent}">${ad?.name || a.defId}  <span class="sb-tip-muted">[${getCategoryName(ad?.category || '')}]</span>  ${ad?.effect || ''}</div>`;
     }
   }
 
@@ -560,7 +562,7 @@ function showSimTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affix', 
     const def = getAffixDef(defId);
     if (!def) return;
     let h = `<div class="sb-tip-header"><div class="sb-tip-name">${def.name}</div>`;
-    h += `<div class="sb-tip-badges">${def.category}</div></div>`;
+    h += `<div class="sb-tip-badges">${getCategoryName(def.category)}</div></div>`;
     h += tipSection('效果');
     h += `<div class="sb-tip-effect">${def.effect}</div>`;
     h += tipSection('参数');
@@ -707,7 +709,7 @@ function hideSimTooltip() {
   function renderPoolContent(): string {
     const { entities, affixes } = buildPoolItemList();
     const ecats = getEntityCategoryFilters();
-    const acats = ['all', '属性', '行动', '伤害', '防御', '耐力', '负重', '容器', '限制', '特殊'];
+    const aCatObjs = getAffixFilterCategories();
 
     let h = '<div id="sb-pool-filters">';
     // Tab
@@ -730,8 +732,9 @@ function hideSimTooltip() {
     // 词条类别
     if (state.poolTab === 'all' || state.poolTab === 'affix') {
       h += '<div class="filter-row">';
-      for (const c of acats) {
-        h += `<button class="sb-filter-btn${state.affixCatFilter === c ? ' active' : ''}" data-acat="${c}">${c === 'all' ? '全部词条' : c}</button>`;
+      h += `<button class="sb-filter-btn${state.affixCatFilter === 'all' ? ' active' : ''}" data-acat="all">全部词条</button>`;
+      for (const c of aCatObjs) {
+        h += `<button class="sb-filter-btn${state.affixCatFilter === c.id ? ' active' : ''}" data-acat="${c.id}">${c.name}</button>`;
       }
       h += '</div>';
     }
@@ -783,7 +786,7 @@ function hideSimTooltip() {
     return `<div class="sb-pool-item" data-defid="${a.id}" data-type="affix"
       data-source="pool" draggable="true">
       <span class="item-name">${a.name}</span>
-      <span class="item-stat">[${a.category}]</span>
+      <span class="item-stat">[${getCategoryName(a.category)}]</span>
       <span class="item-stat">${a.effect}</span>
       <span class="item-stat">价${Math.abs(a.costValue)}</span>
     </div>`;
@@ -1024,7 +1027,7 @@ function hideSimTooltip() {
     }
 
     // Block 4: 子实体
-    const effSlots = edef ? getEffectiveEntitySlots(edef, item) : 0;
+    const effSlots = edef ? getEffectiveEntitySlots(edef) : 0;
     const usedSlots = edef ? countUsedSlots(item) : 0;
     const entityChildren = (item.children || []).filter(c => c.type === 'entity');
     const hasChildBlock = (effSlots > 0) || entityChildren.length > 0;
@@ -1905,8 +1908,8 @@ function hideSimTooltip() {
     let item = findItemInSlots(slots, instanceId);
     if (!item) { slots = state.enemySlots; item = findItemInSlots(slots, instanceId); side = 'enemy'; }
     if (!item) return;
-    const cardEl = document.querySelector(`.sb-card:has([data-cardtoggle="${instanceId}"])`) ||
-                   (document.querySelector(`[data-cardtoggle="${instanceId}"]`)?.closest('.sb-card') as HTMLElement);
+    const cardEl = (document.querySelector(`.sb-card:has([data-cardtoggle="${instanceId}"])`) ||
+                    document.querySelector(`[data-cardtoggle="${instanceId}"]`)?.closest('.sb-card')) as HTMLElement | null;
     if (!cardEl) return;
     const depth = parseInt(cardEl.dataset.depth || '0');
     let combatUnit: CombatUnitRuntime | null | undefined = undefined;

@@ -88,7 +88,49 @@ export function initTables(): void {
 
     CREATE INDEX IF NOT EXISTS idx_battle_pool_floor_round ON battle_pool(floor, round);
     CREATE INDEX IF NOT EXISTS idx_battle_pool_power ON battle_pool(power_score);
+
+    CREATE TABLE IF NOT EXISTS categories (
+      id              TEXT PRIMARY KEY,
+      name            TEXT NOT NULL,
+      sort_order      INTEGER NOT NULL DEFAULT 0,
+      is_entity_class INTEGER NOT NULL DEFAULT 0,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
+
+  // ---- 种子数据：分类 ----
+  const catSeed = [
+    ['attribute',     '属性',   1, 0],
+    ['action',        '行动',   2, 0],
+    ['damage',        '伤害',   3, 0],
+    ['defense',       '防御',   4, 0],
+    ['stamina',       '耐力',   5, 0],
+    ['load',          '负重',   6, 0],
+    ['restriction',   '限制',   7, 0],
+    ['special',       '特殊',   8, 0],
+    ['entity_class',  '实体分类', 9, 1],
+  ];
+  const catInsert = db.prepare(
+    'INSERT OR IGNORE INTO categories (id, name, sort_order, is_entity_class) VALUES (?, ?, ?, ?)'
+  );
+  for (const c of catSeed) catInsert.run(...c);
+
+  // ---- 数据迁移：affix.category 中文 → 分类 ID ----
+  const catMigrations: [string, string][] = [
+    ['attribute',    '属性'],
+    ['action',       '行动'],
+    ['damage',       '伤害'],
+    ['defense',      '防御'],
+    ['stamina',      '耐力'],
+    ['load',         '负重'],
+    ['restriction',  '限制'],
+    ['special',      '特殊'],
+    ['entity_class', '类别'],
+    ['special',      '容器'],   // 容器分类并入 special
+  ];
+  const catMigrate = db.prepare('UPDATE affixes SET category = ? WHERE category = ?');
+  for (const [newId, oldName] of catMigrations) catMigrate.run(newId, oldName);
 
   console.log('[DB] 所有表创建/验证完成');
 }

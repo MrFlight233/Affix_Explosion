@@ -10,3 +10,4 @@ export { entityRepo } from './repositories/entityRepo';
 export { affixRepo } from './repositories/affixRepo';
 export { saveRepo } from './repositories/saveRepo';
 export { battleRepo } from './repositories/battleRepo';
+export { categoryRepo } from './repositories/categoryRepo';

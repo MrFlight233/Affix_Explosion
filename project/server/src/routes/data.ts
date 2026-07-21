@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
-import { templateCache, battleRepo } from '../db';
+import { templateCache, battleRepo, categoryRepo } from '../db';
 
 const router = Router();
 
@@ -27,6 +27,7 @@ router.get('/all', (_req: Request, res: Response) => {
   res.json({
     entities: templateCache.getAllEntities(),
     affixes: templateCache.getAllAffixes(),
+    categories: templateCache.getAllCategories(),
     version: templateCache.version,
   });
 });

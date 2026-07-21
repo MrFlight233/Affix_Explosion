@@ -11,15 +11,14 @@
 //    - 模板层：EntityDef.defaultChildren 指定出厂默认子实体
 //      类型：(string | DefaultChildSpec)[]
 //    - 实例层：ItemInstance.children 保存运行时嵌套
-//    - 槽位限制：slotCost（子实体占位数）vs 父实体有效槽位
-//      entitySlots + containerLevel
-//    - 递归：子实体可继续嵌套（容器类实体）
+//    - 槽位限制：slotCost（子实体占位数）vs 父实体 entitySlots
+//    - 递归：子实体可继续嵌套
 //
 // 2. 实体 ↔ 词条关系（Entity-Affix Binding）
 //    2a. 固定词条（Fixed Affixes）：
 //        - EntityDef.fixedAffixes: string[]
 //        - 在实体定义时硬绑定，创建实例时自动附带
-//        - 用于实体分类（follower/weapon_type/armor_type/accessory_type/containerN）
+//        - 用于实体分类（follower/weapon_type/armor_type/accessory_type）
 //          和被动属性（vitalityN, starter）
 //        - DefaultChildSpec.fixedAffixes 可为子实体附加额外固定词条（合并去重）
 //    2b. 动态词条槽位（Dynamic Affix Slots）：
@@ -27,17 +26,15 @@
 //        - 创建实例后由玩家手动挂载词条到槽位
 //        - 运行时：affix 类型的 ItemInstance 挂载到 entity 的 children 中
 //        - DefaultChildSpec.preloadedDynamicAffixes 可预设出厂自带动态词条
-//    2c. 词条生效目标：
-//        - AffixDef.target: '启动端' | '装备' | '通用'
-//        - 启动端词条作用于整个启动端角色
-//        - 装备词条作用于挂载该词条的装备实体
-//        - 通用词条（如容器、类别）作用于系统层面
+//    2c. 词条分类：
+//        - AffixDef.category: string — 动态分类，由 categories 表驱动
+//        - 分类为 entity_class 的词条用于标记实体类型
 //
 // 3. 词条 ↔ 词条关系（Affix Dependency Chain）
 //    3a. 前置依赖（prerequisite）：
 //        - AffixDef.prerequisite: string[]
 //        - 同一实体必须已拥有前置词条才能挂载当前词条
-//        - 形成线性依赖链（如 container1→container2→container3→container4）
+//        - 形成线性依赖链
 //    3b. 池解锁（poolPrerequisite）：
 //        - AffixDef.poolPrerequisite: string[] | EntityDef.poolPrerequisite: string[]
 //        - 全局物品池中必须先解锁前置条件才会出现此物品
@@ -59,8 +56,8 @@ export type TargetOrder = '从上往下' | '从下往上';
 export type TargetFaction = '友方' | '敌人' | '所有';
 /** 优先目标位 — 优先攻击敌方第几位（1-based），null = 无优先 */
 export type PriorityTarget = 1 | 2 | 3 | null;
-export type AffixCategory = '属性' | '行动' | '伤害' | '防御' | '耐力' | '负重' | '容器' | '限制' | '特殊';
-export type AffixTarget = '启动端' | '装备' | '通用';
+// AffixCategory 已删除 — category 现在是动态 string，由 categories 表驱动
+// AffixTarget 已删除 — target 字段已于前期移除
 export type GamePhase = 1 | 2; // 1=探险 2=战斗
 
 // ---- 统一实体定义（v3：启动端/装备统一模型） ----
@@ -79,7 +76,7 @@ export interface DefaultChildSpec {
 
 export interface EntityDef {
   // ---- 共享字段（所有实体都有） ----
-  // 分类由 fixedAffixes 推导（follower/weapon_type/armor_type/accessory_type/container1-4）
+  // 分类由 fixedAffixes 推导（follower/weapon_type/armor_type/accessory_type 等 entity_class 分类下的词条）
   id: string;
   name: string;
   slotCost: number;
@@ -127,14 +124,13 @@ export interface EntityDef {
 export interface AffixDef {
   id: string;
   name: string;
-  category: AffixCategory;
+  category: string;    // 动态 string，由 categories 表驱动
   value: number;
   costValue: number;
   slotCost: number;
   repeatable: boolean;
   prerequisite: string[];
   poolPrerequisite: string[];
-  target: AffixTarget;
   effect: string;
 }
 
@@ -144,7 +140,7 @@ export interface ItemInstance {
   instanceId: string;
   defId: string;
   type: 'entity' | 'affix';
-  /** 容器实体的嵌套子项（实体 + 词条），递归支持多层嵌套 */
+  /** 嵌套子项（实体 + 词条），递归支持多层嵌套 */
   children?: ItemInstance[];
   /** 实例级字段覆写 — 覆盖 EntityDef 模板值。用于 defaultChildren 差异化创建 */
   overrides?: Partial<EntityDef>;

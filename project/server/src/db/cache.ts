@@ -115,6 +115,7 @@ export function affixDefToRow(def: Record<string, any>): Record<string, any> {
 class TemplateCache {
   private _entities: Map<string, Record<string, any>> = new Map();
   private _affixes: Map<string, Record<string, any>> = new Map();
+  private _categories: Map<string, Record<string, any>> = new Map();
   private _version: number = 0;
   private _loaded = false;
 
@@ -124,10 +125,12 @@ class TemplateCache {
 
     const allEntities = db.prepare('SELECT * FROM entities').all() as any[];
     const allAffixes = db.prepare('SELECT * FROM affixes').all() as any[];
+    const allCategories = db.prepare('SELECT * FROM categories ORDER BY sort_order').all() as any[];
     const verRow = db.prepare('SELECT version FROM data_version WHERE id = 1').get() as any;
 
     this._entities.clear();
     this._affixes.clear();
+    this._categories.clear();
 
     for (const row of allEntities) {
       this._entities.set(row.id, entityRowToDef(row));
@@ -135,11 +138,19 @@ class TemplateCache {
     for (const row of allAffixes) {
       this._affixes.set(row.id, affixRowToDef(row));
     }
+    for (const row of allCategories) {
+      this._categories.set(row.id, {
+        id: row.id,
+        name: row.name,
+        sortOrder: row.sort_order,
+        isEntityClass: row.is_entity_class === 1,
+      });
+    }
 
     this._version = verRow?.version ?? 1;
     this._loaded = true;
 
-    console.log(`[Cache] 模板缓存加载完成: ${this._entities.size} entities, ${this._affixes.size} affixes, version=${this._version}`);
+    console.log(`[Cache] 模板缓存加载完成: ${this._entities.size} entities, ${this._affixes.size} affixes, ${this._categories.size} categories, version=${this._version}`);
   }
 
   get isLoaded(): boolean { return this._loaded; }
@@ -178,6 +189,33 @@ class TemplateCache {
 
   deleteAffix(id: string): void {
     this._affixes.delete(id);
+  }
+
+  // ---- Category 操作 ----
+
+  getCategory(id: string): Record<string, any> | undefined {
+    return this._categories.get(id);
+  }
+
+  getAllCategories(): Record<string, any>[] {
+    return [...this._categories.values()];
+  }
+
+  setCategory(def: Record<string, any>): void {
+    this._categories.set(def.id, def);
+  }
+
+  deleteCategory(id: string): void {
+    this._categories.delete(id);
+  }
+
+  /** 返回所有 is_entity_class=1 的分类 ID 集合 */
+  getEntityClassCategoryIds(): Set<string> {
+    const ids = new Set<string>();
+    for (const c of this._categories.values()) {
+      if (c.isEntityClass) ids.add(c.id as string);
+    }
+    return ids;
   }
 
   // ---- Version ----

@@ -212,7 +212,7 @@ export class GameEngine {
     if (item) return item;
     for (const slot of this.state.deploySlots) {
       if (slot.entity.instanceId === instanceId) return slot.entity;
-      // 递归搜索 entity.children（容器内嵌套）
+      // 递归搜索 entity.children（嵌套子实体）
       const found = findInTree(slot.entity, instanceId);
       if (found) return found;
       // 搜索 slot.children（启动端直属）
@@ -234,7 +234,7 @@ export class GameEngine {
         this.state.deploySlots.splice(si, 1); this.notify();
         return { slotIdx: si, parentInstanceId: null };
       }
-      // 检查 entity.children（容器内嵌套）
+      // 检查 entity.children（嵌套子实体）
       const removed = removeFromTreeChildren(slot.entity, instanceId);
       if (removed) { this.notify(); return { slotIdx: si, parentInstanceId: slot.entity.instanceId }; }
       // 检查 slot.children（启动端直属）
@@ -300,7 +300,7 @@ export class GameEngine {
     if (isStarter(childDef)) return '拥有启动端词条的实体不能放入其他实体的槽位';
 
     // 计算有效槽位和已用槽位
-    const effectiveSlots = getEffectiveEntitySlots(parentDef, parent);
+    const effectiveSlots = getEffectiveEntitySlots(parentDef);
     const used = countUsedSlots(parent);
     if (childDef.slotCost > effectiveSlots - used)
       return `槽位不足(剩${effectiveSlots - used},需${childDef.slotCost})`;

@@ -7,6 +7,15 @@
 import { getDB } from '../connection';
 import { templateCache, affixDefToRow } from '../cache';
 
+function validateCategory(category: string): void {
+  if (!templateCache.getCategory(category)) {
+    throw Object.assign(
+      new Error(`无效的分类: '${category}'，请使用管理员页面管理分类`),
+      { statusCode: 400 }
+    );
+  }
+}
+
 export class AffixRepo {
   getAll(): Record<string, any>[] {
     return templateCache.getAllAffixes();
@@ -24,6 +33,8 @@ export class AffixRepo {
     if (this.exists(def.id)) {
       throw Object.assign(new Error(`词条 '${def.id}' 已存在`), { statusCode: 409 });
     }
+
+    validateCategory(def.category ?? '特殊');
 
     const filled = {
       id: def.id,
@@ -66,6 +77,8 @@ export class AffixRepo {
       ...patch,
       id,
     };
+
+    validateCategory(merged.category ?? 'special');
 
     const db = getDB();
     db.prepare(`

@@ -121,6 +121,20 @@ export const admin = {
     request<{ ok: boolean; message: string }>('/admin/entities', { method: 'DELETE' }),
   clearAllAffixes: () =>
     request<{ ok: boolean; message: string }>('/admin/affixes', { method: 'DELETE' }),
+
+  // Categories
+  listCategories: () =>
+    request<{ categories: any[] }>('/admin/categories'),
+  createCategory: (category: any) =>
+    request<{ category: any }>('/admin/categories', {
+      method: 'POST', body: JSON.stringify({ category }),
+    }),
+  updateCategory: (id: string, category: any) =>
+    request<{ category: any }>('/admin/categories/' + encodeURIComponent(id), {
+      method: 'PUT', body: JSON.stringify({ category }),
+    }),
+  deleteCategory: (id: string) =>
+    request<{ ok: boolean }>('/admin/categories/' + encodeURIComponent(id), { method: 'DELETE' }),
 };
 
 // Saves
