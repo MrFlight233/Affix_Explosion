@@ -22,10 +22,14 @@ interface AdminState {
 /** 子实体覆写编辑状态（defaultChildren 展开编辑时的临时数据） */
 let _childOverrides: Record<string, Partial<Record<string, any>>> = {};
 let _childExpanded: Record<string, boolean> = {};
+/** 子实体附加固定词条（DefaultChildSpec.fixedAffixes） */
+let _childFixedAffixes: Record<string, string[]> = {};
+/** 子实体预装动态词条（DefaultChildSpec.preloadedDynamicAffixes） */
+let _childPreloadedAffixes: Record<string, string[]> = {};
 /** 待添加的子实体（未保存前，通过 + 按钮添加的） */
 let _pendingChildren: Record<string, string[]> = {};
 
-function resetChildState() { _childOverrides = {}; _childExpanded = {}; _pendingChildren = {}; }
+function resetChildState() { _childOverrides = {}; _childExpanded = {}; _pendingChildren = {}; _childFixedAffixes = {}; _childPreloadedAffixes = {}; }
 
 export async function showAdminPage(onBack: () => void): Promise<void> {
   const app = document.getElementById('app')!;
@@ -39,6 +43,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     const [eRes, aRes] = await Promise.all([admin.listEntities(), admin.listAffixes()]);
     state.entities = eRes.entities;
     state.affixes = aRes.affixes;
+    reloadData(state.entities, state.affixes);
   } catch (e: any) {
     app.innerHTML = `<div style="padding:40px;text-align:center;"><p style="color:var(--warn);">加载数据失败：${e.message}</p><button class="btn" id="btn-back-admin">返回</button></div>`;
     document.getElementById('btn-back-admin')!.addEventListener('click', onBack);
@@ -379,6 +384,13 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     h += ovField('价值','value',tpl.value,childKey,ov);
     h += `</div>`;
     if (countOverrides(ov) > 0) h += `<button class="btn btn-small cov-clear" data-childkey="${childKey}" style="font-size:10px;padding:1px 6px;color:#c00;border:1px solid #c00;background:#fff;">清除全部覆写</button>`;
+    // 子实体词条配置（DefaultChildSpec 级别）
+    const childAffixOpts = state.affixes.map((a: any) => ({ id: a.id, name: a.name }));
+    h += `<div style="margin-top:6px;border-top:1px solid #eee;padding-top:4px;">`;
+    h += `<div style="font-size:10px;color:#666;margin-bottom:2px;">词条配置：</div>`;
+    h += renderTagSelector(`ef-child-fa-${childKey}`, '附加固定词条', _childFixedAffixes[childKey] || [], childAffixOpts);
+    h += renderTagSelector(`ef-child-pda-${childKey}`, '预装动态词条', _childPreloadedAffixes[childKey] || [], childAffixOpts);
+    h += `</div>`;
     // recursive nested children
     const subSpecs = normalizeDefaultChildren(ov.defaultChildren || tpl.defaultChildren || []);
     h += `<div style="margin-top:6px;font-size:10px;color:#666;border-top:1px solid #eee;padding-top:4px;">嵌套子装备：</div>${renderChildrenEditor(subSpecs, childKey)}`;
@@ -483,8 +495,8 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         regenBonus: parseInt((document.getElementById('ef-regenBonus') as HTMLInputElement).value) || 0,
         hpBonus: parseInt((document.getElementById('ef-hpBonus') as HTMLInputElement).value) || 0,
       };
-      if (!entity.defaultChildren || entity.defaultChildren.length === 0) delete entity.defaultChildren;
-      if (!entity.preloadedDynamicAffixes || entity.preloadedDynamicAffixes.length === 0) delete entity.preloadedDynamicAffixes;
+      if (!entity.defaultChildren || entity.defaultChildren.length === 0) entity.defaultChildren = null;
+      if (!entity.preloadedDynamicAffixes || entity.preloadedDynamicAffixes.length === 0) entity.preloadedDynamicAffixes = null;
 
       try {
         if (isNew) { await admin.createEntity(entity); showToast('实体创建成功'); }
@@ -510,11 +522,24 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
 
   function bindAllChildrenEditors() {
     document.querySelectorAll('.child-toggle').forEach(el => { el.addEventListener('click', () => { const ck = (el as HTMLElement).dataset.childkey!; _childExpanded[ck] = !_childExpanded[ck]; render(); }); });
-    document.querySelectorAll('.child-remove').forEach(el => { el.addEventListener('click', (e) => { e.stopPropagation(); const ck = (el as HTMLElement).dataset.childkey!; const card = (el as HTMLElement).closest('.child-entity-card')! as HTMLElement; const isPending = card.dataset.pending === '1'; const parentId = card.dataset.parentid!; if (isPending) { const defId = card.dataset.defid!; const arr = _pendingChildren[parentId] || []; const idx = arr.indexOf(defId); if (idx !== -1) arr.splice(idx, 1); if (arr.length === 0) delete _pendingChildren[parentId]; delete _childOverrides[ck]; delete _childExpanded[ck]; showToast('子实体已移除'); } else { card.style.display = 'none'; card.dataset.removed = '1'; delete _childOverrides[ck]; delete _childExpanded[ck]; showToast('子实体已标记移除（保存生效）'); } }); });
+    document.querySelectorAll('.child-remove').forEach(el => { el.addEventListener('click', (e) => { e.stopPropagation(); const ck = (el as HTMLElement).dataset.childkey!; const card = (el as HTMLElement).closest('.child-entity-card')! as HTMLElement; const isPending = card.dataset.pending === '1'; const parentId = card.dataset.parentid!; if (isPending) { const defId = card.dataset.defid!; const arr = _pendingChildren[parentId] || []; const idx = arr.indexOf(defId); if (idx !== -1) arr.splice(idx, 1); if (arr.length === 0) delete _pendingChildren[parentId]; delete _childOverrides[ck]; delete _childExpanded[ck]; delete _childFixedAffixes[ck]; delete _childPreloadedAffixes[ck]; showToast('子实体已移除'); } else { card.style.display = 'none'; card.dataset.removed = '1'; delete _childOverrides[ck]; delete _childExpanded[ck]; delete _childFixedAffixes[ck]; delete _childPreloadedAffixes[ck]; showToast('子实体已标记移除（保存生效）'); } }); });
     document.querySelectorAll('.child-add').forEach(el => { el.addEventListener('click', () => { const parent = (el as HTMLElement).dataset.parent!; const selectEl = document.getElementById(`ef-children-select-${parent}`) as HTMLSelectElement; if (!selectEl || !selectEl.value) return; const defId = selectEl.value; if (!_pendingChildren[parent]) _pendingChildren[parent] = []; _pendingChildren[parent].push(defId); showToast(`子实体模板 ${defId} 已添加（保存生效）`); selectEl.value = ''; render(); }); });
     document.querySelectorAll('[class*="cov-"]').forEach((el: any) => { const ck = el.dataset.ck; if (!ck) return; el.addEventListener('input', () => collectOverrideFromDOM(ck)); el.addEventListener('change', () => collectOverrideFromDOM(ck)); });
-    document.querySelectorAll('.cov-clear').forEach(el => { el.addEventListener('click', () => { const ck = (el as HTMLElement).dataset.childkey!; delete _childOverrides[ck]; render(); }); });
+    document.querySelectorAll('.cov-clear').forEach(el => { el.addEventListener('click', () => { const ck = (el as HTMLElement).dataset.childkey!; delete _childOverrides[ck]; delete _childFixedAffixes[ck]; delete _childPreloadedAffixes[ck]; render(); }); });
     document.querySelectorAll('.child-template-select').forEach(el => { el.addEventListener('change', () => { showToast('模板已切换（保存生效）'); }); });
+
+    // 绑定子实体词条 Tag Selector 并同步状态 map
+    const childAffixOpts = state.affixes.map((a: any) => ({ id: a.id, name: a.name }));
+    document.querySelectorAll('[id^="ef-child-fa-"]').forEach(el => {
+      const fieldId = el.id; const ck = fieldId.replace('ef-child-fa-', '');
+      bindTagSelector(fieldId, childAffixOpts);
+      el.addEventListener('click', () => { setTimeout(() => { _childFixedAffixes[ck] = getSelected(fieldId); }, 10); });
+    });
+    document.querySelectorAll('[id^="ef-child-pda-"]').forEach(el => {
+      const fieldId = el.id; const ck = fieldId.replace('ef-child-pda-', '');
+      bindTagSelector(fieldId, childAffixOpts);
+      el.addEventListener('click', () => { setTimeout(() => { _childPreloadedAffixes[ck] = getSelected(fieldId); }, 10); });
+    });
   }
 
   function collectOverrideFromDOM(ck: string) {
@@ -542,8 +567,20 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
       const merged = _childOverrides[ck] || {};
       const clean: Record<string, any> = {};
       for (const [k, v] of Object.entries(merged)) { if (v !== undefined && v !== null && v !== '') clean[k] = v; }
-      if (Object.keys(clean).length > 0) result.push({ defId, overrides: clean });
-      else result.push(defId);
+      // 收集子实体级别的 fixedAffixes 和 preloadedDynamicAffixes
+      const childFA = _childFixedAffixes[ck] || [];
+      const childPDA = _childPreloadedAffixes[ck] || [];
+      const hasOverrides = Object.keys(clean).length > 0;
+      const hasAffixes = childFA.length > 0 || childPDA.length > 0;
+      if (hasOverrides || hasAffixes) {
+        const spec: DefaultChildSpec = { defId };
+        if (hasOverrides) spec.overrides = clean;
+        if (childFA.length > 0) spec.fixedAffixes = childFA;
+        if (childPDA.length > 0) spec.preloadedDynamicAffixes = childPDA;
+        result.push(spec);
+      } else {
+        result.push(defId);
+      }
     });
     return result;
   }

@@ -107,6 +107,10 @@ export class EntityRepo {
       id, // 锁定 ID
     };
 
+    // 支持清空可选的数组字段：客户端传 null 时显式设为 undefined
+    if (patch.defaultChildren === null) merged.defaultChildren = undefined;
+    if (patch.preloadedDynamicAffixes === null) merged.preloadedDynamicAffixes = undefined;
+
     // 兼容旧字段名 attackType/attackOrder
     if (patch.targetType === undefined && patch.attackType !== undefined) {
       merged.targetType = patch.attackType;

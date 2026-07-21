@@ -1,6 +1,6 @@
 # Bug 修复：Admin 修改实体词条后全物品池和模拟战斗不显示变更
 
-> 日期：2026-07-20 | 状态：待执行
+> 日期：2026-07-20 | 状态：已修复（2026-07-21，第二轮修复完成）
 
 ## 问题描述
 
@@ -143,3 +143,50 @@ if (!options.method || options.method === 'GET') {
 | ES 模块单例共享 `ENTITY_DEFS` | main.ts, sim-battle.ts, panels.ts | 所有模块导入同一个引用 |
 | 全物品池渲染 | main.ts:176, 353-362 | 直接从 `ENTITY_DEFS` 读取 `fixedAffixes` |
 | 模拟战斗 `createItem` | engine.ts:144-188 | 通过 `getEntityDef()` 延迟解析 `fixedAffixes` |
+
+---
+
+## 第二轮修复（2026-07-21）
+
+第一轮修复后用户反馈仍不显示。经过 3 个 Explore 代理完整数据流追踪，发现 4 个新问题：
+
+### Bug A（P0）：`createItem` 中 `preloadedDynamicAffixes` children 被 `defaultChildren` 覆盖
+
+**位置**：`project/client/src/game/engine.ts` 第 152-185 行
+
+原代码先用 `preloadedDynamicAffixes` 初始化 `item.children`，再用 `defaultChildren` 的结果赋值 `item.children = ...`，导致覆盖。
+
+**修复**：改为统一收集到 `allChildren` 数组，最后一次性合并赋值。
+
+### Bug B（P1）：全物品池详情面板不渲染 `preloadedDynamicAffixes`
+
+**位置**：`project/client/src/main.ts` 的 `renderDetail` 函数
+
+有 `fixedAffixes` 渲染、`defaultChildren` 渲染，但没有 `preloadedDynamicAffixes` 渲染。
+
+**修复**：在固定词条和默认子实体之间添加预装动态词条的渲染段。
+
+### Bug C（P3）：`rebuildItemPool` 在数据更新后不重新执行
+
+**位置**：`project/client/src/game/engine.ts` 第 128 行
+
+只在构造函数中调用一次。每次新游戏会重建 engine，影响较小。
+
+### Bug D（P2）：Admin 子实体编辑不支持 `fixedAffixes` 和 `preloadedDynamicAffixes`
+
+**位置**：`project/client/src/ui/admin.ts`
+
+子实体覆写表单只有数值字段，没有 Tag Selector 给子实体配置专属词条。
+
+**修复**：
+1. 添加 `_childFixedAffixes` 和 `_childPreloadedAffixes` 状态 map
+2. `renderChildOverrideForm` 中添加两个 Tag Selector
+3. `bindAllChildrenEditors` 中绑定并同步状态
+4. `serializeChildrenSpecs` 中收集这些字段到 `DefaultChildSpec`
+
+### 第二轮修改的文件
+
+1. `project/client/src/game/engine.ts` — createItem children 合并逻辑
+2. `project/client/src/main.ts` — renderDetail 添加 preloadedDynamicAffixes 渲染
+3. `project/client/src/ui/admin.ts` — 子实体词条 Tag Selector + 序列化
+4. `doc/管理员制作物品系统方案.md` — 更新子实体覆写字段说明

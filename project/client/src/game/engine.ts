@@ -148,40 +148,50 @@ export class GameEngine {
     }
     if (type === 'entity') {
       const def = getEntityDef(defId);
-      // 处理主实体模板级预装动态词条
-      if (def?.preloadedDynamicAffixes && def.preloadedDynamicAffixes.length > 0) {
-        if (!item.children) item.children = [];
-        for (const affixId of def.preloadedDynamicAffixes) {
-          item.children.push(this.createItem(affixId, 'affix'));
-        }
-      }
-      if (def?.defaultChildren && def.defaultChildren.length > 0) {
-        item.children = def.defaultChildren.map(spec => {
-          const cid = typeof spec === 'string' ? spec : spec.defId;
-          const childOverrides = typeof spec === 'string' ? undefined : spec.overrides;
-          const child = this.createItem(cid, 'entity', childOverrides);
+      if (def) {
+        const allChildren: ItemInstance[] = [];
 
-          if (typeof spec !== 'string') {
-            // 合并 fixedAffixes：模板基础 + spec 附加（去重）
-            if (spec.fixedAffixes && spec.fixedAffixes.length > 0) {
-              const childDef = getEntityDef(cid);
-              if (childDef) {
-                const merged = [...new Set([...childDef.fixedAffixes, ...spec.fixedAffixes])];
-                if (!child.overrides) child.overrides = {};
-                child.overrides.fixedAffixes = merged;
-              }
-            }
-            // 预装动态词条：创建 affix 类型的子项挂载
-            if (spec.preloadedDynamicAffixes && spec.preloadedDynamicAffixes.length > 0) {
-              if (!child.children) child.children = [];
-              for (const affixId of spec.preloadedDynamicAffixes) {
-                child.children.push(this.createItem(affixId, 'affix'));
-              }
-            }
+        // 1. 模板级预装动态词条（创建 affix 类型的子项）
+        if (def.preloadedDynamicAffixes && def.preloadedDynamicAffixes.length > 0) {
+          for (const affixId of def.preloadedDynamicAffixes) {
+            allChildren.push(this.createItem(affixId, 'affix'));
           }
+        }
 
-          return child;
-        });
+        // 2. 默认子实体
+        if (def.defaultChildren && def.defaultChildren.length > 0) {
+          for (const spec of def.defaultChildren) {
+            const cid = typeof spec === 'string' ? spec : spec.defId;
+            const childOverrides = typeof spec === 'string' ? undefined : spec.overrides;
+            const child = this.createItem(cid, 'entity', childOverrides);
+
+            if (typeof spec !== 'string') {
+              // 合并 fixedAffixes：模板基础 + spec 附加（去重）
+              if (spec.fixedAffixes && spec.fixedAffixes.length > 0) {
+                const childDef = getEntityDef(cid);
+                if (childDef) {
+                  const merged = [...new Set([...childDef.fixedAffixes, ...spec.fixedAffixes])];
+                  if (!child.overrides) child.overrides = {};
+                  child.overrides.fixedAffixes = merged;
+                }
+              }
+              // 子实体 spec 级预装动态词条
+              if (spec.preloadedDynamicAffixes && spec.preloadedDynamicAffixes.length > 0) {
+                if (!child.children) child.children = [];
+                for (const affixId of spec.preloadedDynamicAffixes) {
+                  child.children.push(this.createItem(affixId, 'affix'));
+                }
+              }
+            }
+
+            allChildren.push(child);
+          }
+        }
+
+        // 3. 统一赋值（保留可能已有的 children，如递归调用时父级已设置）
+        if (allChildren.length > 0) {
+          item.children = [...(item.children || []), ...allChildren];
+        }
       }
     }
     return item;

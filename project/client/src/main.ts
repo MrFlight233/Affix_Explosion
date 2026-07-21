@@ -362,6 +362,16 @@ function showFullItemPool() {
         }
       }
 
+      // === 预装动态词条 ===
+      if (entity.preloadedDynamicAffixes && entity.preloadedDynamicAffixes.length > 0) {
+        h += '<tr><td colspan="2" style="font-weight:bold;padding-top:8px;border-bottom:1px solid #eee;">预装动态词条（出厂自带，占用词条槽位）</td></tr>';
+        for (const aid of entity.preloadedDynamicAffixes) {
+          const resolved = resolveAffix(aid);
+          const desc = resolved.effect ? `<span style="color:var(--text-dim);">${resolved.effect}</span>` : '';
+          h += row(resolved.name, desc || '—');
+        }
+      }
+
       // === 默认子实体 ===
       if (entity.defaultChildren && entity.defaultChildren.length > 0) {
         h += '<tr><td colspan="2" style="font-weight:bold;padding-top:8px;border-bottom:1px solid #eee;">默认子实体</td></tr>';

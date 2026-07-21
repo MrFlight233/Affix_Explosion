@@ -20,6 +20,9 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
     ...(options.headers as Record<string, string> || {}),
   };
   if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (!options.method || options.method === 'GET') {
+    headers['Cache-Control'] = 'no-cache';
+  }
 
   const res = await fetch(`${BASE}${url}`, { ...options, headers });
 
