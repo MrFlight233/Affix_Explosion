@@ -33,6 +33,39 @@ router.get('/entities/:id', (req: AuthRequest, res: Response) => {
   res.json({ entity });
 });
 
+/** 批量导入实体 */
+router.post('/entities/import', (req: AuthRequest, res: Response) => {
+  const { items, overwrite } = req.body;
+  if (!Array.isArray(items) || items.length === 0) {
+    res.status(400).json({ error: 'items 必须是非空数组' });
+    return;
+  }
+  const result = { imported: 0, skipped: 0, errors: [] as { index: number; id: string; message: string }[] };
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (!item || !item.id || !item.name) {
+      result.errors.push({ index: i, id: item?.id || '(缺失)', message: 'ID 和名称不能为空' });
+      continue;
+    }
+    try {
+      if (entityRepo.exists(item.id)) {
+        if (overwrite) {
+          entityRepo.update(item.id, item);
+          result.imported++;
+        } else {
+          result.skipped++;
+        }
+      } else {
+        entityRepo.create(item);
+        result.imported++;
+      }
+    } catch (e: any) {
+      result.errors.push({ index: i, id: item.id, message: e.message });
+    }
+  }
+  res.status(result.errors.length > 0 && result.imported === 0 ? 400 : 200).json(result);
+});
+
 /** 新增实体 */
 router.post('/entities', (req: AuthRequest, res: Response) => {
   try {
@@ -73,6 +106,12 @@ router.delete('/entities/:id', (req: AuthRequest, res: Response) => {
   }
 });
 
+/** 删除所有实体 */
+router.delete('/entities', (_req: AuthRequest, res: Response) => {
+  entityRepo.deleteAll();
+  res.json({ ok: true, message: '所有实体已删除' });
+});
+
 // ---- 词条 CRUD ----
 
 /** 获取所有词条 */
@@ -91,6 +130,39 @@ router.get('/affixes/:id', (req: AuthRequest, res: Response) => {
     return;
   }
   res.json({ affix });
+});
+
+/** 批量导入词条 */
+router.post('/affixes/import', (req: AuthRequest, res: Response) => {
+  const { items, overwrite } = req.body;
+  if (!Array.isArray(items) || items.length === 0) {
+    res.status(400).json({ error: 'items 必须是非空数组' });
+    return;
+  }
+  const result = { imported: 0, skipped: 0, errors: [] as { index: number; id: string; message: string }[] };
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (!item || !item.id || !item.name) {
+      result.errors.push({ index: i, id: item?.id || '(缺失)', message: 'ID 和名称不能为空' });
+      continue;
+    }
+    try {
+      if (affixRepo.exists(item.id)) {
+        if (overwrite) {
+          affixRepo.update(item.id, item);
+          result.imported++;
+        } else {
+          result.skipped++;
+        }
+      } else {
+        affixRepo.create(item);
+        result.imported++;
+      }
+    } catch (e: any) {
+      result.errors.push({ index: i, id: item.id, message: e.message });
+    }
+  }
+  res.status(result.errors.length > 0 && result.imported === 0 ? 400 : 200).json(result);
 });
 
 /** 新增词条 */
@@ -133,14 +205,10 @@ router.delete('/affixes/:id', (req: AuthRequest, res: Response) => {
   }
 });
 
-/** 重置为种子数据 */
-router.post('/reset', (_req: AuthRequest, res: Response) => {
-  entityRepo.resetAll();
-  // resetAll 内部调用 seedFromJson，种子导入后缓存已刷新
-  res.json({
-    ok: true,
-    message: `已重置为默认数据（${templateCache.getAllEntities().length} 实体, ${templateCache.getAllAffixes().length} 词条）`,
-  });
+/** 删除所有词条 */
+router.delete('/affixes', (_req: AuthRequest, res: Response) => {
+  affixRepo.deleteAll();
+  res.json({ ok: true, message: '所有词条已删除' });
 });
 
 export default router;

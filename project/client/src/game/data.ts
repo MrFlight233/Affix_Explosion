@@ -144,16 +144,32 @@ export function getEffectiveValue(item: ItemInstance, field: keyof EntityDef): a
   return def ? def[field] : undefined;
 }
 
-/** 从固定词条推导实体分类（v4：替代 category 字段） */
+/** 从固定词条推导实体分类（动态：根据实际存在的分类/容器词条） */
 export function getEntityCategory(def: EntityDef): string {
-  if (def.fixedAffixes.includes('follower')) return '随从';
-  if (def.fixedAffixes.includes('weapon_type')) return '武器';
-  if (def.fixedAffixes.includes('armor_type')) return '防具';
-  if (def.fixedAffixes.includes('accessory_type')) return '饰品';
-  for (const a of def.fixedAffixes) {
-    if (['container1','container2','container3','container4'].includes(a)) return '容器';
+  // 1. 分类词条（category === '类别'）——纯分类标记，取固定词条中第一个匹配的
+  const classAffixes = AFFIX_DEFS.filter((a: AffixDef) => a.category === '类别');
+  const classIdSet = new Set(classAffixes.map(a => a.id));
+  for (const aid of def.fixedAffixes) {
+    if (classIdSet.has(aid)) {
+      const a = classAffixes.find(x => x.id === aid);
+      return a ? a.name : aid;
+    }
+  }
+  // 2. 容器类词条（category === '容器'）——功能+分类双重作用
+  const containerIdSet = new Set(
+    AFFIX_DEFS.filter((a: AffixDef) => a.category === '容器').map(a => a.id)
+  );
+  for (const aid of def.fixedAffixes) {
+    if (containerIdSet.has(aid)) return '容器';
   }
   return '未知';
+}
+
+/** 获取实体分类筛选选项列表（动态：根据实际存在的分类/容器词条） */
+export function getEntityCategoryFilters(): string[] {
+  const classNames = AFFIX_DEFS.filter((a: AffixDef) => a.category === '类别').map(a => a.name);
+  const hasContainer = AFFIX_DEFS.some((a: AffixDef) => a.category === '容器');
+  return ['all', ...classNames, ...(hasContainer ? ['容器'] : [])];
 }
 
 /** 判断是否为启动端（fixedAffixes 包含 'starter'） */

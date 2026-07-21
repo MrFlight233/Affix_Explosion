@@ -5,7 +5,7 @@
 import { GameEngine, CombatEvent, CombatUnitRuntime } from '../game/engine';
 import {
   ENTITY_DEFS, AFFIX_DEFS, EntityDef, AffixDef, ItemInstance, DeploySlot,
-  getEntityDef, getAffixDef, isStarter, getEntityCategory,
+  getEntityDef, getAffixDef, isStarter, getEntityCategory, getEntityCategoryFilters,
   hasEntitySlots, getEffectiveEntitySlots, countUsedSlots, getEffectiveValue,
 } from '../game/data';
 import { makeDraggable, makeDropZone, DragPayload, setDragPayload, getDragPayload } from './dragDrop';
@@ -343,15 +343,14 @@ function getTypeBadges(def: EntityDef, inst?: ItemInstance | null): string[] {
       if (c.type === 'affix') allAffixIds.add(c.defId);
     }
   }
-  const map: Record<string, string> = {
-    starter: '启动端', follower: '随从', weapon_type: '武器',
-    armor_type: '防具', accessory_type: '饰品',
-    container1: '容器', container2: '容器', container3: '容器', container4: '容器',
-  };
+  // 动态构建分类词条 ID → 名称映射
+  const classAffixes = AFFIX_DEFS.filter((a: any) => a.category === '类别');
+  const containerIds = new Set(AFFIX_DEFS.filter((a: any) => a.category === '容器').map((a: any) => a.id));
   const seen = new Set<string>();
   for (const aid of allAffixIds) {
-    const label = map[aid];
-    if (label && !seen.has(label)) { seen.add(label); tags.push(label); }
+    const ca = classAffixes.find((a: any) => a.id === aid);
+    if (ca && !seen.has(ca.name)) { seen.add(ca.name); tags.push(ca.name); }
+    else if (containerIds.has(aid) && !seen.has('容器')) { seen.add('容器'); tags.push('容器'); }
   }
   tags.push(def.isActive ? '主动' : '被动');
   return tags;
@@ -707,7 +706,7 @@ function hideSimTooltip() {
 
   function renderPoolContent(): string {
     const { entities, affixes } = buildPoolItemList();
-    const ecats = ['all', '随从', '武器', '防具', '饰品', '容器'];
+    const ecats = getEntityCategoryFilters();
     const acats = ['all', '属性', '行动', '伤害', '防御', '耐力', '负重', '容器', '限制', '特殊'];
 
     let h = '<div id="sb-pool-filters">';

@@ -6,7 +6,7 @@ import { showAuthModal, hideAuthModal } from './ui/auth';
 import { UIManager } from './ui/panels';
 import { GameEngine } from './game/engine';
 import { getToken, setToken, saves as savesApi } from './api/client';
-import { ENTITY_DEFS, AFFIX_DEFS, isStarter, EntityDef, getEntityDef, getAffixDef, getEntityCategory, loadInitialData } from './game/data';
+import { ENTITY_DEFS, AFFIX_DEFS, isStarter, EntityDef, getEntityDef, getAffixDef, getEntityCategory, getEntityCategoryFilters, loadInitialData } from './game/data';
 // tooltip 已移至详情面板，不再需要 hover 提示
 
 const app = document.getElementById('app')!;
@@ -161,7 +161,7 @@ async function launchGame(engine: GameEngine, isNew: boolean) {
 
 type PoolTab = 'all' | 'entity' | 'affix';
 type EntityFilter = 'all-entity' | 'starter' | 'active' | 'passive';
-type EntityCatFilter = 'all' | '随从' | '武器' | '防具' | '饰品' | '容器';
+type EntityCatFilter = string;
 type AffixCatFilter = 'all' | '类别' | '属性' | '行动' | '伤害' | '防御' | '耐力' | '负重' | '容器' | '限制' | '特殊';
 
 function showFullItemPool() {
@@ -202,7 +202,7 @@ function showFullItemPool() {
           listHtml += '</div>';
           // 实体分类筛选
           listHtml += '<div class="filter-row" style="margin-bottom:4px;">';
-          const ecats: EntityCatFilter[] = ['all', '随从', '武器', '防具', '饰品', '容器'];
+          const ecats: EntityCatFilter[] = getEntityCategoryFilters();
           for (const c of ecats) {
             listHtml += `<button class="btn btn-small ${entityCatFilter === c ? 'active' : ''}" data-ecat="${c}">${c === 'all' ? '全部类别' : c}</button>`;
           }

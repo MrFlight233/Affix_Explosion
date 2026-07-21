@@ -1,82 +1,8 @@
 // ============================================================
-// 种子数据脚本 — 从 game_data.json 导入现有模板到 DB
-// 首次启动 / 管理员 reset 时调用
+// 数据库建表脚本
 // ============================================================
 
-import fs from 'fs';
-import path from 'path';
 import { getDB } from './connection';
-import { entityDefToRow, affixDefToRow, templateCache } from './cache';
-import { CONFIG } from '../config';
-
-const SEED_PATH = path.resolve(CONFIG.SEED_DATA_PATH);
-
-/** 从 JSON 种子文件导入模板数据到数据库表 */
-export function seedFromJson(): void {
-  const db = getDB();
-
-  if (!fs.existsSync(SEED_PATH)) {
-    console.warn(`[Seed] 种子文件不存在: ${SEED_PATH}，跳过导入`);
-    return;
-  }
-
-  const raw = fs.readFileSync(SEED_PATH, 'utf-8');
-  const data = JSON.parse(raw);
-
-  // 使用事务批量写入
-  const insertEntity = db.prepare(`
-    INSERT OR REPLACE INTO entities (
-      id, name, slot_cost, entity_slots, weight, value,
-      fixed_affixes, dynamic_affix_slots, pool_prerequisite,
-      default_children, preloaded_dynamic_affixes,
-      hp, max_stamina, stamina_regen, max_load,
-      is_active, stamina_cost, action_time, damage,
-      target_type, target_order, priority_target, target_faction,
-      regen_bonus, hp_bonus, updated_at
-    ) VALUES (
-      @id, @name, @slot_cost, @entity_slots, @weight, @value,
-      @fixed_affixes, @dynamic_affix_slots, @pool_prerequisite,
-      @default_children, @preloaded_dynamic_affixes,
-      @hp, @max_stamina, @stamina_regen, @max_load,
-      @is_active, @stamina_cost, @action_time, @damage,
-      @target_type, @target_order, @priority_target, @target_faction,
-      @regen_bonus, @hp_bonus, @updated_at
-    )
-  `);
-
-  const insertAffix = db.prepare(`
-    INSERT OR REPLACE INTO affixes (
-      id, name, category, value, cost_value, slot_cost,
-      repeatable, prerequisite, pool_prerequisite, target, effect, updated_at
-    ) VALUES (
-      @id, @name, @category, @value, @cost_value, @slot_cost,
-      @repeatable, @prerequisite, @pool_prerequisite, @target, @effect, @updated_at
-    )
-  `);
-
-  const transaction = db.transaction(() => {
-    // 清空旧数据
-    db.prepare('DELETE FROM entities').run();
-    db.prepare('DELETE FROM affixes').run();
-
-    for (const entityDef of (data.entities || [])) {
-      insertEntity.run(entityDefToRow(entityDef));
-    }
-    for (const affixDef of (data.affixes || [])) {
-      insertAffix.run(affixDefToRow(affixDef));
-    }
-
-    // 重置版本号为 1
-    db.prepare('INSERT OR REPLACE INTO data_version (id, version) VALUES (1, 1)').run();
-  });
-
-  transaction();
-
-  console.log(`[Seed] 种子数据导入完成: ${data.entities?.length ?? 0} entities, ${data.affixes?.length ?? 0} affixes`);
-
-  // 刷新缓存
-  templateCache.load();
-}
 
 /** 首次启动时建表 + 导入种子数据 */
 export function initTables(): void {

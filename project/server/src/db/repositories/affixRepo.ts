@@ -90,27 +90,20 @@ export class AffixRepo {
       throw Object.assign(new Error('词条不存在'), { statusCode: 404 });
     }
 
-    // 引用完整性检查
     const db = getDB();
-    const referencingUsers = db.prepare(`
-      SELECT user_id, username FROM saves
-      WHERE data_json LIKE ?
-    `).all(`%"defId":"${id}"%`) as any[];
-
-    if (referencingUsers.length > 0) {
-      const userNames = referencingUsers.map((u: any) => u.username).join(', ');
-      throw Object.assign(
-        new Error(`无法删除：词条被 ${referencingUsers.length} 个玩家的存档引用（${userNames}），请先通知玩家清理`),
-        { statusCode: 409 },
-      );
-    }
-
     db.prepare('DELETE FROM affixes WHERE id = ?').run(id);
 
     templateCache.deleteAffix(id);
     templateCache.bumpVersion();
 
     return existing;
+  }
+
+  /** 删除所有词条 */
+  deleteAll(): void {
+    const db = getDB();
+    db.prepare('DELETE FROM affixes').run();
+    templateCache.load();  // 全量重载缓存
   }
 }
 

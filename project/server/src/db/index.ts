@@ -3,7 +3,7 @@
 // ============================================================
 
 export { initDB, getDB, closeDB } from './connection';
-export { initTables, seedFromJson } from './seed';
+export { initTables } from './seed';
 export { templateCache, entityRowToDef, affixRowToDef, entityDefToRow, affixDefToRow } from './cache';
 export * from './schema';
 export { entityRepo } from './repositories/entityRepo';

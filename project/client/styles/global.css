@@ -526,6 +526,13 @@ body {
   padding: 0 4px; border-radius: 3px;
   font-size: 9px; line-height: 16px;
 }
+
+/* 管理页面 — 多选复选框 */
+.adm-list-check { cursor: pointer; }
+#adm-select-all-row { user-select: none; }
+/* 导入弹窗 */
+#adm-import-modal textarea:focus { outline: none; border-color: #888; }
+#adm-import-modal input[type="file"] { cursor: pointer; }
 /* 子实体覆写表单字段分组 */
 .child-edit-body .child-field-group {
   display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px;

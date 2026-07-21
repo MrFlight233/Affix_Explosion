@@ -143,8 +143,7 @@ export class EntityRepo {
   }
 
   /**
-   * 删除实体（含引用完整性检查）
-   * 检查所有存档中是否有 ItemInstance 引用了此实体
+   * 删除实体
    */
   delete(id: string): Record<string, any> {
     const existing = templateCache.getEntity(id);
@@ -152,21 +151,7 @@ export class EntityRepo {
       throw Object.assign(new Error('实体不存在'), { statusCode: 404 });
     }
 
-    // 引用完整性检查：扫描所有 saves 表中的 GameState JSON
     const db = getDB();
-    const referencingUsers = db.prepare(`
-      SELECT user_id, username FROM saves
-      WHERE data_json LIKE ?
-    `).all(`%"defId":"${id}"%`) as any[];
-
-    if (referencingUsers.length > 0) {
-      const userNames = referencingUsers.map((u: any) => u.username).join(', ');
-      throw Object.assign(
-        new Error(`无法删除：实体被 ${referencingUsers.length} 个玩家的存档引用（${userNames}），请先通知玩家清理`),
-        { statusCode: 409 },
-      );
-    }
-
     db.prepare('DELETE FROM entities WHERE id = ?').run(id);
 
     templateCache.deleteEntity(id);
@@ -175,19 +160,11 @@ export class EntityRepo {
     return existing;
   }
 
-  /** 扫描所有存档中引用指定实体 ID 的 ItemInstance */
-  checkReferences(id: string): { userId: number; username: string }[] {
+  /** 删除所有实体 */
+  deleteAll(): void {
     const db = getDB();
-    return db.prepare(`
-      SELECT user_id, username FROM saves
-      WHERE data_json LIKE ?
-    `).all(`%"defId":"${id}"%`) as any[];
-  }
-
-  /** 重置为种子数据 */
-  resetAll(): void {
-    const { seedFromJson } = require('../seed');
-    seedFromJson();
+    db.prepare('DELETE FROM entities').run();
+    templateCache.load();  // 全量重载缓存（也重新加载了 version）
   }
 }
 

@@ -106,9 +106,21 @@ export const admin = {
   deleteAffix: (id: string) =>
     request<{ ok: boolean }>('/admin/affixes/' + encodeURIComponent(id), { method: 'DELETE' }),
 
-  // Reset to defaults
-  reset: () =>
-    request<{ ok: boolean; message: string }>('/admin/reset', { method: 'POST' }),
+  // Import batch
+  importEntities: (items: any[], overwrite: boolean) =>
+    request<{ imported: number; skipped: number; errors: { index: number; id: string; message: string }[] }>(
+      '/admin/entities/import', { method: 'POST', body: JSON.stringify({ items, overwrite }) }
+    ),
+  importAffixes: (items: any[], overwrite: boolean) =>
+    request<{ imported: number; skipped: number; errors: { index: number; id: string; message: string }[] }>(
+      '/admin/affixes/import', { method: 'POST', body: JSON.stringify({ items, overwrite }) }
+    ),
+
+  // Clear all
+  clearAllEntities: () =>
+    request<{ ok: boolean; message: string }>('/admin/entities', { method: 'DELETE' }),
+  clearAllAffixes: () =>
+    request<{ ok: boolean; message: string }>('/admin/affixes', { method: 'DELETE' }),
 };
 
 // Saves

@@ -3,7 +3,7 @@
 // ============================================================
 
 import { admin } from '../api/client';
-import { reloadData, getEntityCategory, DefaultChildSpec } from '../game/data';
+import { reloadData, getEntityCategory, getEntityCategoryFilters, DefaultChildSpec } from '../game/data';
 
 type TabType = 'entities' | 'affixes';
 
@@ -12,6 +12,7 @@ interface AdminState {
   entities: any[];
   affixes: any[];
   selectedId: string | null;
+  selectedIds: Set<string>;
   isCreating: boolean;
   searchQuery: string;
   entityCatFilter: string;
@@ -35,7 +36,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
   const app = document.getElementById('app')!;
   let state: AdminState = {
     tab: 'entities', entities: [], affixes: [],
-    selectedId: null, isCreating: false,
+    selectedId: null, selectedIds: new Set(), isCreating: false,
     searchQuery: '', entityCatFilter: 'all', affixCatFilter: 'all', toast: null,
   };
 
@@ -59,12 +60,20 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
           <button id="adm-tab-entities" class="adm-tab-btn" style="padding:4px 16px;border:1px solid #aaa;background:#ddd;font-weight:bold;">实体管理</button>
           <button id="adm-tab-affixes" class="adm-tab-btn" style="padding:4px 16px;border:1px solid #aaa;background:#fff;">词条管理</button>
         </div>
-        <button class="btn btn-danger" id="adm-btn-reset" style="background:#fff;color:#c00;border:1px solid #c00;">重置</button>
+        <button class="btn" id="adm-btn-export-sel" style="background:#fff;border:1px solid #4a90d9;color:#4a90d9;" disabled>导出选中</button>
+        <button class="btn" id="adm-btn-export-all" style="background:#fff;border:1px solid #4a90d9;color:#4a90d9;">导出全部</button>
+        <button class="btn" id="adm-btn-import" style="background:#fff;border:1px solid #4a90d9;color:#4a90d9;">导入</button>
+        <button class="btn btn-danger" id="adm-btn-clear-all" style="background:#fff;color:#c00;border:1px solid #c00;">删除全部实体</button>
       </div>
       <div style="display:flex;flex:1;overflow:hidden;">
         <div id="adm-left" style="width:320px;border-right:1px solid #ddd;display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;">
           <div style="padding:8px;border-bottom:1px solid #eee;">
             <input id="adm-search" type="text" placeholder="搜索 ID 或名称..." style="width:100%;padding:5px 8px;border:1px solid #ccc;font-family:inherit;font-size:13px;box-sizing:border-box;">
+          </div>
+          <div id="adm-select-all-row" style="padding:2px 8px;display:flex;align-items:center;gap:6px;border-bottom:1px solid #eee;">
+            <input type="checkbox" id="adm-select-all" style="width:14px;height:14px;cursor:pointer;">
+            <span style="font-size:11px;color:#666;">全选</span>
+            <span style="font-size:11px;color:#666;margin-left:auto;" id="adm-select-count">已选 0</span>
           </div>
           <div style="padding:4px 8px;border-bottom:1px solid #eee;">
             <button class="btn btn-small" id="adm-btn-add" style="width:100%;">+ 新增</button>
@@ -77,6 +86,32 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         </div>
       </div>
       <div id="adm-toast" style="display:none;position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:8px 20px;font-size:13px;z-index:3000;"></div>
+      <div id="adm-import-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:4000;align-items:center;justify-content:center;">
+        <div style="background:#fff;border:1px solid #ccc;padding:20px;width:620px;max-height:85vh;overflow-y:auto;display:flex;flex-direction:column;gap:12px;">
+          <h3 style="margin:0;font-size:16px;">导入 JSON</h3>
+          <div>
+            <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;">
+              粘贴 JSON 数据，格式：<code style="background:#f0f0f0;padding:1px 4px;">{ "items": [{ "id": "...", "name": "...", ... }] }</code> 或直接粘贴数组
+            </label>
+            <textarea id="adm-import-text" style="width:100%;height:200px;font-family:monospace;font-size:12px;padding:8px;border:1px solid #ccc;box-sizing:border-box;resize:vertical;" placeholder='粘贴 JSON 数据...'></textarea>
+            <div style="margin-top:4px;display:flex;align-items:center;gap:8px;">
+              <input type="file" id="adm-import-file" accept=".json" style="font-size:12px;">
+              <span style="font-size:11px;color:#888;">或选择 .json 文件上传</span>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;">
+              <input type="checkbox" id="adm-import-overwrite" style="width:14px;height:14px;">
+              覆盖已存在的物品
+            </label>
+          </div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;">
+            <button class="btn" id="adm-import-cancel" style="background:#fff;border:1px solid #aaa;">取消</button>
+            <button class="btn btn-primary" id="adm-import-submit">导入</button>
+          </div>
+          <div id="adm-import-result" style="display:none;font-size:12px;padding:8px;background:#f5f5f5;max-height:120px;overflow-y:auto;"></div>
+        </div>
+      </div>
     </div>`;
 
   function showToast(msg: string) {
@@ -87,40 +122,196 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
 
   // ---- top-level events ----
   document.getElementById('adm-btn-back')!.addEventListener('click', onBack);
-  document.getElementById('adm-btn-reset')!.addEventListener('click', async () => {
-    if (!confirm('确定要重置所有数据为默认值吗？此操作不可撤销！')) return;
+  document.getElementById('adm-btn-clear-all')!.addEventListener('click', async () => {
+    const label = state.tab === 'entities' ? '实体' : '词条';
+    if (!confirm(`确定要删除全部${label}吗？此操作不可撤销！`)) return;
     try {
-      await admin.reset();
+      if (state.tab === 'entities') {
+        await admin.clearAllEntities();
+      } else {
+        await admin.clearAllAffixes();
+      }
       const [eRes, aRes] = await Promise.all([admin.listEntities(), admin.listAffixes()]);
       state.entities = eRes.entities; state.affixes = aRes.affixes;
       state.selectedId = null; state.isCreating = false; resetChildState();
-      reloadData(state.entities, state.affixes); render(); showToast('已重置为默认数据');
-    } catch (e: any) { showToast('重置失败：' + e.message); }
+      reloadData(state.entities, state.affixes); render(); showToast(`所有${label}已删除`);
+    } catch (e: any) { showToast('删除失败：' + e.message); }
   });
+
+  // ---- 导出/导入帮助函数 ----
+  function exportJSON(items: any[]) {
+    const typeLabel = state.tab;
+    const data = {
+      export_meta: {
+        type: typeLabel,
+        exported_at: new Date().toISOString(),
+        count: items.length,
+      },
+      items,
+    };
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `affix_explosion_${typeLabel}_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(`已导出 ${items.length} 个${state.tab === 'entities' ? '实体' : '词条'}`);
+  }
+
+  function updateSelectAllState() {
+    const items = getFilteredItems();
+    const cb = document.getElementById('adm-select-all') as HTMLInputElement;
+    const countEl = document.getElementById('adm-select-count');
+    if (!cb || !countEl) return;
+    const selectedInView = items.filter(i => state.selectedIds.has(i.id));
+    countEl.textContent = `已选 ${selectedInView.length}`;
+    if (items.length === 0) {
+      cb.checked = false; cb.indeterminate = false;
+    } else if (selectedInView.length === items.length) {
+      cb.checked = true; cb.indeterminate = false;
+    } else if (selectedInView.length > 0) {
+      cb.checked = false; cb.indeterminate = true;
+    } else {
+      cb.checked = false; cb.indeterminate = false;
+    }
+  }
+
+  async function doImport() {
+    const textarea = document.getElementById('adm-import-text') as HTMLTextAreaElement;
+    const raw = textarea.value.trim();
+    if (!raw) { showToast('请粘贴 JSON 数据或选择文件'); return; }
+
+    let parsed: any;
+    try { parsed = JSON.parse(raw); }
+    catch { showToast('JSON 格式错误'); return; }
+
+    let items: any[];
+    if (Array.isArray(parsed)) {
+      items = parsed;
+    } else if (parsed.items && Array.isArray(parsed.items)) {
+      items = parsed.items;
+    } else {
+      showToast('JSON 格式不正确：需要 {"items": [...]} 或 [...] 的数组'); return;
+    }
+
+    if (items.length === 0) { showToast('没有可导入的数据'); return; }
+
+    // 验证每项至少要有 id 和 name
+    for (let i = 0; i < items.length; i++) {
+      if (!items[i].id || !items[i].name) {
+        showToast(`第 ${i + 1} 项缺少 id 或 name，请修正后重试`); return;
+      }
+    }
+
+    const overwrite = (document.getElementById('adm-import-overwrite') as HTMLInputElement).checked;
+
+    try {
+      const result = state.tab === 'entities'
+        ? await admin.importEntities(items, overwrite)
+        : await admin.importAffixes(items, overwrite);
+
+      const resultEl = document.getElementById('adm-import-result')!;
+      let msg = `新增 ${result.imported} 项`;
+      if (result.skipped > 0) msg += `，跳过 ${result.skipped} 项`;
+      if (result.errors && result.errors.length > 0) {
+        msg += `，${result.errors.length} 项失败`;
+        const details = result.errors.map((e: any) => `[${e.id}]: ${e.message}`).join('<br>');
+        resultEl.innerHTML = `<span style="color:#c00;">${msg}</span><br><span style="font-size:11px;">${details}</span>`;
+      } else {
+        resultEl.innerHTML = `<span style="color:#2a7d2a;">${msg}</span>`;
+      }
+      resultEl.style.display = 'block';
+
+      // 刷新数据
+      const [eRes, aRes] = await Promise.all([admin.listEntities(), admin.listAffixes()]);
+      state.entities = eRes.entities; state.affixes = aRes.affixes;
+      state.selectedId = null; state.isCreating = false; state.selectedIds = new Set();
+      resetChildState();
+      reloadData(state.entities, state.affixes); render();
+      showToast(msg);
+    } catch (e: any) { showToast('导入失败：' + e.message); }
+  }
+
+  // ---- 导出/导入事件 ----
+  document.getElementById('adm-btn-export-sel')!.addEventListener('click', () => {
+    const items = getFilteredItems().filter(i => state.selectedIds.has(i.id));
+    if (items.length === 0) { showToast('未选中任何项目'); return; }
+    exportJSON(items);
+  });
+  document.getElementById('adm-btn-export-all')!.addEventListener('click', () => {
+    const items = getFilteredItems();
+    if (items.length === 0) { showToast('没有可导出的项目'); return; }
+    exportJSON(items);
+  });
+  document.getElementById('adm-btn-import')!.addEventListener('click', () => {
+    const modal = document.getElementById('adm-import-modal')!;
+    modal.style.display = 'flex';
+    (document.getElementById('adm-import-text') as HTMLTextAreaElement).value = '';
+    (document.getElementById('adm-import-overwrite') as HTMLInputElement).checked = false;
+    document.getElementById('adm-import-result')!.style.display = 'none';
+  });
+  document.getElementById('adm-import-cancel')!.addEventListener('click', () => {
+    document.getElementById('adm-import-modal')!.style.display = 'none';
+  });
+  document.getElementById('adm-import-submit')!.addEventListener('click', () => doImport());
+  document.getElementById('adm-import-file')!.addEventListener('change', (e) => {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      (document.getElementById('adm-import-text') as HTMLTextAreaElement).value = reader.result as string;
+    };
+    reader.readAsText(file);
+  });
+
+  // 全选/取消全选
+  document.getElementById('adm-select-all')!.addEventListener('change', (e) => {
+    const checked = (e.target as HTMLInputElement).checked;
+    const items = getFilteredItems();
+    if (checked) {
+      items.forEach(i => state.selectedIds.add(i.id));
+    } else {
+      items.forEach(i => state.selectedIds.delete(i.id));
+    }
+    render();
+  });
+
   document.getElementById('adm-tab-entities')!.addEventListener('click', () => {
-    state.tab = 'entities'; state.selectedId = null; state.isCreating = false; resetChildState(); render();
+    state.tab = 'entities'; state.selectedId = null; state.selectedIds = new Set(); state.isCreating = false; resetChildState(); render();
   });
   document.getElementById('adm-tab-affixes')!.addEventListener('click', () => {
-    state.tab = 'affixes'; state.selectedId = null; state.isCreating = false; resetChildState(); render();
+    state.tab = 'affixes'; state.selectedId = null; state.selectedIds = new Set(); state.isCreating = false; resetChildState(); render();
   });
   document.getElementById('adm-search')!.addEventListener('input', (e) => {
     state.searchQuery = (e.target as HTMLInputElement).value.toLowerCase();
-    state.selectedId = null; state.isCreating = false; resetChildState(); render();
+    state.selectedId = null; state.selectedIds = new Set(); state.isCreating = false; resetChildState(); render();
   });
   document.getElementById('adm-btn-add')!.addEventListener('click', () => {
-    state.isCreating = true; state.selectedId = null; resetChildState(); render();
+    state.isCreating = true; state.selectedId = null; state.selectedIds = new Set(); resetChildState(); render();
   });
 
   // ---- render ----
   function render() {
     const tabEnt = document.getElementById('adm-tab-entities')!;
     const tabAff = document.getElementById('adm-tab-affixes')!;
+    const clearBtn = document.getElementById('adm-btn-clear-all')!;
     if (state.tab === 'entities') {
       tabEnt.style.background = '#ddd'; tabEnt.style.fontWeight = 'bold';
       tabAff.style.background = '#fff'; tabAff.style.fontWeight = 'normal';
+      clearBtn.textContent = '删除全部实体';
     } else {
       tabAff.style.background = '#ddd'; tabAff.style.fontWeight = 'bold';
       tabEnt.style.background = '#fff'; tabEnt.style.fontWeight = 'normal';
+      clearBtn.textContent = '删除全部词条';
+    }
+    // 更新导出按钮状态
+    const exportSelBtn = document.getElementById('adm-btn-export-sel') as HTMLButtonElement;
+    if (exportSelBtn) {
+      const selCount = getFilteredItems().filter(i => state.selectedIds.has(i.id)).length;
+      exportSelBtn.disabled = selCount === 0;
+      exportSelBtn.textContent = selCount > 0 ? `导出选中 (${selCount})` : '导出选中';
     }
     renderCatFilter(); renderList(); renderForm();
   }
@@ -128,12 +319,12 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
   function renderCatFilter() {
     const container = document.getElementById('adm-cat-filter')!;
     if (state.tab === 'entities') {
-      const cats = ['all', '随从', '武器', '防具', '饰品', '容器'];
+      const cats = getEntityCategoryFilters();
       container.innerHTML = cats.map(c =>
         `<button class="btn btn-small" style="font-size:11px;padding:1px 6px;${state.entityCatFilter === c ? 'background:#ddd;font-weight:bold;' : ''}" data-ecat="${c}">${c === 'all' ? '全部' : c}</button>`
       ).join('');
       container.querySelectorAll('[data-ecat]').forEach(btn => {
-        btn.addEventListener('click', () => { state.entityCatFilter = (btn as HTMLElement).dataset.ecat!; state.selectedId = null; state.isCreating = false; render(); });
+        btn.addEventListener('click', () => { state.entityCatFilter = (btn as HTMLElement).dataset.ecat!; state.selectedId = null; state.selectedIds = new Set(); state.isCreating = false; render(); });
       });
     } else {
       const cats = ['all', '属性', '行动', '伤害', '防御', '耐力', '负重', '容器', '限制', '特殊', '类别'];
@@ -141,7 +332,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         `<button class="btn btn-small" style="font-size:11px;padding:1px 6px;${state.affixCatFilter === c ? 'background:#ddd;font-weight:bold;' : ''}" data-acat="${c}">${c === 'all' ? '全部' : c}</button>`
       ).join('');
       container.querySelectorAll('[data-acat]').forEach(btn => {
-        btn.addEventListener('click', () => { state.affixCatFilter = (btn as HTMLElement).dataset.acat!; state.selectedId = null; state.isCreating = false; render(); });
+        btn.addEventListener('click', () => { state.affixCatFilter = (btn as HTMLElement).dataset.acat!; state.selectedId = null; state.selectedIds = new Set(); state.isCreating = false; render(); });
       });
     }
   }
@@ -167,17 +358,39 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     let html = '';
     for (const item of items) {
       const sel = state.selectedId === item.id ? ' style="background:#e8e8e8;font-weight:bold;"' : '';
+      const checked = state.selectedIds.has(item.id) ? ' checked' : '';
       if (state.tab === 'entities') {
         const cat = getEntityCategory(item);
-        html += `<div class="adm-list-item" data-id="${item.id}"${sel}><span style="flex:1;">${item.name}</span><span style="font-size:10px;color:#888;">[${cat}]</span><span style="font-size:10px;color:#666;margin-left:6px;">价${item.value}</span></div>`;
+        html += `<div class="adm-list-item" data-id="${item.id}"${sel}><input type="checkbox" class="adm-list-check" data-id="${item.id}" style="width:14px;height:14px;flex-shrink:0;margin-right:6px;"${checked}><span style="flex:1;">${item.name}</span><span style="font-size:10px;color:#888;">[${cat}]</span><span style="font-size:10px;color:#666;margin-left:6px;">价${item.value}</span></div>`;
       } else {
-        html += `<div class="adm-list-item" data-id="${item.id}"${sel}><span style="flex:1;">${item.name}</span><span style="font-size:10px;color:#888;">[${item.category}]</span><span style="font-size:10px;color:#666;margin-left:6px;">${item.costValue >= 0 ? '价' + item.costValue : '-' + Math.abs(item.costValue)}</span></div>`;
+        html += `<div class="adm-list-item" data-id="${item.id}"${sel}><input type="checkbox" class="adm-list-check" data-id="${item.id}" style="width:14px;height:14px;flex-shrink:0;margin-right:6px;"${checked}><span style="flex:1;">${item.name}</span><span style="font-size:10px;color:#888;">[${item.category}]</span><span style="font-size:10px;color:#666;margin-left:6px;">${item.costValue >= 0 ? '价' + item.costValue : '-' + Math.abs(item.costValue)}</span></div>`;
       }
     }
     listEl.innerHTML = html;
+    // 复选框事件（阻止冒泡，不触发选中编辑）
+    listEl.querySelectorAll('.adm-list-check').forEach(cb => {
+      cb.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = (e.target as HTMLElement).dataset.id!;
+        if ((e.target as HTMLInputElement).checked) {
+          state.selectedIds.add(id);
+        } else {
+          state.selectedIds.delete(id);
+        }
+        updateSelectAllState();
+        // 更新导出按钮
+        const exportSelBtn = document.getElementById('adm-btn-export-sel') as HTMLButtonElement;
+        if (exportSelBtn) {
+          const selCount = items.filter(i => state.selectedIds.has(i.id)).length;
+          exportSelBtn.disabled = selCount === 0;
+          exportSelBtn.textContent = selCount > 0 ? `导出选中 (${selCount})` : '导出选中';
+        }
+      });
+    });
     listEl.querySelectorAll('.adm-list-item').forEach(el => {
       el.addEventListener('click', () => { state.selectedId = (el as HTMLElement).dataset.id!; state.isCreating = false; resetChildState(); render(); });
     });
+    updateSelectAllState();
   }
 
   // ========== TAG SELECTOR ==========
