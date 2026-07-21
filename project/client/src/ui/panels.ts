@@ -612,7 +612,7 @@ export class UIManager {
       const basePrice = 'costValue' in def ? Math.abs(def.costValue) : (def as any).value;
       const price = eid === 'discount_merchant' ? Math.floor(basePrice / 2) : eid === 'lottery' ? 0 : basePrice;
       const row = document.createElement('div'); row.className = 'item-row'; row.draggable = true;
-      row.innerHTML = `<span class="item-name" data-defid="${item.defId}" data-type="${item.type}">${def.name}</span><span class="item-stat">${'effect' in def ? def.effect : getEntityCategory(def as EntityDef)}</span><span style="margin-left:auto;margin-right:6px;font-size:12px;">${eid === 'lottery' ? '免费' : price + '金'}</span><button class="btn btn-small">购买</button>`;
+      row.innerHTML = `<span class="item-name" data-defid="${item.defId}" data-type="${item.type}">${def.name}</span><span class="item-stat">${'effect' in def ? def.effect : (getEntityCategory(def as EntityDef)).join(' / ')}</span><span style="margin-left:auto;margin-right:6px;font-size:12px;${eid === 'lottery' ? '免费' : price + '金'}</span><button class="btn btn-small">购买</button>`;
       makeDraggable(row, { instanceId: item.instanceId, source: 'shop' });
       row.querySelector('button')!.addEventListener('click', (ev) => {
         ev.stopPropagation();
@@ -656,7 +656,7 @@ export class UIManager {
       if (!def) continue;
       h += `<div class="item-row ${item.type === 'affix' ? 'affix' : (isStarter(def as EntityDef) ? 'starter' : 'gear')}" id="wh-item-${item.instanceId}">`;
       h += `<span class="item-name" data-defid="${item.defId}" data-type="${item.type}">${def.name}</span>`;
-      if (item.type !== 'affix') h += `<span class="item-stat">${getEntityCategory(def as EntityDef)}</span><span class="item-value">价${(def as EntityDef).value}</span>`;
+      if (item.type !== 'affix') h += `<span class="item-stat">${(getEntityCategory(def as EntityDef)).join(' / ')}</span><span class="item-value">价${(def as EntityDef).value}</span>`;
       else h += `<span class="item-stat">${(def as any).effect}</span><span class="item-value">价${Math.abs((def as any).costValue)}</span>`;
       h += '</div>';
     }
@@ -692,7 +692,7 @@ export class UIManager {
         if (!def) continue;
         const price = 'costValue' in def ? Math.abs(def.costValue) : (def as any).value;
         h += `<div class="item-row" id="shop-item-${item.instanceId}"><span class="item-name" data-defid="${item.defId}" data-type="${item.type}">${def.name}</span>
-          <span class="item-stat">${'effect' in def ? def.effect : getEntityCategory(def as EntityDef)}</span>
+          <span class="item-stat">${'effect' in def ? def.effect : (getEntityCategory(def as EntityDef)).join(' / ')}</span>
           <span style="margin-left:auto;margin-right:6px;">${price}金</span><button class="btn btn-small">购买</button></div>`;
       }
     }

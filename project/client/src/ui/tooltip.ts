@@ -35,7 +35,7 @@ export function showTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affi
 function renderEntityTooltip(tip: HTMLElement, def: EntityDef) {
   const isSt = isStarter(def);
   const label = isSt ? '启动端' : def.isActive ? '主动装备' : '被动装备';
-  const cat = getEntityCategory(def);
+  const cat = getEntityCategory(def).join(' / ');
 
   let html = `<div class="tt-name">${def.name} [${label}-${cat}]</div>`;
 

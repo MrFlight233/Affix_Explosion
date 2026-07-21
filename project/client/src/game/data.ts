@@ -126,9 +126,9 @@ export function getCategoryName(categoryId: string): string {
   return c ? c.name : categoryId;
 }
 
-/** 获取用于词条筛选的分类列表（isEntityClass=false） */
+/** 获取用于词条筛选的分类列表（全部分类） */
 export function getAffixFilterCategories(): CategoryDef[] {
-  return CATEGORIES.filter(c => !c.isEntityClass).sort((a, b) => a.sortOrder - b.sortOrder);
+  return [...CATEGORIES].sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
 /** 获取实体分类标记的分类 ID 集合（isEntityClass=true） */
@@ -145,8 +145,10 @@ export function reloadData(entities: EntityDef[], affixes: AffixDef[], categorie
   ENTITY_DEFS.push(...entities);
   AFFIX_DEFS.length = 0;
   AFFIX_DEFS.push(...affixes);
-  CATEGORIES.length = 0;
-  if (categories) CATEGORIES.push(...categories);
+  if (categories) {
+    CATEGORIES.length = 0;
+    CATEGORIES.push(...categories);
+  }
   _dataLoaded = true;
 }
 
@@ -174,15 +176,19 @@ export function getEffectiveValue(item: ItemInstance, field: keyof EntityDef): a
   return def ? def[field] : undefined;
 }
 
-/** 从固定词条推导实体分类（动态：根据 isEntityClass 分类下的词条） */
-export function getEntityCategory(def: EntityDef): string {
-  // 查找 entity_class 分类下的词条（实体分类标记），取 fixedAffixes 中第一个匹配的
+/** 从固定词条推导实体分类（动态：根据 isEntityClass 分类下的词条，返回所有匹配的分类名） */
+export function getEntityCategory(def: EntityDef): string[] {
   const entityClassCatIds = getEntityClassCategoryIds();
+  const names: string[] = [];
+  const seen = new Set<string>();
   for (const aid of def.fixedAffixes) {
     const a = getAffixDef(aid);
-    if (a && entityClassCatIds.has(a.category)) return a.name;
+    if (a && entityClassCatIds.has(a.category) && !seen.has(a.name)) {
+      seen.add(a.name);
+      names.push(a.name);
+    }
   }
-  return '未知';
+  return names.length > 0 ? names : ['未知'];
 }
 
 /** 获取实体分类筛选选项列表（动态：根据实际存在的实体分类标记词条） */

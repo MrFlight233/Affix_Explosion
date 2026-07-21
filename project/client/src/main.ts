@@ -177,7 +177,7 @@ function showFullItemPool() {
     if (entityFilter === 'starter') filteredEntities = filteredEntities.filter(e => isStarter(e));
     else if (entityFilter === 'active') filteredEntities = filteredEntities.filter(e => !isStarter(e) && e.isActive);
     else if (entityFilter === 'passive') filteredEntities = filteredEntities.filter(e => !isStarter(e) && !e.isActive);
-    if (entityCatFilter !== 'all') filteredEntities = filteredEntities.filter(e => getEntityCategory(e) === entityCatFilter);
+    if (entityCatFilter !== 'all') filteredEntities = filteredEntities.filter(e => getEntityCategory(e).includes(entityCatFilter));
 
     // 筛选词条
     let filteredAffixes = AFFIX_DEFS;
@@ -215,7 +215,7 @@ function showFullItemPool() {
         const sel = selectedId === e.id ? ' style="background:#f0f0f0;font-weight:bold;"' : '';
         listHtml += `<div class="item-row ip-item" data-id="${e.id}" data-type="entity"${sel}>`;
         listHtml += `<span class="item-name">${e.name}</span>`;
-        listHtml += `<span class="item-stat">[${typeLabel}] ${getEntityCategory(e)}</span>`;
+        listHtml += `<span class="item-stat">[${typeLabel}] ${getEntityCategory(e).join(' / ')}</span>`;
         listHtml += `<span class="item-value">价${e.value}</span></div>`;
       }
     }
@@ -301,7 +301,7 @@ function showFullItemPool() {
       const row = (k: string, v: string, extraClass?: string) =>
         `<tr><td class="tt-label" style="white-space:nowrap;vertical-align:top;padding-right:10px;">${k}</td><td${extraClass ? ` class="${extraClass}"` : ''}>${v}</td></tr>`;
 
-      let h = `<div class="tt-name" style="margin-bottom:8px;">${entity.name} <span style="font-size:12px;color:var(--text-dim);font-weight:normal;">[${label} · ${getEntityCategory(entity)}]</span></div>`;
+      let h = `<div class="tt-name" style="margin-bottom:8px;">${entity.name} <span style="font-size:12px;color:var(--text-dim);font-weight:normal;">[${label} · ${getEntityCategory(entity).join(' / ')}]</span></div>`;
       h += '<table style="font-size:13px;line-height:1.9;width:100%;">';
 
       // === 基础属性 ===
@@ -379,11 +379,11 @@ function showFullItemPool() {
         for (const c of entity.defaultChildren) {
           if (typeof c === 'string') {
             const cd = getEntityDef(c);
-            h += row(cd ? cd.name : c, cd ? `[${getEntityCategory(cd)}] 价${cd.value}` : '—');
+            h += row(cd ? cd.name : c, cd ? `[${getEntityCategory(cd).join(' / ')}] 价${cd.value}` : '—');
           } else {
             const cd = getEntityDef(c.defId);
             const ovKeys = c.overrides ? Object.keys(c.overrides).length : 0;
-            h += row((cd ? cd.name : c.defId) + (ovKeys > 0 ? ' (定制)' : ''), cd ? `[${getEntityCategory(cd)}] 价${cd.value}, 覆写${ovKeys}字段` : '—');
+            h += row((cd ? cd.name : c.defId) + (ovKeys > 0 ? ' (定制)' : ''), cd ? `[${getEntityCategory(cd).join(' / ')}] 价${cd.value}, 覆写${ovKeys}字段` : '—');
           }
         }
       }

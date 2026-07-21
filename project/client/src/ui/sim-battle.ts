@@ -337,21 +337,15 @@ function computeTotalValue(item: ItemInstance): number {
 
 /** 从固定+动态词条中提取所有类型标签 */
 function getTypeBadges(def: EntityDef, inst?: ItemInstance | null): string[] {
-  const tags: string[] = [];
-  const allAffixIds = new Set(def.fixedAffixes);
+  const tags = [...getEntityCategory(def)];
   if (inst) {
     for (const c of (inst.children || [])) {
-      if (c.type === 'affix') allAffixIds.add(c.defId);
-    }
-  }
-  // 动态构建分类词条 ID → 名称映射
-  const entityClassCatIds = getEntityClassCategoryIds();
-  const seen = new Set<string>();
-  for (const aid of allAffixIds) {
-    const a = getAffixDef(aid);
-    if (a && entityClassCatIds.has(a.category) && !seen.has(a.name)) {
-      seen.add(a.name);
-      tags.push(a.name);
+      if (c.type === 'affix') {
+        const a = getAffixDef(c.defId);
+        if (a && !tags.includes(a.name)) {
+          tags.push(a.name);
+        }
+      }
     }
   }
   tags.push(def.isActive ? '主动' : '被动');
@@ -449,7 +443,7 @@ function renderTooltipTree(
       } else if (cd.isActive) {
         row += `  伤:${cd.damage}  ${cd.actionTime}ms  顺序:${cd.targetOrder || ''}`;
       } else {
-        row += `  重:${cd.weight}  ${getEntityCategory(cd)}`;
+        row += `  重:${cd.weight}  ${getEntityCategory(cd).join(' / ')}`;
       }
       row += `  <span class="sb-tip-muted">槽耗${cd.slotCost}</span>`;
       row += '</div>';
@@ -547,7 +541,7 @@ function showSimTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affix', 
           } else if (cd.isActive) {
             row += `  伤:${cd.damage}  ${cd.actionTime}ms  顺序:${cd.targetOrder || ''}`;
           } else {
-            row += `  重:${cd.weight}  ${getEntityCategory(cd)}`;
+            row += `  重:${cd.weight}  ${getEntityCategory(cd).join(' / ')}`;
           }
           row += `  <span class="sb-tip-muted">槽耗${cd.slotCost}</span></div>`;
           h += row;
@@ -636,7 +630,7 @@ function hideSimTooltip() {
 
     // 类别过滤
     if (state.entityCatFilter !== 'all') {
-      entities = entities.filter(e => getEntityCategory(e) === state.entityCatFilter);
+      entities = entities.filter(e => getEntityCategory(e).includes(state.entityCatFilter));
     }
     if (state.affixCatFilter !== 'all') {
       affixes = affixes.filter(a => a.category === state.affixCatFilter);
@@ -749,7 +743,7 @@ function hideSimTooltip() {
       // 按类别分组
       const grouped = new Map<string, EntityDef[]>();
       for (const e of entities) {
-        const cat = getEntityCategory(e);
+        const cat = getEntityCategory(e)[0] || '未知';
         if (!grouped.has(cat)) grouped.set(cat, []);
         grouped.get(cat)!.push(e);
       }
@@ -771,7 +765,7 @@ function hideSimTooltip() {
   }
 
   function renderPoolEntityRow(e: EntityDef): string {
-    const cat = getEntityCategory(e);
+    const cat = getEntityCategory(e).join(' / ');
     let info = `价${e.value}  槽耗${e.slotCost}`;
     if (!isStarter(e) && e.isActive) info = `伤:${e.damage} ${e.actionTime}ms  ${info}`;
     return `<div class="sb-pool-item" data-defid="${e.id}" data-type="entity"
@@ -865,7 +859,7 @@ function hideSimTooltip() {
       }
       return `${edef.name}  伤:${dmg}  ${time}  顺序:${order}${edef.priorityTarget ? ' 优先' + edef.priorityTarget : ''}`;
     } else {
-      const cat = getEntityCategory(edef);
+      const cat = getEntityCategory(edef).join(' / ');
       return `${edef.name}  重:${edef.weight}  ${cat}`;
     }
   }

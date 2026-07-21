@@ -260,10 +260,10 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
       } else {
         await admin.clearAllAffixes();
       }
-      const [eRes, aRes] = await Promise.all([admin.listEntities(), admin.listAffixes()]);
+      const [eRes, aRes, cRes] = await Promise.all([admin.listEntities(), admin.listAffixes(), admin.listCategories()]);
       state.entities = eRes.entities; state.affixes = aRes.affixes;
       state.selectedId = null; state.isCreating = false; resetChildState();
-      reloadData(state.entities, state.affixes); render(); showToast(`所有${label}已删除`);
+      reloadData(state.entities, state.affixes, cRes.categories); render(); showToast(`所有${label}已删除`);
     } catch (e: any) { showToast('删除失败：' + e.message); }
   });
 
@@ -357,11 +357,11 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
       resultEl.style.display = 'block';
 
       // 刷新数据
-      const [eRes, aRes] = await Promise.all([admin.listEntities(), admin.listAffixes()]);
+      const [eRes, aRes, cRes] = await Promise.all([admin.listEntities(), admin.listAffixes(), admin.listCategories()]);
       state.entities = eRes.entities; state.affixes = aRes.affixes;
       state.selectedId = null; state.isCreating = false; state.selectedIds = new Set();
       resetChildState();
-      reloadData(state.entities, state.affixes); render();
+      reloadData(state.entities, state.affixes, cRes.categories); render();
       showToast(msg);
     } catch (e: any) { showToast('导入失败：' + e.message); }
   }
@@ -476,7 +476,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     if (state.tab === 'entities') {
       let items = state.entities;
       if (q) items = items.filter((e: any) => e.id.toLowerCase().includes(q) || e.name.toLowerCase().includes(q));
-      if (state.entityCatFilter !== 'all') items = items.filter((e: any) => getEntityCategory(e) === state.entityCatFilter);
+      if (state.entityCatFilter !== 'all') items = items.filter((e: any) => getEntityCategory(e).includes(state.entityCatFilter));
       return items;
     } else {
       let items = state.affixes;
@@ -494,7 +494,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
       const sel = state.selectedId === item.id ? ' style="background:#e8e8e8;font-weight:bold;"' : '';
       const checked = state.selectedIds.has(item.id) ? ' checked' : '';
       if (state.tab === 'entities') {
-        const cat = getEntityCategory(item);
+        const cat = getEntityCategory(item).join(' / ');
         html += `<div class="adm-list-item" data-id="${item.id}"${sel}><input type="checkbox" class="adm-list-check" data-id="${item.id}" style="width:14px;height:14px;flex-shrink:0;margin-right:6px;"${checked}><span style="flex:1;">${item.name}</span><span style="font-size:10px;color:#888;">[${cat}]</span><span style="font-size:10px;color:#666;margin-left:6px;">价${item.value}</span></div>`;
       } else {
         html += `<div class="adm-list-item" data-id="${item.id}"${sel}><input type="checkbox" class="adm-list-check" data-id="${item.id}" style="width:14px;height:14px;flex-shrink:0;margin-right:6px;"${checked}><span style="flex:1;">${item.name}</span><span style="font-size:10px;color:#888;">[${getCategoryName(item.category)}]</span><span style="font-size:10px;color:#666;margin-left:6px;">${item.costValue >= 0 ? '价' + item.costValue : '-' + Math.abs(item.costValue)}</span></div>`;
@@ -677,7 +677,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
   function countOverrides(ov: Record<string, any>): number { return Object.values(ov).filter(v => v !== undefined && v !== null && v !== '').length; }
 
   function renderChildrenEditor(specs: (string | DefaultChildSpec)[], parentId: string): string {
-    const entityOpts = state.entities.map((e: any) => ({ id: e.id, name: e.name + ' [' + getEntityCategory(e) + ']' }));
+    const entityOpts = state.entities.map((e: any) => ({ id: e.id, name: e.name + ' [' + getEntityCategory(e).join(' / ') + ']' }));
     // 合并原始 specs 和待添加子实体
     const pending = _pendingChildren[parentId] || [];
     const allSpecs: (string | DefaultChildSpec)[] = [...specs, ...pending];
@@ -846,10 +846,10 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
       try {
         if (isNew) { await admin.createEntity(entity); showToast('实体创建成功'); }
         else { await admin.updateEntity(originalData.id, entity); showToast('实体保存成功'); }
-        const [eRes, aRes] = await Promise.all([admin.listEntities(), admin.listAffixes()]);
+        const [eRes, aRes, cRes] = await Promise.all([admin.listEntities(), admin.listAffixes(), admin.listCategories()]);
         state.entities = eRes.entities; state.affixes = aRes.affixes;
         state.isCreating = false; state.selectedId = isNew ? entity.id : originalData.id; resetChildState();
-        reloadData(state.entities, state.affixes); render();
+        reloadData(state.entities, state.affixes, cRes.categories); render();
       } catch (e: any) { showToast('保存失败：' + e.message); }
     });
 
@@ -857,10 +857,10 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
       if (!confirm(`确定要删除实体"${originalData.name}"吗？此操作不可撤销。`)) return;
       try {
         await admin.deleteEntity(originalData.id);
-        const [eRes, aRes] = await Promise.all([admin.listEntities(), admin.listAffixes()]);
+        const [eRes, aRes, cRes] = await Promise.all([admin.listEntities(), admin.listAffixes(), admin.listCategories()]);
         state.entities = eRes.entities; state.affixes = aRes.affixes;
         state.selectedId = null; resetChildState();
-        reloadData(state.entities, state.affixes); render(); showToast('实体已删除');
+        reloadData(state.entities, state.affixes, cRes.categories); render(); showToast('实体已删除');
       } catch (e: any) { showToast('删除失败：' + e.message); }
     });
   }
@@ -954,10 +954,10 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
       try {
         if (isNew) { await admin.createAffix(affix); showToast('词条创建成功'); }
         else { await admin.updateAffix(originalData.id, affix); showToast('词条保存成功'); }
-        const [eRes, aRes] = await Promise.all([admin.listEntities(), admin.listAffixes()]);
+        const [eRes, aRes, cRes] = await Promise.all([admin.listEntities(), admin.listAffixes(), admin.listCategories()]);
         state.entities = eRes.entities; state.affixes = aRes.affixes;
         state.isCreating = false; state.selectedId = isNew ? affix.id : originalData.id; resetChildState();
-        reloadData(state.entities, state.affixes); render();
+        reloadData(state.entities, state.affixes, cRes.categories); render();
       } catch (e: any) { showToast('保存失败：' + e.message); }
     });
 
@@ -965,10 +965,10 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
       if (!confirm(`确定要删除词条"${originalData.name}"吗？此操作不可撤销。`)) return;
       try {
         await admin.deleteAffix(originalData.id);
-        const [eRes, aRes] = await Promise.all([admin.listEntities(), admin.listAffixes()]);
+        const [eRes, aRes, cRes] = await Promise.all([admin.listEntities(), admin.listAffixes(), admin.listCategories()]);
         state.entities = eRes.entities; state.affixes = aRes.affixes;
         state.selectedId = null; resetChildState();
-        reloadData(state.entities, state.affixes); render(); showToast('词条已删除');
+        reloadData(state.entities, state.affixes, cRes.categories); render(); showToast('词条已删除');
       } catch (e: any) { showToast('删除失败：' + e.message); }
     });
   }
