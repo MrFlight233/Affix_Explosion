@@ -629,7 +629,6 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     const v = (field: string, def: any = '') => isNew ? (data[field] ?? def) : data[field];
     const sel = (field: string, val: string) => v(field) === val ? ' selected' : '';
     const categories = ['属性','行动','伤害','防御','耐力','负重','容器','限制','特殊','类别'];
-    const targets = ['启动端','装备','通用'];
     const affixOpts = state.affixes.map((a: any) => ({ id: a.id, name: a.name }));
     let h = `<h3 style="margin-top:0;">${isNew?'新增词条':'编辑词条：'+data.name}</h3><div class="admin-form" id="affix-form"><div class="admin-form-section"><h4>基本信息</h4>`;
     h += `<div class="admin-field"><label>ID</label><input id="af-id" value="${v('id')}" ${isNew?'':'readonly'}></div>`;
@@ -640,7 +639,6 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     h += `<div class="admin-field"><label>价值</label><input id="af-costValue" type="number" value="${v('costValue',0)}"></div>`;
     h += `<div class="admin-field"><label>槽位消耗</label><input id="af-slotCost" type="number" value="${v('slotCost',0)}"></div>`;
     h += `<div class="admin-field"><label>可重复</label><input id="af-repeatable" type="checkbox" ${v('repeatable')?'checked':''}></div>`;
-    h += `<div class="admin-field"><label>适用目标</label><select id="af-target">${targets.map(t=>`<option value="${t}"${sel('target',t)}>${t}</option>`).join('')}</select></div>`;
     h += `</div>`;
     h += `<div class="admin-form-section"><h4>前置条件</h4>`;
     h += renderTagSelector('af-prerequisite','前置词条',v('prerequisite')||[],affixOpts);
@@ -817,7 +815,6 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         repeatable: (document.getElementById('af-repeatable') as HTMLInputElement).checked,
         prerequisite: getSelected('af-prerequisite'),
         poolPrerequisite: getSelected('af-poolPrerequisite'),
-        target: (document.getElementById('af-target') as HTMLSelectElement).value,
         effect: (document.getElementById('af-effect') as HTMLInputElement).value.trim(),
       };
       try {

@@ -78,7 +78,6 @@ function renderAffixTooltip(tip: HTMLElement, def: any) {
     <div class="tt-row"><span class="tt-label">效果:</span>${def.effect}</div>
     <div class="tt-row"><span class="tt-label">数值:</span>${def.value}</div>
     <div class="tt-row"><span class="tt-label">价值:</span>${Math.abs(def.costValue)}</div>
-    <div class="tt-row"><span class="tt-label">适用:</span>${def.target}</div>
     <div class="tt-row"><span class="tt-label">槽位:</span>${def.slotCost}</div>
     <div class="tt-row"><span class="tt-label">可重复:</span>${def.repeatable ? '是' : '否'}</div>
     <div class="tt-row"><span class="tt-label">前置:</span>${def.prerequisite.join('、') || '无'}</div>

@@ -406,7 +406,6 @@ function showFullItemPool() {
       h += row('数值', String(affix.value));
 
       h += '<tr><td colspan="2" style="font-weight:bold;padding-top:8px;border-bottom:1px solid #eee;">使用信息</td></tr>';
-      h += row('适用目标', affix.target);
       h += row('槽位消耗', String(affix.slotCost));
       h += row('可重复', affix.repeatable ? '是' : '否');
 

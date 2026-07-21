@@ -49,7 +49,6 @@ export function initTables(): void {
       repeatable  INTEGER NOT NULL DEFAULT 0,
       prerequisite TEXT NOT NULL DEFAULT '[]',
       pool_prerequisite TEXT NOT NULL DEFAULT '[]',
-      target      TEXT NOT NULL DEFAULT 'self',
       effect      TEXT NOT NULL DEFAULT '',
       created_at  TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at  TEXT NOT NULL DEFAULT (datetime('now'))

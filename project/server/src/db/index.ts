@@ -2,7 +2,7 @@
 // DB 模块统一导出
 // ============================================================
 
-export { initDB, getDB, closeDB } from './connection';
+export { getDB, closeDB } from './connection';
 export { initTables } from './seed';
 export { templateCache, entityRowToDef, affixRowToDef, entityDefToRow, affixDefToRow } from './cache';
 export * from './schema';

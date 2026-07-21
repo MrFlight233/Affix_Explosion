@@ -88,7 +88,6 @@ export function affixRowToDef(row: Record<string, any>): Record<string, any> {
     repeatable: row.repeatable === 1,
     prerequisite: parseJsonField(row.prerequisite) ?? [],
     poolPrerequisite: parseJsonField(row.pool_prerequisite) ?? [],
-    target: row.target,
     effect: row.effect,
   };
 }
@@ -104,7 +103,6 @@ export function affixDefToRow(def: Record<string, any>): Record<string, any> {
     repeatable: def.repeatable ? 1 : 0,
     prerequisite: serializeJsonField(def.prerequisite),
     pool_prerequisite: serializeJsonField(def.poolPrerequisite),
-    target: def.target ?? 'self',
     effect: def.effect ?? '',
     updated_at: new Date().toISOString(),
   };

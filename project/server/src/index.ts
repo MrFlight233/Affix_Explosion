@@ -7,9 +7,9 @@ import saveRouter from './routes/save';
 import dataRouter from './routes/data';
 import adminRouter from './routes/admin';
 
-function main() {
+async function main() {
   // 初始化数据库（建表 + 加载缓存）
-  initDB();
+  await initDB();
 
   const app = express();
 

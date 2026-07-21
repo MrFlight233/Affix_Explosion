@@ -565,7 +565,7 @@ function showSimTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affix', 
     h += `<div class="sb-tip-effect">${def.effect}</div>`;
     h += tipSection('参数');
     h += '<div class="sb-tip-grid">';
-    h += tipkv('目标', def.target) + tipkv('槽耗', def.slotCost);
+    h += tipkv('槽耗', def.slotCost);
     if (def.repeatable) h += tipkv('可重复', '是');
     h += '</div>';
     h += '<div class="sb-tip-footer">';

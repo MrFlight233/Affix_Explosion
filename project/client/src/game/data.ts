@@ -53,7 +53,7 @@ export interface AffixDef {
   id: string; name: string; category: string;
   value: number; costValue: number; slotCost: number;
   repeatable: boolean; prerequisite: string[]; poolPrerequisite: string[];
-  target: string; effect: string;
+  effect: string;
 }
 
 export interface ItemInstance {

@@ -35,7 +35,6 @@ export class AffixRepo {
       repeatable: def.repeatable ?? false,
       prerequisite: def.prerequisite ?? [],
       poolPrerequisite: def.poolPrerequisite ?? [],
-      target: def.target ?? '通用',
       effect: def.effect ?? '',
     };
 
@@ -43,10 +42,10 @@ export class AffixRepo {
     db.prepare(`
       INSERT INTO affixes (
         id, name, category, value, cost_value, slot_cost,
-        repeatable, prerequisite, pool_prerequisite, target, effect, updated_at
+        repeatable, prerequisite, pool_prerequisite, effect, updated_at
       ) VALUES (
         @id, @name, @category, @value, @cost_value, @slot_cost,
-        @repeatable, @prerequisite, @pool_prerequisite, @target, @effect, @updated_at
+        @repeatable, @prerequisite, @pool_prerequisite, @effect, @updated_at
       )
     `).run(affixDefToRow(filled));
 
@@ -74,7 +73,7 @@ export class AffixRepo {
         name=@name, category=@category, value=@value, cost_value=@cost_value,
         slot_cost=@slot_cost, repeatable=@repeatable,
         prerequisite=@prerequisite, pool_prerequisite=@pool_prerequisite,
-        target=@target, effect=@effect, updated_at=@updated_at
+        effect=@effect, updated_at=@updated_at
       WHERE id=@id
     `).run(affixDefToRow(merged));
 
