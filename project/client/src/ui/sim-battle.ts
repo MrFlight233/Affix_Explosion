@@ -37,9 +37,11 @@ interface SimBattleState {
   playerWin: boolean | null;
   battleLog: CombatEvent[];
   combatSpeed: number;
-  battleUpdateTimer: ReturnType<typeof setInterval> | null;
+  battleUpdateTimer: number | null;
   finalPlayerUnits: CombatUnitRuntime[] | null;
   finalEnemyUnits: CombatUnitRuntime[] | null;
+  lastTickWallTime: number;
+  lastLogCount: number;
   toast: string | null;
 }
 
@@ -74,10 +76,14 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
     battleUpdateTimer: null,
     finalPlayerUnits: null,
     finalEnemyUnits: null,
+    lastTickWallTime: 0,
+    lastLogCount: 0,
     toast: null,
   };
 
   let draggingType: 'entity' | 'affix' | null = null;
+  /** 记录每个 cu-cd span 上一次引擎 tick 后的 remainingTime，用于平滑插值 */
+  const weaponPrevRemaining = new Map<string, number>();
 
   // ============================================================
   // Zone 渲染系统 — 骨架常驻 + 分区更新
@@ -177,18 +183,20 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       const pauseBtn = target.closest('#sb-btn-pause');
       const speedBtn = target.closest('[data-speed]');
       if (backBtn) {
-        if (state.battleUpdateTimer) { clearInterval(state.battleUpdateTimer); state.battleUpdateTimer = null; }
+        if (state.battleUpdateTimer !== null) { cancelAnimationFrame(state.battleUpdateTimer); state.battleUpdateTimer = null; }
         state.inBattle = false; state.battleFinished = false; state.battlePaused = false;
         state.battleLog = [];
         renderZones();
       }
       if (pauseBtn) {
         state.battlePaused = !state.battlePaused;
+        if (!state.battlePaused) state.lastTickWallTime = Date.now(); // 恢复时重置插值时钟
         updateZone('sb-battle-header', renderBattleHeader());
       }
       if (speedBtn) {
         state.combatSpeed = parseFloat((speedBtn as HTMLElement).dataset.speed!);
         if (state.battlePaused) state.battlePaused = false;
+        state.lastTickWallTime = Date.now(); // 变速时重置插值时钟
         updateZone('sb-battle-header', renderBattleHeader());
       }
     });
@@ -375,7 +383,7 @@ function renderTooltipTree(
     if (def.isActive) {
       h += tipSection('攻击');
       h += '<div class="sb-tip-grid">';
-      let dmg = def.damage, time = def.actionTime + 'ms';
+      let dmg = def.damage, time = (def.actionTime / 1000).toFixed(1) + 's';
       if (combatUnit) {
         const matched = combatUnit.weapons.find(w => w.name === def.name);
         if (matched) { dmg = matched.damage; time = `${(Math.max(matched.remainingTime, 0) / 1000).toFixed(1)}s`; }
@@ -441,7 +449,7 @@ function renderTooltipTree(
       if (isStarter(cd)) {
         row += `  HP:${cd.hp}/${cd.hp}  耐力:${cd.maxStamina}/${cd.maxStamina}`;
       } else if (cd.isActive) {
-        row += `  伤:${cd.damage}  ${cd.actionTime}ms  顺序:${cd.targetOrder || ''}`;
+        row += `  伤:${cd.damage}  ${(cd.actionTime / 1000).toFixed(1)}s  顺序:${cd.targetOrder || ''}`;
       } else {
         row += `  重:${cd.weight}  ${getEntityCategory(cd).join(' / ')}`;
       }
@@ -506,7 +514,7 @@ function showSimTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affix', 
       if (def.isActive) {
         h += tipSection('攻击');
         h += '<div class="sb-tip-grid">';
-        h += tipkv('伤害', def.damage) + tipkv('耗时', def.actionTime + 'ms');
+        h += tipkv('伤害', def.damage) + tipkv('耗时', (def.actionTime / 1000).toFixed(1) + 's');
         h += tipkv('耐耗', def.staminaCost) + tipkv('目标', def.targetType || '—');
         if (def.targetOrder) h += tipkv('顺序', def.targetOrder);
         if (def.priorityTarget != null) h += tipkv('优先目标', def.priorityTarget);
@@ -539,7 +547,7 @@ function showSimTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affix', 
           if (isStarter(cd)) {
             row += `  HP:${cd.hp}/${cd.hp}  耐力:${cd.maxStamina}/${cd.maxStamina}`;
           } else if (cd.isActive) {
-            row += `  伤:${cd.damage}  ${cd.actionTime}ms  顺序:${cd.targetOrder || ''}`;
+            row += `  伤:${cd.damage}  ${(cd.actionTime / 1000).toFixed(1)}s  顺序:${cd.targetOrder || ''}`;
           } else {
             row += `  重:${cd.weight}  ${getEntityCategory(cd).join(' / ')}`;
           }
@@ -696,7 +704,7 @@ function hideSimTooltip() {
       ${state.battleFinished ? '<span>战斗结束</span>' : `<span>模拟时间: ${state.battleLog.length > 0 ? state.battleLog[state.battleLog.length - 1].time + 'ms' : '0ms'}</span>`}
       <span style="flex:1;"></span>
       <button class="sb-speed-btn${state.battlePaused ? ' paused' : ''}" id="sb-btn-pause">${state.battlePaused ? '已暂停' : '暂停'}</button>
-      ${[0.5, 1, 2].map(s => `<button class="sb-speed-btn${state.combatSpeed === s ? ' active' : ''}" data-speed="${s}">${s}x</button>`).join('')}
+      ${[0.5, 1, 2].map(s => `<button class="sb-speed-btn${state.combatSpeed === s && !state.battlePaused ? ' active' : ''}" data-speed="${s}">${s}x</button>`).join('')}
     `;
   }
 
@@ -767,7 +775,7 @@ function hideSimTooltip() {
   function renderPoolEntityRow(e: EntityDef): string {
     const cat = getEntityCategory(e).join(' / ');
     let info = `价${e.value}  槽耗${e.slotCost}`;
-    if (!isStarter(e) && e.isActive) info = `伤:${e.damage} ${e.actionTime}ms  ${info}`;
+    if (!isStarter(e) && e.isActive) info = `伤:${e.damage} ${(e.actionTime / 1000).toFixed(1)}s  ${info}`;
     return `<div class="sb-pool-item" data-defid="${e.id}" data-type="entity"
       data-source="pool" draggable="true">
       <span class="item-name">${e.name}</span>
@@ -849,12 +857,12 @@ function hideSimTooltip() {
           order = matched.targetOrder;
         } else {
           dmg = edef.damage;
-          time = `耗时:${edef.actionTime}ms`;
+          time = `耗时:${(edef.actionTime / 1000).toFixed(1)}s`;
           order = edef.targetOrder || '';
         }
       } else {
         dmg = edef.damage;
-        time = `耗时:${edef.actionTime}ms`;
+        time = `耗时:${(edef.actionTime / 1000).toFixed(1)}s`;
         order = edef.targetOrder || '';
       }
       return `${edef.name}  伤:${dmg}  ${time}  顺序:${order}${edef.priorityTarget ? ' 优先' + edef.priorityTarget : ''}`;
@@ -958,10 +966,10 @@ function hideSimTooltip() {
           const wIdx = combatUnit.weapons.indexOf(matched);
           h += `伤:${matched.damage}  倒计时:<span id="cu-cd-${sideFirst}-${combatUnit!.entityId}-${wIdx}">${(Math.max(matched.remainingTime, 0) / 1000).toFixed(1)}s</span>  耐耗:${matched.staminaCost}  ${matched.targetType}${matched.priorityTarget ? ' 优先' + matched.priorityTarget : ''}`;
         } else {
-          h += `伤:${edef.damage}  耗时:${edef.actionTime}ms  耐耗:${edef.staminaCost}  ${edef.targetType || ''}${edef.priorityTarget ? ' 优先' + edef.priorityTarget : ''}`;
+          h += `伤:${edef.damage}  耗时:${(edef.actionTime / 1000).toFixed(1)}s  耐耗:${edef.staminaCost}  ${edef.targetType || ''}${edef.priorityTarget ? ' 优先' + edef.priorityTarget : ''}`;
         }
       } else {
-        h += `伤:${edef.damage}  耗时:${edef.actionTime}ms  耐耗:${edef.staminaCost}  ${edef.targetType || ''}${edef.priorityTarget ? ' 优先' + edef.priorityTarget : ''}`;
+        h += `伤:${edef.damage}  耗时:${(edef.actionTime / 1000).toFixed(1)}s  耐耗:${edef.staminaCost}  ${edef.targetType || ''}${edef.priorityTarget ? ' 优先' + edef.priorityTarget : ''}`;
       }
       h += '</div></div>';
     }
@@ -1116,9 +1124,13 @@ function hideSimTooltip() {
 
   // ---- 动态战斗数值更新（重绘 body 确保所有数值实时） ----
 
-  let lastLogIndex = 0;
-
   function patchBattleValues() {
+    // 通过战斗日志增长检测引擎 tick（处理武器复位 actionTime→0→actionTime 漏检）
+    if (state.battleLog.length > state.lastLogCount) {
+      state.lastTickWallTime = Date.now();
+      state.lastLogCount = state.battleLog.length;
+    }
+
     const pu = getCombatUnits('player');
     const eu = getCombatUnits('enemy');
     // 遍历所有 cu-* 动态值 span，只更新变化的 textContent
@@ -1140,7 +1152,21 @@ function hideSimTooltip() {
       else if (type === 'sta') newVal = `${Math.floor(unit.currentStamina)}/${unit.maxStamina}`;
       else if (type === 'cd') {
         const wIdx = parseInt(parts[4] || '0');
-        if (unit.weapons[wIdx]) newVal = `${(Math.max(unit.weapons[wIdx].remainingTime, 0) / 1000).toFixed(1)}s`;
+        if (unit.weapons[wIdx]) {
+          const rawRemaining = unit.weapons[wIdx].remainingTime;
+          const spanId = el.id;
+          const prev = weaponPrevRemaining.get(spanId);
+          // 检测引擎 tick：remainingTime 变化时更新时间戳
+          if (prev !== undefined && prev !== rawRemaining) {
+            state.lastTickWallTime = Date.now();
+          }
+          weaponPrevRemaining.set(spanId, rawRemaining);
+          // 实时插值：从上个引擎 tick 起，模拟时间内经过的毫秒数
+          const wallElapsed = Date.now() - state.lastTickWallTime;
+          const simElapsed = wallElapsed * state.combatSpeed;
+          const displayMs = Math.max(rawRemaining - simElapsed, 0);
+          newVal = `${(displayMs / 1000).toFixed(1)}s`;
+        }
       } else if (type === 'ov') {
         (el as HTMLElement).style.display = unit.isOverloaded ? '' : 'none';
         return;
@@ -1161,27 +1187,7 @@ function hideSimTooltip() {
       const unit = units.find(u => u.entityId === defId);
       card.classList.toggle('dead', !!(unit && unit.currentHp <= 0));
     });
-    // 追加战斗日志
-    if (state.battleLog.length > lastLogIndex) {
-      const logEl = document.getElementById('sb-battle-log');
-      if (logEl) {
-        for (let i = lastLogIndex; i < state.battleLog.length; i++) {
-          const evt = state.battleLog[i];
-          let entryHtml: string;
-          if (evt.effects.includes('击杀')) {
-            entryHtml = `<div class="sb-log-entry kill">[${evt.time}ms] ${evt.targetName} 击杀!</div>`;
-          } else if (evt.targetName === '战斗开始') {
-            entryHtml = '<div class="sb-log-entry">[0ms] 战斗开始</div>';
-          } else {
-            entryHtml = `<div class="sb-log-entry">[${evt.time}ms] ${evt.actorName} · ${evt.weaponName} -> ${evt.targetName} 伤害 ${evt.damage} (HP:${evt.targetHpAfter}/${evt.targetMaxHp})</div>`;
-          }
-          logEl.insertAdjacentHTML('beforeend', entryHtml);
-        }
-        lastLogIndex = state.battleLog.length;
-        logEl.scrollTop = logEl.scrollHeight;
-      }
-    }
-    // 更新时间
+    // 更新时间（日志渲染已移至 onEvent 即时处理，这里只更新时间显示）
     if (state.battleLog.length > 0 && !state.battleFinished) {
       const lastTime = state.battleLog[state.battleLog.length - 1].time;
       const timeSpan = document.querySelector('#sb-battle-header span');
@@ -2013,7 +2019,6 @@ function hideSimTooltip() {
     state.battlePaused = false;
     state.playerWin = null;
     state.battleLog = [];
-    state.combatSpeed = 1;
     state.finalPlayerUnits = null;
     state.finalEnemyUnits = null;
 
@@ -2023,9 +2028,18 @@ function hideSimTooltip() {
       state.enemySlots,
       (evt) => {
         state.battleLog.push(evt);
+        // 即时增量渲染日志（消除 100ms 轮询延迟）
         const logEl = document.getElementById('sb-battle-log');
         if (logEl && !state.battleFinished) {
-          logEl.innerHTML = renderBattleLog();
+          let entryHtml: string;
+          if (evt.effects.includes('击杀')) {
+            entryHtml = `<div class="sb-log-entry kill">[${evt.time}ms] ${evt.targetName} 击杀!</div>`;
+          } else if (evt.targetName === '战斗开始') {
+            entryHtml = '<div class="sb-log-entry">[0ms] 战斗开始</div>';
+          } else {
+            entryHtml = `<div class="sb-log-entry">[${evt.time}ms] ${evt.actorName} · ${evt.weaponName} -> ${evt.targetName} 伤害 ${evt.damage} (HP:${evt.targetHpAfter}/${evt.targetMaxHp})</div>`;
+          }
+          logEl.insertAdjacentHTML('beforeend', entryHtml);
           logEl.scrollTop = logEl.scrollHeight;
         }
       },
@@ -2033,27 +2047,38 @@ function hideSimTooltip() {
         // 保存快照后再清理
         state.finalPlayerUnits = engine.combatPlayerUnits ? [...engine.combatPlayerUnits] : null;
         state.finalEnemyUnits = engine.combatEnemyUnits ? [...engine.combatEnemyUnits] : null;
-        if (state.battleUpdateTimer) {
-          clearInterval(state.battleUpdateTimer);
+        if (state.battleUpdateTimer !== null) {
+          cancelAnimationFrame(state.battleUpdateTimer);
           state.battleUpdateTimer = null;
         }
         state.battleFinished = true;
         state.playerWin = win;
         renderZones();
       },
-      state.combatSpeed,
+      () => state.combatSpeed,
+      () => state.battlePaused,
     );
 
     // 渲染战斗 UI（此时 runSimCombat 已设置 combatPlayerUnits/combatEnemyUnits，并过了 300ms 初始延迟）
     renderZones();
 
-    // 启动 100ms 轮询 — 使用精准 DOM patch 而非 innerHTML 替换
-    lastLogIndex = 0;
-    state.battleUpdateTimer = setInterval(() => {
-      if (!state.battlePaused && !state.battleFinished) {
-        patchBattleValues();
+    // 启动 requestAnimationFrame 轮询（50ms 节流 ≈ 20fps，配合 toFixed(1) 秒显示足够）
+    state.lastLogCount = state.battleLog.length;
+    state.lastTickWallTime = Date.now();
+    weaponPrevRemaining.clear();
+    let lastPatchTime = 0;
+    const patchLoop = (timestamp: number) => {
+      if (timestamp - lastPatchTime >= 50) {
+        lastPatchTime = timestamp;
+        if (!state.battlePaused && !state.battleFinished) {
+          patchBattleValues();
+        }
       }
-    }, 100);
+      if (!state.battleFinished) {
+        state.battleUpdateTimer = requestAnimationFrame(patchLoop);
+      }
+    };
+    state.battleUpdateTimer = requestAnimationFrame(patchLoop);
 
     await battlePromise;
   }

@@ -740,7 +740,8 @@ export class GameEngine {
     playerUnits: CombatUnitRuntime[],
     enemyUnits: CombatUnitRuntime[],
     onEvent: (evt: CombatEvent) => void,
-    speed: number,
+    speed: number | (() => number),
+    isPaused?: () => boolean,
   ): Promise<{ win: boolean }> {
     const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -752,6 +753,11 @@ export class GameEngine {
       enemyUnits.some(e => e.currentHp > 0) &&
       simTime < MAX_SIM_TIME
     ) {
+      // 暂停检查
+      while (isPaused?.()) {
+        await delay(50);
+      }
+
       // 找到所有武器中最小的 remainingTime
       let dt = Infinity;
       const allWeapons: { unit: CombatUnitRuntime; weapon: CombatWeaponRuntime; isPlayer: boolean }[] = [];
@@ -773,8 +779,9 @@ export class GameEngine {
 
       if (dt === Infinity || dt <= 0) dt = 100; // fallback
 
-      // 实际等待
-      await delay(Math.max(dt / speed, 50));
+      // 实际等待（speed 支持 getter 函数以允许运行时变速）
+      const currentSpeed = typeof speed === 'function' ? speed() : speed;
+      await delay(Math.max(dt / currentSpeed, 50));
 
       simTime += dt;
 
@@ -815,6 +822,8 @@ export class GameEngine {
         // 计算伤害（dmg 可为负值=恢复HP）
         const dmg = damage;
         target.currentHp -= dmg;
+        // HP 上限保护（耐力系统已有此保护，HP 之前遗漏）
+        target.currentHp = Math.min(target.currentHp, target.totalHp);
 
         // 重置倒计时
         weapon.remainingTime = weapon.actionTime;
@@ -829,7 +838,7 @@ export class GameEngine {
           weaponName: weapon.name,
           targetName: target.entityName,
           damage: dmg,
-          targetHpAfter: Math.max(target.currentHp, 0),
+          targetHpAfter: Math.min(Math.max(target.currentHp, 0), target.totalHp),
           targetMaxHp: target.totalHp,
           effects,
         });
@@ -912,7 +921,8 @@ export class GameEngine {
     enemySlots: DeploySlot[],
     onEvent: (evt: CombatEvent) => void,
     onEnd: (win: boolean) => void,
-    speed: number,
+    speed: number | (() => number),
+    isPaused?: () => boolean,
   ) {
     const playerSnaps = this.calculateCombatSnapshots(playerSlots);
     const enemySnaps = this.calculateCombatSnapshots(enemySlots);
@@ -932,7 +942,7 @@ export class GameEngine {
 
     await new Promise(r => setTimeout(r, 300));
 
-    const result = await this._runBattleCore(playerUnits, enemyUnits, onEvent, speed);
+    const result = await this._runBattleCore(playerUnits, enemyUnits, onEvent, speed, isPaused);
 
     this.combatPlayerUnits = null;
     this.combatEnemyUnits = null;
