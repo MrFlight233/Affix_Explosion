@@ -806,14 +806,14 @@ function hideSimTooltip() {
     let h = `<div class="sb-deploy-area" data-side="${side}">`;
     h += `<div class="sb-slot-header">${label} BD &nbsp; 第一层 ${usedSlots} / ${state.round} 槽位</div>`;
     if (slots.length === 0) {
-      h += '<div style="color:#999;font-size:12px;padding:8px;">拖入启动端实体</div>';
+      h += '<div style="color:#999;font-size:12px;padding:8px;">拖入实体到第一层</div>';
     }
 
-    // 渲染每个 slot 的启动端卡片及其所有子实体
+    // 渲染每个 slot 的第一层实体卡片（starter 和木桩都渲染）及其子实体
     for (let si = 0; si < slots.length; si++) {
       const slot = slots[si];
       const edef = getEntityDef(slot.entity.defId);
-      if (!edef || !isStarter(edef)) continue;
+      if (!edef) continue;
       h += renderEntityCard(slot.entity, 0, side, 'build');
     }
 
@@ -835,7 +835,7 @@ function hideSimTooltip() {
       const stam = combatUnit ? `${Math.floor(combatUnit.currentStamina)}/${combatUnit.maxStamina}` : `${edef.maxStamina}/${edef.maxStamina}`;
       let s: string;
       if (mode === 'battle' && combatUnit && sideFirst) {
-        s = `${edef.name}  HP:<span id="cu-hp-${sideFirst}-${edef.id}">${hp}</span>  耐力:<span id="cu-sta-${sideFirst}-${edef.id}">${stam}</span>`;
+        s = `${edef.name}  HP:<span id="cu-hp-${sideFirst}-${item.instanceId}">${hp}</span>  耐力:<span id="cu-sta-${sideFirst}-${item.instanceId}">${stam}</span>`;
       } else {
         s = `${edef.name}  HP:${hp}  耐力:${stam}`;
       }
@@ -850,7 +850,7 @@ function hideSimTooltip() {
           dmg = matched.damage;
           if (sideFirst) {
             const wIdx = combatUnit.weapons.indexOf(matched);
-            time = `倒计时:<span id="cu-cd-${sideFirst}-${combatUnit.entityId}-${wIdx}">${(Math.max(matched.remainingTime, 0) / 1000).toFixed(1)}s</span>`;
+            time = `倒计时:<span id="cu-cd-${sideFirst}-${combatUnit.instanceId}-${wIdx}">${(Math.max(matched.remainingTime, 0) / 1000).toFixed(1)}s</span>`;
           } else {
             time = `倒计时:${(Math.max(matched.remainingTime, 0) / 1000).toFixed(1)}s`;
           }
@@ -868,7 +868,11 @@ function hideSimTooltip() {
       return `${edef.name}  伤:${dmg}  ${time}  顺序:${order}${edef.priorityTarget ? ' 优先' + edef.priorityTarget : ''}`;
     } else {
       const cat = getEntityCategory(edef).join(' / ');
-      return `${edef.name}  重:${edef.weight}  ${cat}`;
+      if (mode === 'battle' && combatUnit && sideFirst) {
+        const hp = `${Math.max(combatUnit.currentHp, 0)}/${combatUnit.totalHp}`;
+        return `${edef.name}  HP:<span id="cu-hp-${sideFirst}-${item.instanceId}">${hp}</span>  重:${edef.weight}  ${cat}`;
+      }
+      return `${edef.name}  HP:${edef.hp}  重:${edef.weight}  ${cat}`;
     }
   }
 
@@ -937,18 +941,23 @@ function hideSimTooltip() {
       const hp = combatUnit ? `${Math.max(combatUnit.currentHp, 0)}/${combatUnit.totalHp}` : `${edef!.hp}/${edef!.hp}`;
       const stam = combatUnit ? `${Math.floor(combatUnit.currentStamina)}/${combatUnit.maxStamina}` : `${edef!.maxStamina}/${edef!.maxStamina}`;
       h += '<div class="sb-card-stats">';
-      h += `HP: <span id="cu-hp-${sideFirst}-${edef!.id}">${hp}</span>`;
-      h += `  耐力: <span id="cu-sta-${sideFirst}-${edef!.id}">${stam}</span>`;
+      h += `HP: <span id="cu-hp-${sideFirst}-${item.instanceId}">${hp}</span>`;
+      h += `  耐力: <span id="cu-sta-${sideFirst}-${item.instanceId}">${stam}</span>`;
       h += `  耐力回复: ${edef!.staminaRegen}/s`;
       h += '</div>';
       h += '<div class="sb-card-stats">';
       h += `负重: ${edef!.maxLoad}  槽耗: ${edef!.slotCost}`;
       if (mode === 'build') h += `  价值: ${edef!.value}`;
-      h += `<span id="cu-ov-${sideFirst}-${edef!.id}" style="${combatUnit?.isOverloaded ? '' : 'display:none'}">  超重</span>`;
-      h += `<span id="cu-dead-${sideFirst}-${edef!.id}" style="${combatUnit && combatUnit.currentHp <= 0 ? '' : 'display:none'}">  阵亡</span>`;
+      h += `<span id="cu-ov-${sideFirst}-${item.instanceId}" style="${combatUnit?.isOverloaded ? '' : 'display:none'}">  超重</span>`;
+      h += `<span id="cu-dead-${sideFirst}-${item.instanceId}" style="${combatUnit && combatUnit.currentHp <= 0 ? '' : 'display:none'}">  阵亡</span>`;
       h += '</div>';
     } else if (isEntity && edef) {
       h += '<div class="sb-card-stats">';
+      if (mode === 'battle' && combatUnit) {
+        h += `HP: <span id="cu-hp-${sideFirst}-${item.instanceId}">${Math.max(combatUnit.currentHp, 0)}/${combatUnit.totalHp}</span>  `;
+      } else if (mode === 'build') {
+        h += `HP: ${edef.hp}  `;
+      }
       h += `槽耗: ${edef.slotCost}  重: ${edef.weight}`;
       if (mode === 'build') h += `  价值: ${edef.value}`;
       h += '</div>';
@@ -964,7 +973,7 @@ function hideSimTooltip() {
         const matched = combatUnit.weapons.find(w => w.name === edef.name);
         if (matched) {
           const wIdx = combatUnit.weapons.indexOf(matched);
-          h += `伤:${matched.damage}  倒计时:<span id="cu-cd-${sideFirst}-${combatUnit!.entityId}-${wIdx}">${(Math.max(matched.remainingTime, 0) / 1000).toFixed(1)}s</span>  耐耗:${matched.staminaCost}  ${matched.targetType}${matched.priorityTarget ? ' 优先' + matched.priorityTarget : ''}`;
+          h += `伤:${matched.damage}  倒计时:<span id="cu-cd-${sideFirst}-${combatUnit!.instanceId}-${wIdx}">${(Math.max(matched.remainingTime, 0) / 1000).toFixed(1)}s</span>  耐耗:${matched.staminaCost}  ${matched.targetType}${matched.priorityTarget ? ' 优先' + matched.priorityTarget : ''}`;
         } else {
           h += `伤:${edef.damage}  耗时:${(edef.actionTime / 1000).toFixed(1)}s  耐耗:${edef.staminaCost}  ${edef.targetType || ''}${edef.priorityTarget ? ' 优先' + edef.priorityTarget : ''}`;
         }
@@ -1087,8 +1096,8 @@ function hideSimTooltip() {
     for (let si = 0; si < slots.length; si++) {
       const slot = slots[si];
       const edef = getEntityDef(slot.entity.defId);
-      if (!edef || !isStarter(edef)) continue;
-      const unit = units?.find(u => u.entityId === edef.id);
+      if (!edef) continue;
+      const unit = units?.find(u => u.instanceId === slot.entity.instanceId);
       h += renderEntityCard(slot.entity, 0, side, 'battle', unit);
     }
     return h;
@@ -1142,10 +1151,7 @@ function hideSimTooltip() {
       const instId = parts[3];
       const units = side === 'p' ? pu : eu;
       if (!units) return;
-      const unit = units.find(u => {
-        const edef = getEntityDef(u.entityId);
-        return edef && edef.id === instId;
-      });
+      const unit = units.find(u => u.instanceId === instId);
       if (!unit) return;
       let newVal = '';
       if (type === 'hp') newVal = `${Math.max(unit.currentHp, 0)}/${unit.totalHp}`;
@@ -1182,9 +1188,9 @@ function hideSimTooltip() {
       if (!sideEl) return;
       const isPlayer = sideEl.id === 'sb-player-units';
       const units = isPlayer ? pu : eu;
-      const defId = (card.querySelector('[data-cardtoggle]') as HTMLElement)?.dataset.defid;
-      if (!defId || !units) return;
-      const unit = units.find(u => u.entityId === defId);
+      const instId = (card.querySelector('[data-cardtoggle]') as HTMLElement)?.dataset.cardtoggle;
+      if (!instId || !units) return;
+      const unit = units.find(u => u.instanceId === instId);
       card.classList.toggle('dead', !!(unit && unit.currentHp <= 0));
     });
     // 更新时间（日志渲染已移至 onEvent 即时处理，这里只更新时间显示）
@@ -1511,13 +1517,25 @@ function hideSimTooltip() {
     if (isBD) {
       const item = findItemInSlots(slots, payload.instanceId)!;
       const def = getEntityDef(item.defId);
-      if (def && isStarter(def)) {
+      if (def) {
+        // 检查第一层槽位容量
+        let usedSlots = 0;
+        for (const s of slots) {
+          const d = getEntityDef(s.entity.defId);
+          if (d) usedSlots += d.slotCost;
+        }
+        // 如果已经在第一层则不重复计算
+        const alreadyTop = slots.some(s => s.entity.instanceId === payload.instanceId);
+        if (!alreadyTop && usedSlots + def.slotCost > state.round) {
+          return `第一层槽位不足(剩${state.round - usedSlots},需${def.slotCost})`;
+        }
         removeFromSlots(slots, payload.instanceId);
-        slots.push({ entity: item, children: [] });
+        // 保留实体的 children（从嵌套位置移出时保持子树完整）
+        const existingChildren = item.children || [];
+        slots.push({ entity: item, children: [...existingChildren] });
         renderZones();
         return null;
       }
-      return '非启动端不能放入第一层';
     }
     const bdEl = document.getElementById(side === 'player' ? 'sb-player-bd' : 'sb-enemy-bd');
     let bestInst: string | null = null;
@@ -1755,9 +1773,9 @@ function hideSimTooltip() {
 
       // 放入新位置
       if (parentInstanceId == null) {
-        // 放入第一层 (必须是 starter)
-        if (!isStarter(def)) return '只有启动端可放入第一层';
-        getSlots(side).push({ entity: item, children: [] });
+        // 所有实体都可放入第一层（非 starter = 木桩）
+        const existingChildren = item.children || [];
+        getSlots(side).push({ entity: item, children: [...existingChildren] });
       } else {
         // 放入父实体的 children
         const parent = findItemInSlots(getSlots(side), parentInstanceId);
@@ -1785,12 +1803,8 @@ function hideSimTooltip() {
         if (c.type === 'entity') state.collapsedCards.add(c.instanceId);
       }
       if (parentInstanceId == null) {
-        // 放入第一层
-        if (isStarter(edef)) {
-          getSlots(side).push({ entity: newItem, children: [] });
-        } else {
-          return '只有启动端可放入第一层';
-        }
+        // 所有实体都可放入第一层（非 starter = 木桩）
+        getSlots(side).push({ entity: newItem, children: [] });
       } else {
         const parent = findItemInSlots(getSlots(side), parentInstanceId);
         if (!parent) return '父实体不存在';
@@ -1915,7 +1929,7 @@ function hideSimTooltip() {
     let combatUnit: CombatUnitRuntime | null | undefined = undefined;
     if (mode === 'battle') {
       const units = side === 'player' ? getCombatUnits('player') : getCombatUnits('enemy');
-      combatUnit = units?.find(u => u.entityId === getEntityDef(item.defId)?.id);
+      combatUnit = units?.find(u => u.instanceId === item.instanceId);
     }
     const newHtml = renderEntityCard(item, depth, side, mode, combatUnit);
     const temp = document.createElement('div');

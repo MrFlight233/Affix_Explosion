@@ -169,6 +169,8 @@ export interface GameState {
 // ---- 战斗（v3：启动端+武器独立触发模型） ----
 
 export interface CombatUnitSnapshot {
+  // 唯一实例 ID
+  instanceId: string;
   // 启动端自身
   entityId: string;
   entityName: string;

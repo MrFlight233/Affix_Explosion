@@ -17,6 +17,7 @@ export type GamePhase = 1 | 2;
 // ---- 战斗单位快照（v3：启动端不自带攻击，武器独立触发） ----
 
 export interface CombatUnitSnapshot {
+  instanceId: string;   // 唯一实例 ID（来自 ItemInstance）
   entityId: string;
   entityName: string;
   totalHp: number;
@@ -55,6 +56,7 @@ export interface CombatWeaponRuntime {
 }
 
 export interface CombatUnitRuntime {
+  instanceId: string;   // 唯一实例 ID
   entityId: string;
   entityName: string;
   totalHp: number;
@@ -575,6 +577,7 @@ export class GameEngine {
       const isOverloaded = collected.totalLoad > edef.maxLoad;
 
       units.push({
+        instanceId: slot.entity.instanceId,
         entityId: edef.id,
         entityName: edef.name + (isStarter(edef) ? '' : '(木桩)'),
         totalHp: hp,
@@ -641,6 +644,7 @@ export class GameEngine {
       }
 
       units.push({
+        instanceId: `enemy_${i}`,
         entityId: `enemy_${i}`,
         entityName: `${t.name} Lv${r}`,
         totalHp: hp,
@@ -662,6 +666,7 @@ export class GameEngine {
   /** 从 CombatUnitSnapshot 转换为运行时结构 */
   private buildCombatRuntime(units: CombatUnitSnapshot[]): CombatUnitRuntime[] {
     return units.map(u => ({
+      instanceId: u.instanceId,
       entityId: u.entityId,
       entityName: u.entityName,
       totalHp: u.totalHp,
