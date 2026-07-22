@@ -56,6 +56,7 @@ function showStartScreen() {
       <div id="start-menu">
         <button id="btn-new-game">新游戏</button>
         <button id="btn-continue">继续游戏</button>
+        <button id="btn-delete-save" style="display:none;border-color:#c33;color:#933;">删除存档</button>
         <button id="btn-itempool">全物品池</button>
       </div>
       <div style="margin-top:20px;">
@@ -65,10 +66,12 @@ function showStartScreen() {
   `;
 
   const btnContinue = document.getElementById('btn-continue') as HTMLButtonElement;
-  checkSaveAvailability(btnContinue);
+  const btnDeleteSave = document.getElementById('btn-delete-save') as HTMLButtonElement;
+  checkSaveAvailability(btnContinue, btnDeleteSave);
 
   document.getElementById('btn-new-game')!.addEventListener('click', () => startGame(true));
   btnContinue.addEventListener('click', () => startGame(false));
+  btnDeleteSave.addEventListener('click', () => deleteSave(btnContinue, btnDeleteSave));
   document.getElementById('btn-itempool')!.addEventListener('click', () => showFullItemPool());
 
   // 退出登录
@@ -107,11 +110,12 @@ function showStartScreen() {
   })();
 }
 
-async function checkSaveAvailability(btn: HTMLButtonElement) {
+async function checkSaveAvailability(btn: HTMLButtonElement, btnDelete?: HTMLButtonElement) {
   const token = getToken();
   if (!token) {
     btn.disabled = true;
     btn.textContent = '继续游戏（请先登录）';
+    if (btnDelete) btnDelete.style.display = 'none';
     return;
   }
   try {
@@ -119,10 +123,28 @@ async function checkSaveAvailability(btn: HTMLButtonElement) {
     if (!data.save) {
       btn.disabled = true;
       btn.textContent = '继续游戏（无存档）';
+      if (btnDelete) btnDelete.style.display = 'none';
+    } else {
+      btn.disabled = false;
+      btn.textContent = '继续游戏';
+      if (btnDelete) btnDelete.style.display = '';
     }
   } catch {
     btn.disabled = true;
     btn.textContent = '继续游戏（无法连接）';
+    if (btnDelete) btnDelete.style.display = 'none';
+  }
+}
+
+async function deleteSave(btnContinue: HTMLButtonElement, btnDelete: HTMLButtonElement) {
+  if (!confirm('确定要删除存档吗？此操作不可撤销。')) return;
+  try {
+    await savesApi.del();
+    btnContinue.disabled = true;
+    btnContinue.textContent = '继续游戏（无存档）';
+    btnDelete.style.display = 'none';
+  } catch (e: any) {
+    alert('删除存档失败: ' + (e.message || '未知错误'));
   }
 }
 
