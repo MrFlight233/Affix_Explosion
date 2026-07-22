@@ -10,6 +10,7 @@ import {
   getEntityClassCategoryIds, getCategoryName, getAffixFilterCategories,
 } from '../game/data';
 import { makeDraggable, makeDropZone, DragPayload, setDragPayload, getDragPayload } from './dragDrop';
+import { data as dataApi } from '../api/client';
 
 // ============================================================
 // 状态类型
@@ -158,6 +159,25 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
     document.getElementById('sb-header')!.addEventListener('click', (e) => {
       const btn = (e.target as HTMLElement).closest('#sb-btn-start');
       if (btn) startSimBattle();
+    });
+    // 从对战池抽取 BD 按钮委托
+    document.getElementById('sb-main')!.addEventListener('click', async (e) => {
+      const btn = (e.target as HTMLElement).closest('.sb-draw-pool-btn');
+      if (!btn) return;
+      const side = (btn as HTMLElement).dataset.side as 'player' | 'enemy';
+      btn.textContent = '抽取中...';
+      (btn as HTMLButtonElement).disabled = true;
+      const bd = await drawFromPool(state.round);
+      (btn as HTMLButtonElement).disabled = false;
+      if (bd) {
+        if (side === 'player') state.playerSlots = bd;
+        else state.enemySlots = bd;
+        renderZones();
+        showToast(`已从对战池抽取 ${side === 'player' ? '玩家' : '对手'} BD`);
+      } else {
+        btn.textContent = '从对战池抽取';
+        showToast('对战池中暂无该回合的 BD');
+      }
     });
     // Pool 折叠按钮
     document.getElementById('sb-pool-toggle')!.addEventListener('click', () => {
@@ -804,7 +824,9 @@ function hideSimTooltip() {
     }
 
     let h = `<div class="sb-deploy-area" data-side="${side}">`;
-    h += `<div class="sb-slot-header">${label} BD &nbsp; 第一层 ${usedSlots} / ${state.round} 槽位</div>`;
+    h += `<div class="sb-slot-header">${label} BD &nbsp; 第一层 ${usedSlots} / ${state.round} 槽位`;
+    h += ` <button class="btn sb-draw-pool-btn" data-side="${side}" style="font-size:11px;padding:2px 8px;margin-left:8px;">从对战池抽取</button>`;
+    h += `</div>`;
     if (slots.length === 0) {
       h += '<div style="color:#999;font-size:12px;padding:8px;">拖入实体到第一层</div>';
     }
@@ -2022,10 +2044,36 @@ function hideSimTooltip() {
   // 战斗
   // ============================================================
 
+  /** 从对战池抽取指定回合的 1 个 BD */
+  async function drawFromPool(round: number): Promise<DeploySlot[] | null> {
+    try {
+      const { opponent } = await dataApi.getBattlePool(round);
+      if (!opponent || !opponent.bd_json || !Array.isArray(opponent.bd_json)) {
+        console.log('[drawFromPool] 池空或数据格式异常', { round, opponent });
+        return null;
+      }
+      console.log('[drawFromPool] 抽取成功', { round, slots: opponent.bd_json.length, opponent: opponent.username });
+      return opponent.bd_json as DeploySlot[];
+    } catch (e) {
+      console.error('[drawFromPool] 请求失败', e);
+      return null;
+    }
+  }
+
   async function startSimBattle() {
     if (state.playerSlots.length === 0 && state.enemySlots.length === 0) {
       showToast('请至少为一方组建 BD');
       return;
+    }
+
+    // 上传双方 BD 到对战池（静默，失败不影响战斗）
+    try {
+      const r1 = await dataApi.uploadBD(state.round, state.playerSlots);
+      console.log('[startSimBattle] 上传玩家 BD 成功', { round: state.round, id: r1.id, slots: state.playerSlots.length });
+      const r2 = await dataApi.uploadBD(state.round, state.enemySlots);
+      console.log('[startSimBattle] 上传敌人 BD 成功', { round: state.round, id: r2.id, slots: state.enemySlots.length });
+    } catch (e) {
+      console.error('[startSimBattle] 上传 BD 失败', e);
     }
 
     state.inBattle = true;

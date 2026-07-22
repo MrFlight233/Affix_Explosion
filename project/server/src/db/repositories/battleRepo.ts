@@ -9,17 +9,15 @@ import { templateCache } from '../cache';
 export class BattleRepo {
   /**
    * 上传 BD 到对战池
-   * 上传前校验 BD 中所有 defId 是否存在于当前模板数据中
+   * 同用户同回合先删旧记录，再插入新记录；上传前校验 defId 合法性
    */
   upload(
     userId: number,
     username: string,
-    floor: number,
     round: number,
     bdJson: string,
-    powerScore: number,
   ): number {
-    if (!floor || !round || !bdJson) {
+    if (!round || !bdJson) {
       throw Object.assign(new Error('缺少参数'), { statusCode: 400 });
     }
 
@@ -28,15 +26,23 @@ export class BattleRepo {
       const bd = JSON.parse(bdJson);
       this.validateBdDefIds(bd);
     } catch (e: any) {
-      if (e.statusCode) throw e; // 我们的校验错误直接抛出
+      if (e.statusCode) throw e;
       throw Object.assign(new Error('BD 数据格式无效'), { statusCode: 400 });
     }
 
     const db = getDB();
+
+    // 校验用户是否存在（DB 重置后旧 token 可能导致 userId 无效）
+    const user = db.prepare('SELECT id FROM users WHERE id = ?').get(userId) as any;
+    if (!user) {
+      throw Object.assign(new Error('用户不存在，请重新登录'), { statusCode: 401 });
+    }
+
+    // 纯 INSERT，允许多条（同一用户同回合可上传多次，抽取时按概率自然分布）
     const result = db.prepare(`
-      INSERT INTO battle_pool (user_id, username, floor, round, bd_json, power_score)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(userId, username, floor, round, bdJson, powerScore || 0);
+      INSERT INTO battle_pool (user_id, username, round, bd_json)
+      VALUES (?, ?, ?, ?)
+    `).run(userId, username, round, bdJson);
 
     return Number(result.lastInsertRowid);
   }
@@ -76,32 +82,19 @@ export class BattleRepo {
     }
   }
 
-  /** 查询对战池（排除自己的 BD） */
-  findByFloorRound(floor: number, round: number, excludeUserId: number): any[] {
+  /** 随机抽取指定回合的 1 个对手 BD（含自己），池空返回 null */
+  findByRound(round: number): any | null {
     const db = getDB();
-    const rows = db.prepare(`
-      SELECT id, username, floor, round, bd_json, power_score,
-             win_count, loss_count
+    const row = db.prepare(`
+      SELECT id, username, round, bd_json
       FROM battle_pool
-      WHERE floor = ? AND round = ? AND user_id != ?
-      ORDER BY power_score DESC
-      LIMIT 10
-    `).all(floor, round, excludeUserId) as any[];
+      WHERE round = ?
+      ORDER BY RANDOM()
+      LIMIT 1
+    `).get(round) as any;
 
-    return rows.map((o: any) => ({
-      ...o,
-      bd_json: JSON.parse(o.bd_json),
-    }));
-  }
-
-  /** 更新 BD 战绩（客户端上报） */
-  updateStats(bdId: number, win: boolean): void {
-    const db = getDB();
-    if (win) {
-      db.prepare('UPDATE battle_pool SET win_count = win_count + 1 WHERE id = ?').run(bdId);
-    } else {
-      db.prepare('UPDATE battle_pool SET loss_count = loss_count + 1 WHERE id = ?').run(bdId);
-    }
+    if (!row) return null;
+    return { ...row, bd_json: JSON.parse(row.bd_json) };
   }
 }
 

@@ -10,7 +10,7 @@ import {
   ENTITY_DEFS, AFFIX_DEFS, getEntityCategory,
   getEffectiveValue,
 } from './data';
-import { saves as savesApi } from '../api/client';
+import { data as dataApi, saves as savesApi } from '../api/client';
 
 export type GamePhase = 1 | 2;
 
@@ -872,15 +872,50 @@ export class GameEngine {
     return { win };
   }
 
-  /** 时间线驱动战斗引擎（正式游戏） */
+  /** 时间线驱动战斗引擎（正式游戏）。接入在线对战池：上传 BD + 抽取对手，池空自动获胜 */
   async runCombat(
     onEvent: (evt: CombatEvent) => void,
     onEnd: (win: boolean, gold: number) => void,
     speed: number,
   ) {
     const snapshots = this.calculateCombatSnapshots();
-    const enemySnaps = this.generateEnemyBD();
 
+    // 1. 上传 BD 到对战池（静默，失败不影响战斗）
+    try {
+      const r = await dataApi.uploadBD(this.state.round, this.state.deploySlots);
+      console.log('[runCombat] 上传 BD 成功', { round: this.state.round, id: r.id, slots: this.state.deploySlots.length });
+    } catch (e) { console.error('[runCombat] 上传 BD 失败', e); }
+
+    // 2. 从对战池抽取对手
+    let enemySnaps: CombatUnitSnapshot[] | null = null;
+    try {
+      const { opponent } = await dataApi.getBattlePool(this.state.round);
+      if (opponent && opponent.bd_json && Array.isArray(opponent.bd_json)) {
+        console.log('[runCombat] 抽取对手成功', { round: this.state.round, slots: opponent.bd_json.length, opponent: opponent.username });
+        enemySnaps = this.calculateCombatSnapshots(opponent.bd_json as DeploySlot[]);
+      } else {
+        console.log('[runCombat] 池空，自动获胜', { round: this.state.round });
+      }
+    } catch (e) { console.error('[runCombat] 抽取对手失败', e); }
+
+    // 3. 无对手 → 自动获胜
+    if (!enemySnaps || enemySnaps.length === 0) {
+      const goldReward = 10 + this.state.round * 5 + this.state.deploySlots.length * 2;
+      for (const slot of this.state.deploySlots) {
+        const hasGrowth = this.hasGrowthAffix(slot.children) ||
+          (slot.entity.children && this.hasGrowthAffix(slot.entity.children));
+        if (hasGrowth) {
+          const cur = this.state.growthStacks[slot.entity.instanceId] || 0;
+          if (cur < 10) this.state.growthStacks[slot.entity.instanceId] = cur + 1;
+        }
+      }
+      this.state.gold += goldReward;
+      this.notify();
+      onEnd(true, goldReward);
+      return { win: true, enemies: [], goldReward };
+    }
+
+    // 4. 正常战斗
     const playerUnits = this.buildCombatRuntime(snapshots);
     const enemyUnits = this.buildCombatRuntime(enemySnaps);
 
@@ -902,7 +937,6 @@ export class GameEngine {
 
     if (result.win) {
       for (const slot of this.state.deploySlots) {
-        // 递归检查 growth 词条
         const hasGrowth = this.hasGrowthAffix(slot.children) ||
           (slot.entity.children && this.hasGrowthAffix(slot.entity.children));
         if (hasGrowth) {

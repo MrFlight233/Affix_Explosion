@@ -48,12 +48,12 @@ export const auth = {
 // Data
 export const data = {
   getAll: () => request<{entities:any[];affixes:any[];version:number}>('/data/all'),
-  uploadBD: (floor:number, round:number, bd:any, power_score:number) =>
+  uploadBD: (round: number, bd: any) =>
     request<{id:number}>('/data/battle-pool', {
-      method:'POST', body:JSON.stringify({floor,round,bd_json:JSON.stringify(bd),power_score}),
+      method:'POST', body:JSON.stringify({round, bd_json:JSON.stringify(bd)}),
     }),
-  getBattlePool: (floor:number, round:number) =>
-    request<{opponents:any[]}>('/data/battle-pool?' + new URLSearchParams({floor:String(floor),round:String(round)})),
+  getBattlePool: (round: number) =>
+    request<{opponent:any | null}>('/data/battle-pool?' + new URLSearchParams({round:String(round)})),
 };
 
 // Admin

@@ -77,17 +77,12 @@ export function initTables(): void {
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id     INTEGER NOT NULL REFERENCES users(id),
       username    TEXT NOT NULL,
-      floor       INTEGER NOT NULL,
       round       INTEGER NOT NULL,
       bd_json     TEXT NOT NULL,
-      power_score INTEGER NOT NULL DEFAULT 0,
-      win_count   INTEGER NOT NULL DEFAULT 0,
-      loss_count  INTEGER NOT NULL DEFAULT 0,
       uploaded_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
-    CREATE INDEX IF NOT EXISTS idx_battle_pool_floor_round ON battle_pool(floor, round);
-    CREATE INDEX IF NOT EXISTS idx_battle_pool_power ON battle_pool(power_score);
+    CREATE INDEX IF NOT EXISTS idx_battle_pool_round ON battle_pool(round);
 
     CREATE TABLE IF NOT EXISTS categories (
       id              TEXT PRIMARY KEY,
@@ -99,38 +94,47 @@ export function initTables(): void {
     );
   `);
 
-  // ---- 种子数据：分类 ----
-  const catSeed = [
-    ['attribute',     '属性',   1, 0],
-    ['action',        '行动',   2, 0],
-    ['damage',        '伤害',   3, 0],
-    ['defense',       '防御',   4, 0],
-    ['stamina',       '耐力',   5, 0],
-    ['load',          '负重',   6, 0],
-    ['restriction',   '限制',   7, 0],
-    ['special',       '特殊',   8, 0],
-    ['entity_class',  '实体分类', 9, 1],
-  ];
-  const catInsert = db.prepare(
-    'INSERT OR IGNORE INTO categories (id, name, sort_order, is_entity_class) VALUES (?, ?, ?, ?)'
-  );
-  for (const c of catSeed) catInsert.run(...c);
-
-  // ---- 数据迁移：affix.category 中文 → 分类 ID ----
-  const catMigrations: [string, string][] = [
-    ['attribute',    '属性'],
-    ['action',       '行动'],
-    ['damage',       '伤害'],
-    ['defense',      '防御'],
-    ['stamina',      '耐力'],
-    ['load',         '负重'],
-    ['restriction',  '限制'],
-    ['special',      '特殊'],
-    ['entity_class', '类别'],
-    ['special',      '容器'],   // 容器分类并入 special
-  ];
-  const catMigrate = db.prepare('UPDATE affixes SET category = ? WHERE category = ?');
-  for (const [newId, oldName] of catMigrations) catMigrate.run(newId, oldName);
+  // ---- 迁移：删除旧版 battle_pool 废弃字段 ----
+  migrateBattlePool(db);
 
   console.log('[DB] 所有表创建/验证完成');
+}
+
+/** 迁移 battle_pool 表：删除 floor/power_score/win_count/loss_count 列 */
+function migrateBattlePool(db: ReturnType<typeof getDB>): void {
+  try {
+    const cols = db.prepare("PRAGMA table_info('battle_pool')").all() as { name: string }[];
+    const colNames = new Set(cols.map(c => c.name));
+
+    if (colNames.has('floor') || colNames.has('power_score') ||
+        colNames.has('win_count') || colNames.has('loss_count')) {
+      // 重建表（SQLite 3.35+ 支持 DROP COLUMN，但重建更通用）
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS battle_pool_new (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id     INTEGER NOT NULL REFERENCES users(id),
+          username    TEXT NOT NULL,
+          round       INTEGER NOT NULL,
+          bd_json     TEXT NOT NULL,
+          uploaded_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO battle_pool_new (id, user_id, username, round, bd_json, uploaded_at)
+          SELECT id, user_id, username, round, bd_json,
+                 COALESCE(uploaded_at, datetime('now'))
+          FROM battle_pool;
+        DROP TABLE battle_pool;
+        ALTER TABLE battle_pool_new RENAME TO battle_pool;
+      `);
+      console.log('[DB] battle_pool 表已迁移：删除 floor/power_score/win_count/loss_count 列');
+    }
+
+    // 重建索引
+    db.exec(`
+      DROP INDEX IF EXISTS idx_battle_pool_floor_round;
+      DROP INDEX IF EXISTS idx_battle_pool_power;
+      CREATE INDEX IF NOT EXISTS idx_battle_pool_round ON battle_pool(round);
+    `);
+  } catch (e) {
+    console.warn('[DB] battle_pool 迁移跳过:', (e as Error).message);
+  }
 }
