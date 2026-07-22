@@ -47,6 +47,7 @@ export class EntityRepo {
       hp: def.hp ?? 0,
       maxStamina: def.maxStamina ?? 0,
       staminaRegen: def.staminaRegen ?? 0,
+      hpRegen: def.hpRegen ?? 0,
       maxLoad: def.maxLoad ?? 0,
       isActive: def.isActive ?? false,
       staminaCost: def.staminaCost ?? 0,
@@ -57,7 +58,9 @@ export class EntityRepo {
       priorityTarget: def.priorityTarget ?? null,
       targetFaction: def.targetFaction ?? null,
       preloadedDynamicAffixes: def.preloadedDynamicAffixes ?? undefined,
-      regenBonus: def.regenBonus ?? 0,
+      staminaRegenerationBonus: def.staminaRegenerationBonus ?? 0,
+      staminaBonus: def.staminaBonus ?? 0,
+      hpRegenerationBonus: def.hpRegenerationBonus ?? 0,
       hpBonus: def.hpBonus ?? 0,
     };
 
@@ -68,18 +71,18 @@ export class EntityRepo {
         id, name, slot_cost, entity_slots, weight, value,
         fixed_affixes, dynamic_affix_slots, pool_prerequisite,
         default_children, preloaded_dynamic_affixes,
-        hp, max_stamina, stamina_regen, max_load,
+        hp, max_stamina, stamina_regen, hp_regen, max_load,
         is_active, stamina_cost, action_time, damage,
         target_type, target_order, priority_target, target_faction,
-        regen_bonus, hp_bonus, updated_at
+        stamina_regeneration_bonus, stamina_bonus, hp_regeneration_bonus, hp_bonus, updated_at
       ) VALUES (
         @id, @name, @slot_cost, @entity_slots, @weight, @value,
         @fixed_affixes, @dynamic_affix_slots, @pool_prerequisite,
         @default_children, @preloaded_dynamic_affixes,
-        @hp, @max_stamina, @stamina_regen, @max_load,
+        @hp, @max_stamina, @stamina_regen, @hp_regen, @max_load,
         @is_active, @stamina_cost, @action_time, @damage,
         @target_type, @target_order, @priority_target, @target_faction,
-        @regen_bonus, @hp_bonus, @updated_at
+        @stamina_regeneration_bonus, @stamina_bonus, @hp_regeneration_bonus, @hp_bonus, @updated_at
       )
     `).run(row);
 
@@ -128,11 +131,11 @@ export class EntityRepo {
         fixed_affixes=@fixed_affixes, dynamic_affix_slots=@dynamic_affix_slots,
         pool_prerequisite=@pool_prerequisite,
         default_children=@default_children, preloaded_dynamic_affixes=@preloaded_dynamic_affixes,
-        hp=@hp, max_stamina=@max_stamina, stamina_regen=@stamina_regen, max_load=@max_load,
+        hp=@hp, max_stamina=@max_stamina, stamina_regen=@stamina_regen, hp_regen=@hp_regen, max_load=@max_load,
         is_active=@is_active, stamina_cost=@stamina_cost, action_time=@action_time, damage=@damage,
         target_type=@target_type, target_order=@target_order,
         priority_target=@priority_target, target_faction=@target_faction,
-        regen_bonus=@regen_bonus, hp_bonus=@hp_bonus, updated_at=@updated_at
+        stamina_regeneration_bonus=@stamina_regeneration_bonus, stamina_bonus=@stamina_bonus, hp_regeneration_bonus=@hp_regeneration_bonus, hp_bonus=@hp_bonus, updated_at=@updated_at
       WHERE id=@id
     `).run(row);
 

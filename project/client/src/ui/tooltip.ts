@@ -58,8 +58,10 @@ function renderEntityTooltip(tip: HTMLElement, def: EntityDef) {
     // 被动装备
     if (def.damage) html += `<div class="tt-row"><span class="tt-label">伤害加成:</span>+${def.damage}</div>`;
     
-    if (def.regenBonus) html += `<div class="tt-row"><span class="tt-label">回复加成:</span>+${def.regenBonus}</div>`;
     if (def.hpBonus) html += `<div class="tt-row"><span class="tt-label">生命加成:</span>${def.hpBonus > 0 ? '+' : ''}${def.hpBonus}</div>`;
+    if (def.hpRegenerationBonus) html += `<div class="tt-row"><span class="tt-label">生命恢复加成:</span>+${def.hpRegenerationBonus}/秒</div>`;
+    if (def.staminaBonus) html += `<div class="tt-row"><span class="tt-label">耐力加成:</span>+${def.staminaBonus}</div>`;
+    if (def.staminaRegenerationBonus) html += `<div class="tt-row"><span class="tt-label">耐力恢复加成:</span>+${def.staminaRegenerationBonus}/秒</div>`;
   }
 
   // 通用信息

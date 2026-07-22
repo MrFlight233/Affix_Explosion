@@ -331,7 +331,7 @@ function showFullItemPool() {
         h += '<tr><td colspan="2" style="font-weight:bold;padding-top:8px;border-bottom:1px solid #eee;">基础属性</td></tr>';
         h += row('生命', String(entity.hp));
         h += row('耐力上限', String(entity.maxStamina));
-        h += row('耐力回复', entity.staminaRegen + '/秒');
+        h += row('耐力恢复', entity.staminaRegen + '/秒');
         h += row('负重上限', String(entity.maxLoad));
       }
 
@@ -356,7 +356,9 @@ function showFullItemPool() {
         const bonuses: string[] = [];
         if (entity.damage) bonuses.push(`伤害 +${entity.damage}`);
         
-        if (entity.regenBonus) bonuses.push(`回复 +${entity.regenBonus}/秒`);
+        if (entity.staminaRegenerationBonus) bonuses.push(`耐力恢复 +${entity.staminaRegenerationBonus}/秒`);
+        if (entity.staminaBonus) bonuses.push(`耐力 +${entity.staminaBonus}`);
+        if (entity.hpRegenerationBonus) bonuses.push(`生命恢复 +${entity.hpRegenerationBonus}/秒`);
         if (entity.hpBonus) bonuses.push(`生命 ${entity.hpBonus > 0 ? '+' : ''}${entity.hpBonus}`);
         if (entity.entitySlots > 0) bonuses.push(`实体槽位 +${entity.entitySlots}`);
         if (bonuses.length > 0) {

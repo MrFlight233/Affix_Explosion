@@ -24,6 +24,7 @@ export function initTables(): void {
       hp          INTEGER NOT NULL DEFAULT 10,
       max_stamina INTEGER NOT NULL DEFAULT 50,
       stamina_regen INTEGER NOT NULL DEFAULT 5,
+      hp_regen    INTEGER NOT NULL DEFAULT 0,
       max_load    INTEGER NOT NULL DEFAULT 20,
       is_active   INTEGER NOT NULL DEFAULT 0,
       stamina_cost INTEGER NOT NULL DEFAULT 0,
@@ -33,7 +34,9 @@ export function initTables(): void {
       target_order TEXT,
       priority_target INTEGER,
       target_faction TEXT,
-      regen_bonus INTEGER NOT NULL DEFAULT 0,
+      stamina_regeneration_bonus INTEGER NOT NULL DEFAULT 0,
+      stamina_bonus INTEGER NOT NULL DEFAULT 0,
+      hp_regeneration_bonus INTEGER NOT NULL DEFAULT 0,
       hp_bonus    INTEGER NOT NULL DEFAULT 0,
       created_at  TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
@@ -96,6 +99,8 @@ export function initTables(): void {
 
   // ---- 迁移：删除旧版 battle_pool 废弃字段 ----
   migrateBattlePool(db);
+  // ---- 迁移：被动加成字段扩展（regen_bonus → stamina_regeneration_bonus + 新增3列） ----
+  migrateStaminaBonusFields(db);
 
   console.log('[DB] 所有表创建/验证完成');
 }
@@ -136,5 +141,46 @@ function migrateBattlePool(db: ReturnType<typeof getDB>): void {
     `);
   } catch (e) {
     console.warn('[DB] battle_pool 迁移跳过:', (e as Error).message);
+  }
+}
+
+/** 迁移 entities 表：被动加成字段扩展（幂等） */
+function migrateStaminaBonusFields(db: ReturnType<typeof getDB>): void {
+  try {
+    const cols = db.prepare("PRAGMA table_info('entities')").all() as { name: string }[];
+    const colNames = new Set(cols.map(c => c.name));
+
+    // 0. 最旧迁移：regen_bonus → stamina_bonus
+    if (colNames.has('regen_bonus') && !colNames.has('stamina_regeneration_bonus') && !colNames.has('stamina_bonus')) {
+      db.exec('ALTER TABLE entities RENAME COLUMN regen_bonus TO stamina_bonus');
+      colNames.add('stamina_bonus'); colNames.delete('regen_bonus');
+      console.log('[DB] entities 表已迁移：regen_bonus → stamina_bonus');
+    }
+
+    // 1. stamina_bonus → stamina_regeneration_bonus（语义对齐）
+    if (colNames.has('stamina_bonus') && !colNames.has('stamina_regeneration_bonus')) {
+      db.exec('ALTER TABLE entities RENAME COLUMN stamina_bonus TO stamina_regeneration_bonus');
+      console.log('[DB] entities 表已迁移：stamina_bonus → stamina_regeneration_bonus');
+    }
+
+    // 2. 新增 stamina_bonus（全新语义：耐力加成）
+    if (!colNames.has('stamina_bonus')) {
+      db.exec('ALTER TABLE entities ADD COLUMN stamina_bonus INTEGER NOT NULL DEFAULT 0');
+      console.log('[DB] entities 表已迁移：添加 stamina_bonus 列（耐力加成）');
+    }
+
+    // 3. 新增 hp_regeneration_bonus
+    if (!colNames.has('hp_regeneration_bonus')) {
+      db.exec('ALTER TABLE entities ADD COLUMN hp_regeneration_bonus INTEGER NOT NULL DEFAULT 0');
+      console.log('[DB] entities 表已迁移：添加 hp_regeneration_bonus 列（生命恢复加成）');
+    }
+
+    // 4. 新增 hp_regen（实体自身战斗属性）
+    if (!colNames.has('hp_regen')) {
+      db.exec('ALTER TABLE entities ADD COLUMN hp_regen INTEGER NOT NULL DEFAULT 0');
+      console.log('[DB] entities 表已迁移：添加 hp_regen 列（生命恢复/秒）');
+    }
+  } catch (e) {
+    console.warn('[DB] 被动加成字段迁移跳过:', (e as Error).message);
   }
 }

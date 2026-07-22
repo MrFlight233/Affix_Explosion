@@ -22,10 +22,11 @@ export interface CombatUnitSnapshot {
   entityName: string;
   totalHp: number;
   currentHp: number;
-  totalRegen: number;
+  totalStaminaRegen: number;
   maxStamina: number;
   currentStamina: number;
   staminaRegen: number;
+  totalHpRegeneration: number;
   currentLoad: number;
   maxLoad: number;
   isOverloaded: boolean;
@@ -64,6 +65,7 @@ export interface CombatUnitRuntime {
   maxStamina: number;
   currentStamina: number;
   staminaRegen: number;
+  hpRegeneration: number;
   isOverloaded: boolean;
   weapons: CombatWeaponRuntime[];
 }
@@ -489,11 +491,13 @@ export class GameEngine {
     children: ItemInstance[],
     growthStack: number,
   ): {
-    totalRegen: number; totalHpBonus: number;
+    totalStaminaRegenerationBonus: number; totalStaminaBonus: number;
+    totalHpBonus: number; totalHpRegenerationBonus: number;
     totalLoad: number; passiveDamageBonus: number;
     weapons: CombatUnitSnapshot['activeWeapons'];
   } {
-    let totalRegen = 0, totalHpBonus = 0, totalLoad = 0, passiveDamageBonus = 0;
+    let totalStaminaRegenerationBonus = 0, totalStaminaBonus = 0, totalHpBonus = 0, totalHpRegenerationBonus = 0;
+    let totalLoad = 0, passiveDamageBonus = 0;
     const weapons: CombatUnitSnapshot['activeWeapons'] = [];
 
     for (const child of children) {
@@ -502,8 +506,10 @@ export class GameEngine {
         if (!cdef) continue;
 
         // v5: 使用 getEffectiveValue 读取，支持 ItemInstance.overrides
-        totalRegen += Number(getEffectiveValue(child, 'regenBonus') ?? 0);
+        totalStaminaRegenerationBonus += Number(getEffectiveValue(child, 'staminaRegenerationBonus') ?? 0);
+        totalStaminaBonus += Number(getEffectiveValue(child, 'staminaBonus') ?? 0);
         totalHpBonus += Number(getEffectiveValue(child, 'hpBonus') ?? 0);
+        totalHpRegenerationBonus += Number(getEffectiveValue(child, 'hpRegenerationBonus') ?? 0);
         totalLoad += Number(getEffectiveValue(child, 'weight') ?? 0);
 
         const isActive = getEffectiveValue(child, 'isActive') ?? cdef.isActive;
@@ -526,8 +532,10 @@ export class GameEngine {
           // 递归处理容器内的嵌套子项
           if (child.children && child.children.length > 0) {
             const nested = this.collectFromChildren(child.children, growthStack);
-            totalRegen += nested.totalRegen;
+            totalStaminaRegenerationBonus += nested.totalStaminaRegenerationBonus;
+            totalStaminaBonus += nested.totalStaminaBonus;
             totalHpBonus += nested.totalHpBonus;
+            totalHpRegenerationBonus += nested.totalHpRegenerationBonus;
             totalLoad += nested.totalLoad;
             passiveDamageBonus += nested.passiveDamageBonus;
             for (const w of nested.weapons) weapons.push(w);
@@ -541,7 +549,7 @@ export class GameEngine {
         }
       }
     }
-    return { totalRegen, totalHpBonus, totalLoad, passiveDamageBonus, weapons };
+    return { totalStaminaRegenerationBonus, totalStaminaBonus, totalHpBonus, totalHpRegenerationBonus, totalLoad, passiveDamageBonus, weapons };
   }
 
   /** 从 DeploySlot 构建 CombatUnitSnapshot（v4：递归嵌套）。可传入自定义 slots 用于模拟对战。 */
@@ -557,7 +565,15 @@ export class GameEngine {
       const allChildren = [...(slot.entity.children || []), ...slot.children];
       const collected = isStarter(edef)
         ? this.collectFromChildren(allChildren, growthStack)
-        : { totalRegen: 0, totalHpBonus: 0, totalLoad: 0, passiveDamageBonus: 0, weapons: [] };
+        : { totalStaminaRegenerationBonus: 0, totalStaminaBonus: 0, totalHpBonus: 0, totalHpRegenerationBonus: 0, totalLoad: 0, passiveDamageBonus: 0, weapons: [] };
+
+      // ★ 启动端自身的被动加成也对自己生效
+      if (isStarter(edef)) {
+        collected.totalStaminaRegenerationBonus += edef.staminaRegenerationBonus;
+        collected.totalStaminaBonus += edef.staminaBonus;
+        collected.totalHpBonus += edef.hpBonus;
+        collected.totalHpRegenerationBonus += edef.hpRegenerationBonus;
+      }
 
       // strength 词条加成（仅 starter）
       let extraDmg = 0;
@@ -574,6 +590,9 @@ export class GameEngine {
       }
 
       const hp = edef.hp + collected.totalHpBonus;
+      const maxStamina = edef.maxStamina + collected.totalStaminaBonus;
+      const totalStaminaRegen = edef.staminaRegen + collected.totalStaminaRegenerationBonus;
+      const totalHpRegen = edef.hpRegen + collected.totalHpRegenerationBonus;
       const isOverloaded = collected.totalLoad > edef.maxLoad;
 
       units.push({
@@ -582,10 +601,11 @@ export class GameEngine {
         entityName: edef.name + (isStarter(edef) ? '' : '(木桩)'),
         totalHp: hp,
         currentHp: hp,
-        totalRegen: edef.staminaRegen + collected.totalRegen,
-        maxStamina: edef.maxStamina,
-        currentStamina: edef.maxStamina,
+        totalStaminaRegen,
+        maxStamina,
+        currentStamina: maxStamina,
         staminaRegen: edef.staminaRegen,
+        totalHpRegeneration: totalHpRegen,
         currentLoad: collected.totalLoad,
         maxLoad: edef.maxLoad,
         isOverloaded,
@@ -649,10 +669,11 @@ export class GameEngine {
         entityName: `${t.name} Lv${r}`,
         totalHp: hp,
         currentHp: hp,
-        totalRegen: t.staminaRegen,
+        totalStaminaRegen: t.staminaRegen,
         maxStamina: t.maxStamina,
         currentStamina: t.maxStamina,
         staminaRegen: t.staminaRegen,
+        totalHpRegeneration: 0,
         currentLoad: 0,
         maxLoad: t.maxLoad,
         isOverloaded: false,
@@ -673,7 +694,8 @@ export class GameEngine {
       currentHp: u.currentHp,
       maxStamina: u.maxStamina,
       currentStamina: u.currentStamina,
-      staminaRegen: u.totalRegen, // 使用包含装备加成的总回复
+      staminaRegen: u.totalStaminaRegen, // 使用包含装备加成的总耐力恢复
+      hpRegeneration: u.totalHpRegeneration,
       isOverloaded: u.isOverloaded,
       weapons: u.activeWeapons.map(w => ({
         name: w.name,
@@ -790,15 +812,17 @@ export class GameEngine {
 
       simTime += dt;
 
-      // 推进时间 + 耐力回复
+      // 推进时间 + 耐力恢复 + 生命恢复
       for (const u of playerUnits) {
         if (u.currentHp <= 0) continue;
         u.currentStamina = Math.min(u.currentStamina + u.staminaRegen * dt / 1000, u.maxStamina);
+        u.currentHp = Math.min(u.currentHp + u.hpRegeneration * dt / 1000, u.totalHp);
         for (const w of u.weapons) w.remainingTime -= dt;
       }
       for (const e of enemyUnits) {
         if (e.currentHp <= 0) continue;
         e.currentStamina = Math.min(e.currentStamina + e.staminaRegen * dt / 1000, e.maxStamina);
+        e.currentHp = Math.min(e.currentHp + e.hpRegeneration * dt / 1000, e.totalHp);
         for (const w of e.weapons) w.remainingTime -= dt;
       }
 

@@ -32,6 +32,7 @@ export function entityRowToDef(row: Record<string, any>): Record<string, any> {
     hp: row.hp,
     maxStamina: row.max_stamina,
     staminaRegen: row.stamina_regen,
+    hpRegen: row.hp_regen,
     maxLoad: row.max_load,
     isActive: row.is_active === 1,
     staminaCost: row.stamina_cost,
@@ -41,7 +42,9 @@ export function entityRowToDef(row: Record<string, any>): Record<string, any> {
     targetOrder: row.target_order,
     priorityTarget: row.priority_target,
     targetFaction: row.target_faction,
-    regenBonus: row.regen_bonus,
+    staminaRegenerationBonus: row.stamina_regeneration_bonus,
+    staminaBonus: row.stamina_bonus,
+    hpRegenerationBonus: row.hp_regeneration_bonus,
     hpBonus: row.hp_bonus,
   };
 }
@@ -62,6 +65,7 @@ export function entityDefToRow(def: Record<string, any>): Record<string, any> {
     hp: def.hp ?? 10,
     max_stamina: def.maxStamina ?? 50,
     stamina_regen: def.staminaRegen ?? 5,
+    hp_regen: def.hpRegen ?? 0,
     max_load: def.maxLoad ?? 20,
     is_active: def.isActive ? 1 : 0,
     stamina_cost: def.staminaCost ?? 0,
@@ -71,7 +75,9 @@ export function entityDefToRow(def: Record<string, any>): Record<string, any> {
     target_order: def.targetOrder ?? null,
     priority_target: def.priorityTarget ?? null,
     target_faction: def.targetFaction ?? null,
-    regen_bonus: def.regenBonus ?? 0,
+    stamina_regeneration_bonus: def.staminaRegenerationBonus ?? 0,
+    stamina_bonus: def.staminaBonus ?? 0,
+    hp_regeneration_bonus: def.hpRegenerationBonus ?? 0,
     hp_bonus: def.hpBonus ?? 0,
     updated_at: new Date().toISOString(),
   };

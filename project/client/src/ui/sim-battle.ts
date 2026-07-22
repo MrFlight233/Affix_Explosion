@@ -394,10 +394,13 @@ function renderTooltipTree(
     if (isSt) {
       const hp = combatUnit ? `${Math.max(combatUnit.currentHp, 0)}/${combatUnit.totalHp}` : `${def.hp}/${def.hp}`;
       const stam = combatUnit ? `${Math.floor(combatUnit.currentStamina)}/${combatUnit.maxStamina}` : `${def.maxStamina}/${def.maxStamina}`;
+      const sRegen = combatUnit ? combatUnit.staminaRegen : def.staminaRegen;
+      const hRegen = combatUnit ? combatUnit.hpRegeneration : (def.hpRegen || 0);
       h += tipSection('生存');
       h += '<div class="sb-tip-grid">';
       h += tipkv('HP', hp) + tipkv('耐力', stam);
-      h += tipkv('回复', def.staminaRegen + '/s') + tipkv('负重', def.maxLoad);
+      h += tipkv('耐力恢复', sRegen + '/s') + tipkv('生命恢复', hRegen + '/s');
+      h += tipkv('负重', def.maxLoad);
       h += '</div>';
     }
     if (def.isActive) {
@@ -418,8 +421,10 @@ function renderTooltipTree(
       h += tipSection('属性');
       h += '<div class="sb-tip-grid">';
       if (def.damage) h += tipkv('伤害加成', '+' + def.damage);
-      if (def.regenBonus) h += tipkv('回复加成', '+' + def.regenBonus + '/s');
-      if (def.hpBonus) h += tipkv('HP 加成', (def.hpBonus > 0 ? '+' : '') + def.hpBonus);
+      if (def.hpBonus) h += tipkv('生命加成', (def.hpBonus > 0 ? '+' : '') + def.hpBonus);
+      if (def.hpRegenerationBonus) h += tipkv('生命恢复加成', '+' + def.hpRegenerationBonus + '/s');
+      if (def.staminaBonus) h += tipkv('耐力加成', '+' + def.staminaBonus);
+      if (def.staminaRegenerationBonus) h += tipkv('耐力恢复加成', '+' + def.staminaRegenerationBonus + '/s');
       h += tipkv('重量', def.weight);
       h += '</div>';
     }
@@ -528,7 +533,7 @@ function showSimTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affix', 
         h += tipSection('生存');
         h += '<div class="sb-tip-grid">';
         h += tipkv('HP', def.hp) + tipkv('耐力', def.maxStamina);
-        h += tipkv('回复', def.staminaRegen + '/s') + tipkv('负重', def.maxLoad);
+        h += tipkv('耐力恢复', def.staminaRegen + '/s') + tipkv('生命恢复', (def.hpRegen || 0) + '/s') + tipkv('负重', def.maxLoad);
         h += '</div>';
       }
       if (def.isActive) {
@@ -544,8 +549,10 @@ function showSimTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affix', 
         h += tipSection('属性');
         h += '<div class="sb-tip-grid">';
         if (def.damage) h += tipkv('伤害加成', '+' + def.damage);
-        if (def.regenBonus) h += tipkv('回复加成', '+' + def.regenBonus + '/s');
-        if (def.hpBonus) h += tipkv('HP 加成', (def.hpBonus > 0 ? '+' : '') + def.hpBonus);
+        if (def.hpBonus) h += tipkv('生命加成', (def.hpBonus > 0 ? '+' : '') + def.hpBonus);
+        if (def.hpRegenerationBonus) h += tipkv('生命恢复加成', '+' + def.hpRegenerationBonus + '/s');
+        if (def.staminaBonus) h += tipkv('耐力加成', '+' + def.staminaBonus);
+        if (def.staminaRegenerationBonus) h += tipkv('耐力恢复加成', '+' + def.staminaRegenerationBonus + '/s');
         h += tipkv('重量', def.weight);
         h += '</div>';
       }
@@ -962,10 +969,13 @@ function hideSimTooltip() {
     if (isSt) {
       const hp = combatUnit ? `${Math.max(combatUnit.currentHp, 0)}/${combatUnit.totalHp}` : `${edef!.hp}/${edef!.hp}`;
       const stam = combatUnit ? `${Math.floor(combatUnit.currentStamina)}/${combatUnit.maxStamina}` : `${edef!.maxStamina}/${edef!.maxStamina}`;
+      const sRegen = combatUnit ? combatUnit.staminaRegen : edef!.staminaRegen;
+      const hRegen = combatUnit ? combatUnit.hpRegeneration : (edef!.hpRegen || 0);
       h += '<div class="sb-card-stats">';
       h += `HP: <span id="cu-hp-${sideFirst}-${item.instanceId}">${hp}</span>`;
       h += `  耐力: <span id="cu-sta-${sideFirst}-${item.instanceId}">${stam}</span>`;
-      h += `  耐力回复: ${edef!.staminaRegen}/s`;
+      h += `  耐力恢复: ${sRegen}/s`;
+      h += `  生命恢复: ${hRegen}/s`;
       h += '</div>';
       h += '<div class="sb-card-stats">';
       h += `负重: ${edef!.maxLoad}  槽耗: ${edef!.slotCost}`;

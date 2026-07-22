@@ -180,7 +180,10 @@ export class UIManager {
         // 被动装备
         if (edef.damage) html += `<span class="item-stat">伤害加成:${edef.damage}</span>`;
         
-        if (edef.hpBonus) html += `<span class="item-stat">HP:${edef.hpBonus}</span>`;
+        if (edef.staminaRegenerationBonus) html += `<span class="item-stat">耐恢:${edef.staminaRegenerationBonus}</span>`;
+        if (edef.staminaBonus) html += `<span class="item-stat">耐力:${edef.staminaBonus}</span>`;
+        if (edef.hpRegenerationBonus) html += `<span class="item-stat">命恢:${edef.hpRegenerationBonus}</span>`;
+        if (edef.hpBonus) html += `<span class="item-stat">生命:${edef.hpBonus}</span>`;
         if (hasEntitySlots(edef)) html += `<span class="item-stat">内槽:${getEffectiveEntitySlots(edef)}</span>`;
         html += `<span class="item-stat">重:${edef.weight}</span>`;
       }

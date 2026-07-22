@@ -96,7 +96,8 @@ export interface EntityDef {
   /** 启动端: 基础HP; 装备: 始终为 0 */
   hp: number;
   maxStamina: number;
-  staminaRegen: number;   // 每秒
+  staminaRegen: number;   // 耐力恢复/秒
+  hpRegen: number;        // 生命恢复/秒
   maxLoad: number;
 
   // ---- 主动装备字段（isActive=true 时有效） ----
@@ -112,10 +113,14 @@ export interface EntityDef {
   priorityTarget: number | null;   // 1|2|3|null — 优先目标位
   targetFaction: TargetFaction | null; // '友方'|'敌人'|'所有' — 针对目标
 
-  // ---- 被动加成（对父实体生效） ----
-  /** 被动加成: 回复/秒 */
-  regenBonus: number;
-  /** 分配给父实体的 HP 加成 */
+  // ---- 被动加成（对最外层启动端实体生效） ----
+  /** 被动加成: 耐力恢复/秒 */
+  staminaRegenerationBonus: number;
+  /** 被动加成: 耐力 */
+  staminaBonus: number;
+  /** 被动加成: 生命恢复/秒 */
+  hpRegenerationBonus: number;
+  /** 被动加成: 生命 */
   hpBonus: number;
 }
 
@@ -176,10 +181,11 @@ export interface CombatUnitSnapshot {
   entityName: string;
   totalHp: number;
   currentHp: number;
-  totalRegen: number;       // 基础恢复 + 所有被动装备 regenBonus 之和
-  maxStamina: number;
+  totalStaminaRegen: number;       // 基础耐力恢复 + 所有 staminaRegenerationBonus 之和
+  maxStamina: number;               // 基础耐力 + 所有 staminaBonus 之和
   currentStamina: number;
-  staminaRegen: number;
+  staminaRegen: number;             // 纯自身基础值（不含加成）
+  totalHpRegeneration: number;      // 基础生命恢复 + 所有 hpRegenerationBonus 之和
   currentLoad: number;
   maxLoad: number;
   isOverloaded: boolean;

@@ -841,7 +841,8 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     h += `<div class="admin-form-section"><h4>战斗属性</h4>`;
     h += `<div class="admin-field"><label>HP</label><input id="ef-hp" type="number" value="${v('hp', 0)}"></div>`;
     h += `<div class="admin-field"><label>耐力上限</label><input id="ef-maxStamina" type="number" value="${v('maxStamina', 0)}"></div>`;
-    h += `<div class="admin-field"><label>耐力回复/秒</label><input id="ef-staminaRegen" type="number" value="${v('staminaRegen', 0)}"></div>`;
+    h += `<div class="admin-field"><label>耐力恢复/秒</label><input id="ef-staminaRegen" type="number" value="${v('staminaRegen', 0)}"></div>`;
+    h += `<div class="admin-field"><label>HP恢复/秒</label><input id="ef-hpRegen" type="number" value="${v('hpRegen', 0)}"></div>`;
     h += `<div class="admin-field"><label>负重上限</label><input id="ef-maxLoad" type="number" value="${v('maxLoad', 0)}"></div>`;
     h += `</div>`;
     const isActiveVal = v('isActive', false);
@@ -858,8 +859,10 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     h += `</div>`;
     h += `</div>`;
     h += `<div class="admin-form-section"><h4>被动加成</h4>`;
-    h += `<div class="admin-field"><label>回复加成</label><input id="ef-regenBonus" type="number" value="${v('regenBonus', 0)}"></div>`;
     h += `<div class="admin-field"><label>生命加成</label><input id="ef-hpBonus" type="number" value="${v('hpBonus', 0)}"></div>`;
+    h += `<div class="admin-field"><label>生命恢复加成</label><input id="ef-hpRegenerationBonus" type="number" value="${v('hpRegenerationBonus', 0)}"></div>`;
+    h += `<div class="admin-field"><label>耐力加成</label><input id="ef-staminaBonus" type="number" value="${v('staminaBonus', 0)}"></div>`;
+    h += `<div class="admin-field"><label>耐力恢复加成</label><input id="ef-staminaRegenerationBonus" type="number" value="${v('staminaRegenerationBonus', 0)}"></div>`;
     h += `</div>`;
     h += `</div>`;
     return h;
@@ -873,7 +876,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
       // 兼容旧数据：完整内联实体对象 → 提取差异
       const tpl = c?.id ? state.entities.find((e: any) => e.id === c.id) : null;
       const ov: any = {};
-      const fields = ['damage','actionTime','staminaCost','regenBonus','hpBonus','weight','value','isActive','targetType','targetOrder','priorityTarget','targetFaction','name','slotCost','entitySlots','dynamicAffixSlots','hp','maxStamina','staminaRegen','maxLoad','poolPrerequisite'];
+      const fields = ['damage','actionTime','staminaCost','staminaRegenerationBonus','staminaBonus','hpRegenerationBonus','hpBonus','weight','value','isActive','targetType','targetOrder','priorityTarget','targetFaction','name','slotCost','entitySlots','dynamicAffixSlots','hp','maxStamina','staminaRegen','hpRegen','maxLoad','poolPrerequisite'];
       for (const f of fields) { if (c[f] !== undefined && (!tpl || c[f] !== tpl[f])) ov[f] = c[f]; }
       const spec: DefaultChildSpec = { defId: c.id || 'unknown' };
       if (Object.keys(ov).length > 0) spec.overrides = ov;
@@ -1046,6 +1049,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         hp: parseInt((document.getElementById('ef-hp') as HTMLInputElement).value) || 0,
         maxStamina: parseInt((document.getElementById('ef-maxStamina') as HTMLInputElement).value) || 0,
         staminaRegen: parseInt((document.getElementById('ef-staminaRegen') as HTMLInputElement).value) || 0,
+        hpRegen: parseInt((document.getElementById('ef-hpRegen') as HTMLInputElement).value) || 0,
         maxLoad: parseInt((document.getElementById('ef-maxLoad') as HTMLInputElement).value) || 0,
         isActive: (document.getElementById('ef-isActive') as HTMLSelectElement).value === '有',
         staminaCost: parseInt((document.getElementById('ef-staminaCost') as HTMLInputElement).value) || 0,
@@ -1055,7 +1059,9 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         targetType: (document.getElementById('ef-targetType') as HTMLSelectElement).value || null,
         targetOrder: (document.getElementById('ef-targetOrder') as HTMLSelectElement).value || null,
         priorityTarget: (() => { const v = (document.getElementById('ef-priorityTarget') as HTMLSelectElement).value; return v ? parseInt(v) : null; })(),
-        regenBonus: parseInt((document.getElementById('ef-regenBonus') as HTMLInputElement).value) || 0,
+        staminaRegenerationBonus: parseInt((document.getElementById('ef-staminaRegenerationBonus') as HTMLInputElement).value) || 0,
+        staminaBonus: parseInt((document.getElementById('ef-staminaBonus') as HTMLInputElement).value) || 0,
+        hpRegenerationBonus: parseInt((document.getElementById('ef-hpRegenerationBonus') as HTMLInputElement).value) || 0,
         hpBonus: parseInt((document.getElementById('ef-hpBonus') as HTMLInputElement).value) || 0,
       };
       if (!entity.defaultChildren || entity.defaultChildren.length === 0) entity.defaultChildren = null;

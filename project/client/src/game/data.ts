@@ -29,7 +29,7 @@ export interface EntityDef {
   // ---- 启动端字段（fixedAffixes 含 'starter' 时有效，否则为 0） ----
   /** 启动端: 基础HP; 装备: 始终为 0 */
   hp: number;
-  maxStamina: number; staminaRegen: number; maxLoad: number;
+  maxStamina: number; staminaRegen: number; hpRegen: number; maxLoad: number;
 
   // ---- 主动装备字段（isActive=true 时有效） ----
   /** 启动端始终为 false */
@@ -42,10 +42,14 @@ export interface EntityDef {
   targetType: string | null; targetOrder: string | null; priorityTarget: number | null;
   targetFaction: string | null; // '友方'|'敌人'|'所有'
 
-  // ---- 被动加成（对父实体生效） ----
-  /** 被动加成: 回复/秒 */
-  regenBonus: number;
-  /** 分配给父实体的 HP 加成 */
+  // ---- 被动加成（对最外层启动端实体生效） ----
+  /** 被动加成: 耐力恢复/秒 */
+  staminaRegenerationBonus: number;
+  /** 被动加成: 耐力 */
+  staminaBonus: number;
+  /** 被动加成: 生命恢复/秒 */
+  hpRegenerationBonus: number;
+  /** 被动加成: 生命 */
   hpBonus: number;
 }
 
