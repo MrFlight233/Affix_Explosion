@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>制作物品管理页 · 四方向设计预览</title>
+<style>
+/* ============================================================
+   外壳样式 — 中性克制，不参与方向风格竞争
+   ============================================================ */
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+:root {
+  --sh-bg: #f5f5f5;
+  --sh-surface: #fff;
+  --sh-border: #e5e5e5;
+  --sh-text: #262626;
+  --sh-text-secondary: #737373;
+  --sh-accent: #525252;
+  --sh-ease: cubic-bezier(0.23, 1, 0.32, 1);
+}
+body {
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  background: var(--sh-bg); color: var(--sh-text);
+  font-size: 14px; line-height: 1.5;
+  -webkit-font-smoothing: antialiased; min-height: 100vh;
+}
+
+/* 顶部状态条 */
+.top-bar {
+  position: sticky; top:0; z-index:100;
+  display:flex; align-items:center; padding:8px 20px;
+  background: var(--sh-surface); border-bottom:1px solid var(--sh-border);
+  gap:16px; font-size:12px; color: var(--sh-text-secondary);
+}
+.top-bar strong { font-size:14px; color:var(--sh-text); font-weight:600; }
+.top-bar .dim { color: var(--sh-text-secondary); font-size:11px; }
+.top-bar .spacer { flex:1; }
+
+/* 主容器 */
+.container { max-width:1320px; margin:0 auto; padding:20px 16px 40px; }
+
+/* 方向网格 — 桌面 2×2 */
+.dir-grid {
+  display:grid; grid-template-columns:1fr 1fr; gap:20px;
+}
+@media (max-width: 860px) { .dir-grid { grid-template-columns:1fr; } }
+
+/* 方向卡片 */
+.dir-card {
+  background: var(--sh-surface); border:1px solid var(--sh-border);
+  border-radius:10px; overflow:hidden;
+  transition: border-color 150ms var(--sh-ease), box-shadow 150ms var(--sh-ease);
+}
+.dir-card:hover { border-color: #d0d0d0; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+.dir-card.selected { border-color: var(--sh-accent); box-shadow: 0 0 0 2px rgba(82,82,82,0.15); }
+
+/* 方向卡片头部 */
+.dir-card-header {
+  display:flex; align-items:center; padding:10px 14px;
+  border-bottom:1px solid var(--sh-border); gap:10px;
+  background: #fafafa;
+}
+.dir-badge {
+  font-size:13px; font-weight:700; width:28px; height:28px;
+  display:flex; align-items:center; justify-content:center;
+  border-radius:6px; background: #e5e5e5; color: var(--sh-text); flex-shrink:0;
+}
+.dir-card.selected .dir-badge { background: var(--sh-accent); color: #fff; }
+.dir-label { font-size:13px; font-weight:600; color: var(--sh-text); }
+.dir-role {
+  font-size:10px; padding:1px 7px; border-radius:10px;
+  background: #f0f0f0; color: var(--sh-text-secondary);
+  text-transform:uppercase; letter-spacing:0.04em; white-space:nowrap;
+}
+.dir-rec-badge {
+  font-size:10px; padding:1px 7px; border-radius:10px;
+  background: #fef3c7; color: #92400e; font-weight:600;
+  margin-left:auto; white-space:nowrap;
+}
+
+/* mockup 舞台 */
+.mockup-stage {
+  padding:0; background:#f9f9f9; overflow:hidden;
+  position:relative; min-height:380px;
+  display:flex; align-items:center; justify-content:center;
+}
+.mockup-frame {
+  width:100%; height:380px; overflow:hidden;
+  transform-origin:top left;
+}
+
+/* mockup 缩放适配 */
+@media (max-width: 1320px) {
+  .mockup-frame { transform:scale(0.85); height: 380px; }
+}
+@media (max-width: 1100px) {
+  .mockup-frame { transform:scale(0.72); height: 340px; }
+}
+
+/* 方向卡片底部 */
+.dir-card-footer {
+  padding:10px 14px; border-top:1px solid var(--sh-border);
+  display:flex; align-items:center; gap:10px;
+}
+.dir-card-footer .qmdp-pick-button {
+  font-size:12px; padding:6px 18px; font-weight:600;
+  border:none; border-radius:5px; cursor:pointer;
+  background: var(--sh-accent); color:#fff;
+  font-family:inherit;
+  transition: background 120ms var(--sh-ease), transform 80ms;
+}
+.dir-card-footer .qmdp-pick-button:hover { background:#404040; }
+.dir-card-footer .qmdp-pick-button:active { transform:scale(0.97); }
+.dir-card.selected .dir-card-footer .qmdp-pick-button { background:#404040; }
+
+/* ============================================================
+   说明区
+   ============================================================ */
+.explanation-section {
+  margin-top:28px; padding:20px 24px;
+  background: var(--sh-surface); border:1px solid var(--sh-border);
+  border-radius:10px;
+}
+.explanation-section h3 { font-size:16px; font-weight:600; margin-bottom:16px; color: var(--sh-text); }
+.explanation-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+@media (max-width: 860px) { .explanation-grid { grid-template-columns:1fr; } }
+
+.explanation-item { }
+.explanation-item h4 {
+  font-size:14px; font-weight:600; margin-bottom:6px;
+  display:flex; align-items:center; gap:8px;
+}
+.explanation-item h4 .b { font-size:12px; padding:1px 6px; border-radius:4px; background:#e5e5e5; }
+.explanation-item .meta-row {
+  font-size:11px; color:var(--sh-text-secondary); margin-bottom:4px; line-height:1.6;
+}
+.explanation-item .meta-row strong { color:var(--sh-text); }
+.explanation-note {
+  margin-top:12px; font-size:11px; color:var(--sh-text-secondary);
+  padding:10px 14px; background:#fafafa; border-radius:6px; line-height:1.6;
+}
+
+/* ============================================================
+   三拨盘滑块区
+   ============================================================ */
+.dials-section {
+  margin-top:20px; padding:16px 20px;
+  background: var(--sh-surface); border:1px solid var(--sh-border);
+  border-radius:10px;
+}
+.dials-section h3 { font-size:14px; font-weight:600; margin-bottom:14px; }
+.dials-row { display:flex; gap:24px; flex-wrap:wrap; }
+.dial-item { flex:1; min-width:180px; }
+.dial-item label {
+  display:flex; justify-content:space-between; align-items:center;
+  font-size:12px; font-weight:500; margin-bottom:4px; color:var(--sh-text);
+}
+.dial-item label .val { font-size:13px; font-weight:700; color:var(--sh-accent); }
+.dial-item input[type="range"] {
+  width:100%; height:6px; -webkit-appearance:none; appearance:none;
+  background: #e5e5e5; border-radius:3px; outline:none; cursor:pointer;
+}
+.dial-item input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance:none; appearance:none; width:18px; height:18px;
+  border-radius:50%; background: var(--sh-accent); cursor:pointer;
+  border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,0.15);
+}
+
+/* ============================================================
+   确认弹层
+   ============================================================ */
+.modal-overlay {
+  position:fixed; inset:0; background:rgba(0,0,0,0.3);
+  display:none; align-items:center; justify-content:center; z-index:9999;
+}
+.modal-overlay.open { display:flex; }
+.modal-box {
+  background: #fff; border-radius:10px; padding:24px 28px;
+  width:420px; max-width:94vw;
+  box-shadow:0 8px 40px rgba(0,0,0,0.18); border:1px solid #e5e5e5;
+}
+.modal-box h3 { font-size:16px; font-weight:600; margin-bottom:4px; }
+.modal-box .sub { font-size:12px; color:var(--sh-text-secondary); margin-bottom:16px; }
+.modal-box .info-row {
+  display:flex; justify-content:space-between; padding:6px 0;
+  font-size:13px; border-bottom:1px solid #f0f0f0;
+}
+.modal-box .info-row:last-child { border:none; }
+.modal-box .info-row .k { color:var(--sh-text-secondary); }
+.modal-box .info-row .v { font-weight:600; }
+.modal-box textarea {
+  width:100%; margin-top:12px; padding:8px 10px; font-size:13px;
+  border:1px solid #ddd; border-radius:6px; resize:vertical; min-height:52px;
+  font-family:inherit;
+}
+.modal-box textarea:focus { outline:none; border-color:var(--sh-accent); box-shadow:0 0 0 2px rgba(82,82,82,0.1); }
+.modal-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:14px; }
+.modal-actions button {
+  font-size:12px; padding:7px 20px; border-radius:5px; cursor:pointer;
+  font-family:inherit; font-weight:500; border:1px solid #ddd;
+  background:#fff; transition: background 120ms;
+}
+.modal-actions button:hover { background:#f5f5f5; }
+.modal-actions button.primary {
+  background:var(--sh-accent); color:#fff; border-color:var(--sh-accent); font-weight:600;
+}
+.modal-actions button.primary:hover { background:#404040; }
+
+/* Toast */
+#toast {
+  position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+  background:#404040; color:#fff; padding:8px 20px; font-size:13px;
+  border-radius:6px; z-index:9999; pointer-events:none;
+  opacity:0; transition:opacity 200ms var(--sh-ease), transform 200ms var(--sh-ease);
+}
+#toast.show { opacity:1; transform:translateX(-50%) translateY(-4px); }
+
+/* ============================================================
+   Scoped Mockup Styles — 每个方向独立前缀，互不污染
+   ============================================================ */
+
+/* ---------- 方向 A：命令面板式 ---------- */
+.dir-a { --a-bg:#fafafa; --a-surf:#fff; --a-bd:#e5e5e5; --a-txt:#262626; --a-t2:#737373; --a-t3:#a3a3a3; --a-ac:#525252; --a-ac-sub:#f5f5f5; }
+.dir-a .a-page { display:flex; height:100%; font-size:12px; background:var(--a-bg); color:var(--a-txt); }
+.dir-a .a-left { width:240px; border-right:1px solid var(--a-bd); display:flex; flex-direction:column; background:#f8f8f8; flex-shrink:0; }
+.dir-a .a-left-head { padding:10px; border-bottom:1px solid var(--a-bd); }
+.dir-a .a-cmd-bar {
+  width:100%; padding:7px 10px; font-size:12px; border:1px solid var(--a-bd); border-radius:6px;
+  background:var(--a-surf); font-family:inherit;
+  display:flex; align-items:center; gap:6px;
+}
+.dir-a .a-cmd-bar .a-cmd-icon { font-size:14px; color:var(--a-t3); }
+.dir-a .a-cmd-bar .a-cmd-input { border:none; outline:none; flex:1; font-size:12px; font-family:inherit; background:transparent; }
+.dir-a .a-cmd-bar .a-cmd-shortcut { font-size:10px; background:#eee; padding:0 5px; border-radius:3px; color:var(--a-t3); }
+.dir-a .a-chips { display:flex; flex-wrap:wrap; gap:3px; padding:6px 10px; border-bottom:1px solid var(--a-bd); }
+.dir-a .a-chip {
+  font-size:10px; padding:2px 8px; border:1px solid var(--a-bd); border-radius:4px;
+  background:var(--a-surf); cursor:pointer; color:var(--a-t2);
+}
+.dir-a .a-chip.on { background:#eee; font-weight:600; border-color:var(--a-ac); }
+.dir-a .a-btn-add {
+  display:block; width:calc(100% - 20px); margin:8px 10px; padding:8px;
+  font-size:12px; font-weight:600; border:none; border-radius:6px;
+  background:var(--a-ac); color:#fff; cursor:pointer; font-family:inherit;
+}
+.dir-a .a-sel-row { padding:4px 10px; border-bottom:1px solid var(--a-bd); display:flex; align-items:center; gap:6px; font-size:11px; color:var(--a-t2); }
+.dir-a .a-list { flex:1; overflow-y:auto; }
+.dir-a .a-li {
+  display:flex; align-items:center; padding:5px 10px; gap:6px;
+  border-bottom:1px solid #f0f0f0; cursor:pointer; font-size:12px;
+}
+.dir-a .a-li:hover { background:#f5f5f5; }
+.dir-a .a-li.sel { background:#f0f0f0; font-weight:600; }
+.dir-a .a-li .a-name { flex:1; }
+.dir-a .a-li .a-cat { font-size:10px; color:var(--a-t3); }
+.dir-a .a-right { flex:1; overflow-y:auto; padding:16px 20px; }
+.dir-a .a-section { border:1px solid var(--a-bd); border-radius:6px; margin-bottom:12px; background:var(--a-surf); overflow:hidden; }
+.dir-a .a-section-hd { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.03em; color:var(--a-t3); padding:8px 12px; background:#fafafa; border-bottom:1px solid var(--a-bd); }
+.dir-a .a-field { display:flex; align-items:center; padding:5px 12px; }
+.dir-a .a-field+.a-field { border-top:1px solid #f5f5f5; }
+.dir-a .a-field label { width:72px; font-size:11px; color:var(--a-t2); flex-shrink:0; }
+.dir-a .a-field input, .dir-a .a-field select { flex:1; padding:4px 8px; border:1px solid var(--a-bd); border-radius:4px; font-size:12px; font-family:inherit; }
+/* A 的 popover 选择器 */
+.dir-a .a-popover-trigger {
+  display:flex; align-items:center; gap:4px; flex-wrap:wrap; flex:1;
+  min-height:28px; padding:2px 8px; border:1px solid var(--a-bd); border-radius:4px;
+  background:var(--a-surf); cursor:pointer;
+}
+.dir-a .a-pop-chip {
+  font-size:10px; padding:1px 6px; background:#eee; border-radius:3px;
+  display:inline-flex; align-items:center; gap:2px;
+}
+.dir-a .a-pop-chip .x { cursor:pointer; color:#999; font-size:12px; }
+.dir-a .a-pop-add { font-size:11px; color:var(--a-t3); padding:2px 6px; }
+/* A 的 popover 面板（展开态 mockup） */
+.dir-a .a-popover-panel {
+  position:absolute; right:12px; top:28px; width:260px;
+  background:#fff; border:1px solid var(--a-bd); border-radius:8px;
+  box-shadow:0 4px 20px rgba(0,0,0,0.12); z-index:10; overflow:hidden;
+}
+.dir-a .a-pop-search { padding:8px; border-bottom:1px solid var(--a-bd); }
+.dir-a .a-pop-search input { width:100%; padding:5px 8px; border:1px solid var(--a-bd); border-radius:4px; font-size:11px; font-family:inherit; }
+.dir-a .a-pop-list { max-height:130px; overflow-y:auto; }
+.dir-a .a-pop-item { padding:5px 10px; cursor:pointer; font-size:11px; display:flex; justify-content:space-between; border-bottom:1px solid #f0f0f0; }
+.dir-a .a-pop-item:hover { background:#f5f5f5; }
+.dir-a .a-pop-item .a-pop-cat { font-size:10px; color:var(--a-t3); }
+
+/* ---------- 方向 B：结构化表单式 ---------- */
+.dir-b { --b-bg:#fafaf9; --b-surf:#fff; --b-bd:#e7e5e4; --b-txt:#292524; --b-t2:#78716c; --b-t3:#a8a29e; --b-ac:#78716c; --b-ac-green:#166534; }
+.dir-b .b-page { display:flex; height:100%; font-size:12px; background:var(--b-bg); color:var(--b-txt); font-family:"PingFang SC","Microsoft YaHei",sans-serif; }
+.dir-b .b-left { width:250px; border-right:1px solid var(--b-bd); display:flex; flex-direction:column; background:var(--b-surf); flex-shrink:0; }
+.dir-b .b-search-wrap { padding:10px; border-bottom:1px solid var(--b-bd); }
+.dir-b .b-search { width:100%; padding:7px 10px; border:1px solid var(--b-bd); border-radius:6px; font-size:12px; font-family:inherit; background:var(--b-surf); }
+.dir-b .b-chips { display:flex; flex-wrap:wrap; gap:4px; padding:8px 10px; border-bottom:1px solid var(--b-bd); }
+.dir-b .b-chip { font-size:11px; padding:3px 10px; border:1px solid var(--b-bd); border-radius:4px; background:var(--b-surf); cursor:pointer; color:var(--b-t2); }
+.dir-b .b-chip.on { background:#f5f5f4; font-weight:600; border-color:var(--b-ac); color:var(--b-txt); }
+.dir-b .b-btn-add { display:block; width:calc(100% - 20px); margin:8px 10px; padding:9px; font-size:12px; font-weight:600; border:1px solid #166534; border-radius:6px; background:#f0fdf4; color:#166534; cursor:pointer; font-family:inherit; }
+.dir-b .b-sel-row { padding:4px 10px; border-bottom:1px solid var(--b-bd); font-size:11px; color:var(--b-t2); display:flex; align-items:center; gap:6px; }
+.dir-b .b-list { flex:1; overflow-y:auto; }
+.dir-b .b-li { display:flex; align-items:center; padding:6px 10px; gap:6px; border-bottom:1px solid #f5f5f4; cursor:pointer; font-size:12px; }
+.dir-b .b-li:hover { background:#fafaf9; }
+.dir-b .b-li.sel { background:#f5f5f4; font-weight:600; }
+.dir-b .b-li .b-name { flex:1; }
+.dir-b .b-li .b-cat { font-size:10px; color:var(--b-t3); }
+.dir-b .b-right { flex:1; overflow-y:auto; padding:16px 20px; }
+.dir-b .b-section { border:1px solid var(--b-bd); border-radius:6px; margin-bottom:12px; background:var(--b-surf); }
+.dir-b .b-section-hd { font-size:11px; font-weight:600; color:var(--b-t2); padding:8px 12px; background:#fafaf9; border-bottom:1px solid var(--b-bd); }
+.dir-b .b-field { display:flex; align-items:center; padding:5px 12px; }
+.dir-b .b-field+.b-field { border-top:1px solid #f5f5f4; }
+.dir-b .b-field label { width:72px; font-size:11px; color:var(--b-t2); flex-shrink:0; }
+.dir-b .b-field input { flex:1; padding:4px 8px; border:1px solid var(--b-bd); border-radius:4px; font-size:12px; font-family:inherit; }
+/* B 的 transfer list */
+.dir-b .b-transfer { display:flex; gap:8px; padding:8px 12px; }
+.dir-b .b-tf-panel { flex:1; border:1px solid var(--b-bd); border-radius:4px; overflow:hidden; }
+.dir-b .b-tf-panel .b-tf-hd { font-size:10px; font-weight:600; padding:4px 8px; background:#fafaf9; border-bottom:1px solid var(--b-bd); color:var(--b-t2); }
+.dir-b .b-tf-panel .b-tf-list { max-height:90px; overflow-y:auto; }
+.dir-b .b-tf-item { padding:4px 8px; font-size:11px; cursor:pointer; border-bottom:1px solid #f5f5f4; display:flex; justify-content:space-between; }
+.dir-b .b-tf-item:hover { background:#f5f5f4; }
+.dir-b .b-tf-item .b-tf-add { color:var(--b-ac-green); font-weight:600; cursor:pointer; }
+.dir-b .b-tf-item .b-tf-rem { color:#dc2626; cursor:pointer; font-weight:600; }
+
+/* ---------- 方向 C：暗色工作台 ---------- */
+.dir-c { --c-bg:#1a1a1a; --c-surf:#262626; --c-surf2:#2a2a2a; --c-bd:#333; --c-txt:#e5e5e5; --c-t2:#a3a3a3; --c-t3:#737373; --c-ac:#a3a3a3; --c-ac-sub:#2a2a2a; }
+.dir-c .c-page { display:flex; height:100%; font-size:12px; background:var(--c-bg); color:var(--c-txt); }
+.dir-c .c-left { width:240px; border-right:1px solid var(--c-bd); display:flex; flex-direction:column; background:var(--c-surf); flex-shrink:0; }
+.dir-c .c-search-wrap { padding:10px; border-bottom:1px solid var(--c-bd); }
+.dir-c .c-search { width:100%; padding:7px 10px; border:1px solid var(--c-bd); border-radius:6px; font-size:12px; font-family:inherit; background:var(--c-surf2); color:var(--c-txt); }
+.dir-c .c-chips { display:flex; flex-wrap:wrap; gap:3px; padding:6px 10px; border-bottom:1px solid var(--c-bd); }
+.dir-c .c-chip { font-size:10px; padding:3px 9px; border:1px solid var(--c-bd); border-radius:4px; background:var(--c-surf2); cursor:pointer; color:var(--c-t2); }
+.dir-c .c-chip.on { background:#3a3a3a; font-weight:600; border-color:var(--c-ac); color:var(--c-txt); }
+.dir-c .c-btn-add { display:block; width:calc(100% - 20px); margin:8px 10px; padding:8px; font-size:12px; font-weight:600; border:none; border-radius:6px; background:var(--c-ac); color:#1a1a1a; cursor:pointer; font-family:inherit; }
+.dir-c .c-sel-row { padding:4px 10px; border-bottom:1px solid var(--c-bd); display:flex; align-items:center; gap:6px; font-size:11px; color:var(--c-t2); }
+.dir-c .c-list { flex:1; overflow-y:auto; }
+.dir-c .c-li { display:flex; align-items:center; padding:5px 10px; gap:6px; border-bottom:1px solid #2a2a2a; cursor:pointer; font-size:12px; }
+.dir-c .c-li:hover { background:#2a2a2a; }
+.dir-c .c-li.sel { background:#333; font-weight:600; }
+.dir-c .c-li .c-name { flex:1; }
+.dir-c .c-li .c-cat { font-size:10px; color:var(--c-t3); }
+.dir-c .c-right { flex:1; overflow-y:auto; padding:16px 20px; }
+.dir-c .c-section { border:1px solid var(--c-bd); border-radius:6px; margin-bottom:12px; background:var(--c-surf); overflow:hidden; }
+.dir-c .c-section-hd { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; color:var(--c-t3); padding:8px 12px; background:var(--c-surf2); border-bottom:1px solid var(--c-bd); }
+.dir-c .c-field { display:flex; align-items:center; padding:5px 12px; }
+.dir-c .c-field+.c-field { border-top:1px solid #2a2a2a; }
+.dir-c .c-field label { width:72px; font-size:11px; color:var(--c-t2); flex-shrink:0; }
+.dir-c .c-field input, .dir-c .c-field select { flex:1; padding:4px 8px; border:1px solid var(--c-bd); border-radius:4px; font-size:12px; font-family:inherit; background:var(--c-surf2); color:var(--c-txt); }
+/* C 的 token input */
+.dir-c .c-token-wrap { display:flex; flex-wrap:wrap; gap:3px; align-items:center; flex:1; padding:3px 8px; border:1px solid var(--c-bd); border-radius:4px; background:var(--c-surf2); min-height:28px; }
+.dir-c .c-token { font-size:10px; padding:1px 6px; background:#3a3a3a; border-radius:3px; display:inline-flex; align-items:center; gap:2px; color:var(--c-txt); }
+.dir-c .c-token .x { cursor:pointer; color:var(--c-t3); }
+.dir-c .c-token-input { border:none; outline:none; background:transparent; color:var(--c-txt); font-size:11px; min-width:60px; flex:1; font-family:inherit; }
+/* C 的命令面板提示 */
+.dir-c .c-cmd-hint { font-size:9px; color:var(--c-t3); padding:2px 8px; text-align:right; }
+
+/* ---------- 方向 D：分栏式 ---------- */
+.dir-d { --d-bg:#f5f5f5; --d-surf:#fff; --d-bd:#e0e0e0; --d-txt:#1a1a1a; --d-t2:#666; --d-t3:#999; --d-ac:#1a1a1a; }
+.dir-d .d-page { display:flex; height:100%; font-size:11px; background:var(--d-bg); color:var(--d-txt); }
+.dir-d .d-nav { width:170px; border-right:1px solid var(--d-bd); display:flex; flex-direction:column; background:var(--d-surf); flex-shrink:0; }
+.dir-d .d-nav-hd { padding:8px 10px; font-size:10px; font-weight:600; color:var(--d-t3); text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid var(--d-bd); }
+.dir-d .d-tree { flex:1; overflow-y:auto; padding:4px 0; }
+.dir-d .d-tree-item { padding:4px 8px 4px 16px; font-size:11px; cursor:pointer; display:flex; align-items:center; gap:4px; color:var(--d-t2); }
+.dir-d .d-tree-item:hover { background:#f0f0f0; }
+.dir-d .d-tree-item.sel { background:#e8e8e8; color:var(--d-txt); font-weight:600; }
+.dir-d .d-tree-item .d-dot { width:5px; height:5px; border-radius:50%; background:var(--d-t3); flex-shrink:0; }
+.dir-d .d-main { flex:1; display:flex; flex-direction:column; min-width:0; }
+.dir-d .d-main-top { display:flex; align-items:center; padding:6px 12px; border-bottom:1px solid var(--d-bd); background:var(--d-surf); gap:8px; }
+.dir-d .d-main-top .d-btn-add { padding:5px 14px; font-size:11px; font-weight:600; border:none; border-radius:4px; background:var(--d-ac); color:#fff; cursor:pointer; font-family:inherit; }
+.dir-d .d-main-top input { flex:1; padding:5px 8px; border:1px solid var(--d-bd); border-radius:4px; font-size:11px; font-family:inherit; }
+.dir-d .d-main-top .d-filter-chips { display:flex; gap:3px; }
+.dir-d .d-main-top .d-fc { font-size:10px; padding:2px 7px; border:1px solid var(--d-bd); border-radius:3px; cursor:pointer; background:var(--d-surf); }
+.dir-d .d-main-top .d-fc.on { background:#e8e8e8; font-weight:600; }
+.dir-d .d-edit { flex:1; overflow-y:auto; padding:12px 16px; }
+.dir-d .d-section { margin-bottom:10px; }
+.dir-d .d-section-hd { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; color:var(--d-t3); padding-bottom:4px; border-bottom:1px solid var(--d-bd); margin-bottom:6px; }
+.dir-d .d-field { display:flex; align-items:center; padding:3px 0; }
+.dir-d .d-field label { width:64px; font-size:10px; color:var(--d-t2); flex-shrink:0; }
+.dir-d .d-field input, .dir-d .d-field select { flex:1; padding:3px 6px; border:1px solid var(--d-bd); border-radius:3px; font-size:11px; font-family:inherit; }
+/* D 的右侧属性检查器 */
+.dir-d .d-inspector { width:220px; border-left:1px solid var(--d-bd); background:var(--d-surf); overflow-y:auto; padding:12px 10px; flex-shrink:0; }
+.dir-d .d-ins-hd { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; color:var(--d-t3); margin-bottom:8px; }
+.dir-d .d-ins-block { margin-bottom:10px; }
+.dir-d .d-ins-block .d-ins-label { font-size:10px; color:var(--d-t2); margin-bottom:3px; font-weight:500; }
+.dir-d .d-ins-item { display:flex; align-items:center; padding:3px 6px; border:1px solid var(--d-bd); border-radius:3px; margin-bottom:3px; font-size:10px; cursor:grab; background:var(--d-surf); }
+.dir-d .d-ins-item .d-ins-name { flex:1; }
+.dir-d .d-ins-item .d-ins-rem { color:#dc2626; cursor:pointer; font-size:12px; }
+.dir-d .d-ins-empty { font-size:10px; color:var(--d-t3); padding:6px; border:1px dashed var(--d-bd); border-radius:3px; text-align:center; }
+</style>
+</head>
+<body>
+
+<!-- 顶部状态条 -->
+<div class="top-bar">
+  <strong>制作物品管理页 · 四方向设计预览</strong>
+  <span class="dim">方向样机，用于选择视觉与交互气质，不是最终页面</span>
+  <span class="spacer"></span>
+  <span>按 1-4 选择方向</span>
+</div>
+
+<div class="container">
+
+<!-- ====== 设计样机区 2×2 ====== -->
+<div class="dir-grid">
+
+  <!-- ═══════ 方向 A：命令面板式 ═══════ -->
+  <div class="dir-card" data-dir="A">
+    <div class="dir-card-header">
+      <div class="dir-badge">A</div>
+      <div class="dir-label">命令面板式</div>
+      <div class="dir-role">最激进</div>
+      <div class="dir-rec-badge">★ 推荐</div>
+    </div>
+    <div class="mockup-stage">
+      <div class="mockup-frame dir-a">
+        <div class="a-page">
+          <!-- 左侧面板 -->
+          <div class="a-left">
+            <div class="a-left-head">
+              <div class="a-cmd-bar">
+                <span class="a-cmd-icon">⌘</span>
+                <input class="a-cmd-input" placeholder="搜索实体或命令…" value="">
+                <span class="a-cmd-shortcut">Ctrl+K</span>
+              </div>
+            </div>
+            <div class="a-chips">
+              <span class="a-chip on">全部</span><span class="a-chip">启动端</span><span class="a-chip">主动</span><span class="a-chip">被动</span>
+              <span class="a-chip">武器</span><span class="a-chip">护甲</span>
+            </div>
+            <button class="a-btn-add">+ 新增实体</button>
+            <div class="a-sel-row"><input type="checkbox" style="width:13px;height:13px;"> 全选 <span style="margin-left:auto;">已选 0</span></div>
+            <div class="a-list">
+              <div class="a-li sel"><span class="a-name">冒险者</span><span class="a-cat">启动端</span></div>
+              <div class="a-li"><span class="a-name">铁剑</span><span class="a-cat">主动 / 武器</span></div>
+              <div class="a-li"><span class="a-name">皮甲</span><span class="a-cat">被动 / 护甲</span></div>
+              <div class="a-li"><span class="a-name">生命戒指</span><span class="a-cat">被动 / 饰品</span></div>
+              <div class="a-li"><span class="a-name">火焰弓</span><span class="a-cat">主动 / 武器</span></div>
+            </div>
+          </div>
+          <!-- 右侧编辑区 -->
+          <div class="a-right" style="position:relative;">
+            <div class="a-section">
+              <div class="a-section-hd">基本信息</div>
+              <div class="a-field"><label>ID</label><input value="adventurer"></div>
+              <div class="a-field"><label>名称</label><input value="冒险者"></div>
+              <div class="a-field"><label>占用槽位</label><input value="1"></div>
+            </div>
+            <div class="a-section">
+              <div class="a-section-hd">战斗属性 <span style="font-weight:400;text-transform:none;margin-left:4px;">· 启动端</span></div>
+              <div class="a-field"><label>HP</label><input value="100"></div>
+              <div class="a-field"><label>耐力上限</label><input value="50"></div>
+              <div class="a-field"><label>耐力回复</label><input value="5/秒"></div>
+              <div class="a-field"><label>负重上限</label><input value="80"></div>
+            </div>
+            <div class="a-section">
+              <div class="a-section-hd">固定词条 <span style="font-weight:400;text-transform:none;margin-left:4px;">· 已选 3</span></div>
+              <div class="a-field" style="position:relative;">
+                <label>词条</label>
+                <div class="a-popover-trigger">
+                  <span class="a-pop-chip">starter<span class="x">×</span></span>
+                  <span class="a-pop-chip">vitalityN<span class="x">×</span></span>
+                  <span class="a-pop-chip">humanoid<span class="x">×</span></span>
+                  <span class="a-pop-add">+ 添加词条</span>
+                </div>
+                <!-- popover 面板（展开态） -->
+                <div class="a-popover-panel">
+                  <div class="a-pop-search"><input placeholder="搜索词条…" value=""></div>
+                  <div class="a-chips" style="border:none;padding:4px 8px;"><span class="a-chip on">全部</span><span class="a-chip">属性</span><span class="a-chip">动作</span></div>
+                  <div class="a-pop-list">
+                    <div class="a-pop-item"><span>strengthN</span><span class="a-pop-cat">属性</span></div>
+                    <div class="a-pop-item"><span>agilityN</span><span class="a-pop-cat">属性</span></div>
+                    <div class="a-pop-item"><span>melee_basic</span><span class="a-pop-cat">动作</span></div>
+                    <div class="a-pop-item"><span>ranged_basic</span><span class="a-pop-cat">动作</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="a-section">
+              <div class="a-section-hd">默认子装备 <span style="font-weight:400;text-transform:none;margin-left:4px;">· 已用 1 / 3</span></div>
+              <div class="a-field" style="position:relative;">
+                <label>子装备</label>
+                <div class="a-popover-trigger">
+                  <span class="a-pop-chip">铁剑<span class="x">×</span></span>
+                  <span class="a-pop-add">+ 添加实体</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="dir-card-footer">
+      <span style="font-size:11px;color:var(--sh-text-secondary);">搜索驱动 · Popover 选择器 · 高效高频操作</span>
+      <span style="flex:1;"></span>
+      <button class="qmdp-pick-button" data-dir="A" data-label="命令面板式">选择 A · 命令面板式</button>
+    </div>
+  </div>
+
+  <!-- ═══════ 方向 B：结构化表单式 ═══════ -->
+  <div class="dir-card" data-dir="B">
+    <div class="dir-card-header">
+      <div class="dir-badge">B</div>
+      <div class="dir-label">结构化表单式</div>
+      <div class="dir-role">最稳妥</div>
+    </div>
+    <div class="mockup-stage">
+      <div class="mockup-frame dir-b">
+        <div class="b-page">
+          <div class="b-left">
+            <div class="b-search-wrap"><input class="b-search" placeholder="搜索 ID 或名称…"></div>
+            <div class="b-chips"><span class="b-chip on">全部</span><span class="b-chip">启动端</span><span class="b-chip">主动</span><span class="b-chip">被动</span><span class="b-chip">武器</span></div>
+            <button class="b-btn-add">+ 新增实体</button>
+            <div class="b-sel-row"><input type="checkbox" style="width:13px;height:13px;"> 全选 <span style="margin-left:auto;">已选 0</span></div>
+            <div class="b-list">
+              <div class="b-li sel"><span class="b-name">冒险者</span><span class="b-cat">启动端</span></div>
+              <div class="b-li"><span class="b-name">铁剑</span><span class="b-cat">主动 / 武器</span></div>
+              <div class="b-li"><span class="b-name">皮甲</span><span class="b-cat">被动 / 护甲</span></div>
+              <div class="b-li"><span class="b-name">生命戒指</span><span class="b-cat">被动 / 饰品</span></div>
+            </div>
+          </div>
+          <div class="b-right">
+            <div class="b-section">
+              <div class="b-section-hd">基本信息</div>
+              <div class="b-field"><label>ID</label><input value="adventurer"></div>
+              <div class="b-field"><label>名称</label><input value="冒险者"></div>
+              <div class="b-field"><label>占用槽位</label><input value="1"></div>
+            </div>
+            <div class="b-section">
+              <div class="b-section-hd">战斗属性 <span style="font-weight:400;">· 启动端</span></div>
+              <div class="b-field"><label>HP</label><input value="100"></div>
+              <div class="b-field"><label>耐力上限</label><input value="50"></div>
+              <div class="b-field"><label>耐力回复</label><input value="5/秒"></div>
+            </div>
+            <div class="b-section">
+              <div class="b-section-hd">固定词条 <span style="font-weight:400;">· 已选 3</span></div>
+              <!-- Transfer list -->
+              <div class="b-transfer">
+                <div class="b-tf-panel">
+                  <div class="b-tf-hd">可用词条</div>
+                  <div class="b-tf-list">
+                    <div class="b-tf-item"><span>strengthN <span style="color:#999">属性</span></span><span class="b-tf-add">+</span></div>
+                    <div class="b-tf-item"><span>agilityN <span style="color:#999">属性</span></span><span class="b-tf-add">+</span></div>
+                    <div class="b-tf-item"><span>melee_basic <span style="color:#999">动作</span></span><span class="b-tf-add">+</span></div>
+                  </div>
+                </div>
+                <div class="b-tf-panel">
+                  <div class="b-tf-hd">已选词条</div>
+                  <div class="b-tf-list">
+                    <div class="b-tf-item"><span>starter</span><span class="b-tf-rem">×</span></div>
+                    <div class="b-tf-item"><span>vitalityN</span><span class="b-tf-rem">×</span></div>
+                    <div class="b-tf-item"><span>humanoid</span><span class="b-tf-rem">×</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="b-section">
+              <div class="b-section-hd">默认子装备 <span style="font-weight:400;">· 已用 1 / 3</span></div>
+              <div class="b-field"><label>子装备</label><span style="font-size:11px;padding:3px 8px;background:#f0fdf4;border-radius:3px;">铁剑 [主动/武器] <span style="cursor:pointer;color:#dc2626;">×</span></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="dir-card-footer">
+      <span style="font-size:11px;color:var(--sh-text-secondary);">双面板 Transfer · 卡片网格 · 传统可靠</span>
+      <span style="flex:1;"></span>
+      <button class="qmdp-pick-button" data-dir="B" data-label="结构化表单式">选择 B · 结构化表单式</button>
+    </div>
+  </div>
+
+  <!-- ═══════ 方向 C：暗色工作台 ═══════ -->
+  <div class="dir-card" data-dir="C">
+    <div class="dir-card-header">
+      <div class="dir-badge">C</div>
+      <div class="dir-label">暗色工作台</div>
+      <div class="dir-role">最个性</div>
+    </div>
+    <div class="mockup-stage">
+      <div class="mockup-frame dir-c">
+        <div class="c-page">
+          <div class="c-left">
+            <div class="c-search-wrap"><input class="c-search" placeholder="搜索 ID 或名称…"></div>
+            <div class="c-chips"><span class="c-chip on">全部</span><span class="c-chip">启动端</span><span class="c-chip">主动</span><span class="c-chip">被动</span></div>
+            <button class="c-btn-add">+ 新增实体</button>
+            <div class="c-sel-row"><input type="checkbox" style="width:13px;height:13px;accent-color:#a3a3a3;"> 全选 <span style="margin-left:auto;">已选 0</span></div>
+            <div class="c-list">
+              <div class="c-li sel"><span class="c-name">冒险者</span><span class="c-cat">启动端</span></div>
+              <div class="c-li"><span class="c-name">铁剑</span><span class="c-cat">主动 / 武器</span></div>
+              <div class="c-li"><span class="c-name">皮甲</span><span class="c-cat">被动 / 护甲</span></div>
+              <div class="c-li"><span class="c-name">生命戒指</span><span class="c-cat">被动 / 饰品</span></div>
+            </div>
+          </div>
+          <div class="c-right">
+            <div class="c-section">
+              <div class="c-section-hd">基本信息</div>
+              <div class="c-field"><label>ID</label><input value="adventurer"></div>
+              <div class="c-field"><label>名称</label><input value="冒险者"></div>
+              <div class="c-field"><label>占用槽位</label><input value="1"></div>
+            </div>
+            <div class="c-section">
+              <div class="c-section-hd">战斗属性 <span style="font-weight:400;text-transform:none;">· 启动端</span></div>
+              <div class="c-field"><label>HP</label><input value="100"></div>
+              <div class="c-field"><label>耐力上限</label><input value="50"></div>
+              <div class="c-field"><label>耐力回复</label><input value="5/秒"></div>
+            </div>
+            <div class="c-section">
+              <div class="c-section-hd">固定词条 <span style="font-weight:400;text-transform:none;">· 已选 3</span></div>
+              <div class="c-field">
+                <label>词条</label>
+                <div class="c-token-wrap">
+                  <span class="c-token">starter<span class="x">×</span></span>
+                  <span class="c-token">vitalityN<span class="x">×</span></span>
+                  <span class="c-token">humanoid<span class="x">×</span></span>
+                  <input class="c-token-input" placeholder="输入关键词…">
+                </div>
+              </div>
+              <div class="c-cmd-hint">Ctrl+K 打开命令面板搜索词条</div>
+            </div>
+            <div class="c-section">
+              <div class="c-section-hd">默认子装备 <span style="font-weight:400;text-transform:none;">· 已用 1 / 3</span></div>
+              <div class="c-field">
+                <label>子装备</label>
+                <span style="font-size:11px;padding:3px 8px;background:#3a3a3a;border-radius:3px;">铁剑 [主动/武器] <span style="cursor:pointer;color:#f87171;">×</span></span>
+              </div>
+              <div class="c-cmd-hint">Ctrl+K 搜索添加子实体</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="dir-card-footer">
+      <span style="font-size:11px;color:var(--sh-text-secondary);">Token 输入 · 命令面板 · IDE 暗色专业感</span>
+      <span style="flex:1;"></span>
+      <button class="qmdp-pick-button" data-dir="C" data-label="暗色工作台">选择 C · 暗色工作台</button>
+    </div>
+  </div>
+
+  <!-- ═══════ 方向 D：分栏式 ═══════ -->
+  <div class="dir-card" data-dir="D">
+    <div class="dir-card-header">
+      <div class="dir-badge">D</div>
+      <div class="dir-label">分栏式</div>
+      <div class="dir-role">最专业</div>
+    </div>
+    <div class="mockup-stage">
+      <div class="mockup-frame dir-d">
+        <div class="d-page">
+          <!-- 左侧导航树 -->
+          <div class="d-nav">
+            <div class="d-nav-hd">物品导航</div>
+            <div class="d-tree">
+              <div class="d-tree-item" style="font-weight:600;color:var(--d-txt);">▼ 实体 (12)</div>
+              <div class="d-tree-item sel"><span class="d-dot"></span> 冒险者</div>
+              <div class="d-tree-item"><span class="d-dot"></span> 铁剑</div>
+              <div class="d-tree-item"><span class="d-dot"></span> 皮甲</div>
+              <div class="d-tree-item"><span class="d-dot"></span> 火焰弓</div>
+              <div class="d-tree-item" style="font-weight:600;color:var(--d-txt);">▼ 词条 (24)</div>
+              <div class="d-tree-item"><span class="d-dot"></span> starter</div>
+              <div class="d-tree-item"><span class="d-dot"></span> strengthN</div>
+            </div>
+          </div>
+          <!-- 中间主编辑区 -->
+          <div class="d-main">
+            <div class="d-main-top">
+              <button class="d-btn-add">+ 新增实体</button>
+              <input placeholder="搜索…">
+              <div class="d-filter-chips"><span class="d-fc on">全部</span><span class="d-fc">启动端</span><span class="d-fc">主动</span></div>
+            </div>
+            <div class="d-edit">
+              <div class="d-section">
+                <div class="d-section-hd">基本信息</div>
+                <div class="d-field"><label>ID</label><input value="adventurer"></div>
+                <div class="d-field"><label>名称</label><input value="冒险者"></div>
+                <div class="d-field"><label>占用槽位</label><input value="1"></div>
+              </div>
+              <div class="d-section">
+                <div class="d-section-hd">战斗属性</div>
+                <div class="d-field"><label>HP</label><input value="100"></div>
+                <div class="d-field"><label>耐力上限</label><input value="50"></div>
+                <div class="d-field"><label>耐力回复</label><input value="5/秒"></div>
+              </div>
+            </div>
+          </div>
+          <!-- 右侧属性检查器 -->
+          <div class="d-inspector">
+            <div class="d-ins-hd">属性检查器</div>
+            <div class="d-ins-block">
+              <div class="d-ins-label">固定词条 (3)</div>
+              <div class="d-ins-item"><span class="d-ins-name">starter</span><span class="d-ins-rem">×</span></div>
+              <div class="d-ins-item"><span class="d-ins-name">vitalityN</span><span class="d-ins-rem">×</span></div>
+              <div class="d-ins-item"><span class="d-ins-name">humanoid</span><span class="d-ins-rem">×</span></div>
+            </div>
+            <div class="d-ins-block">
+              <div class="d-ins-label">子装备 · 1/3</div>
+              <div class="d-ins-item"><span class="d-ins-name">铁剑</span><span class="d-ins-rem">×</span></div>
+              <div class="d-ins-empty">拖拽实体到此处添加</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="dir-card-footer">
+      <span style="font-size:11px;color:var(--sh-text-secondary);">三栏 IDE 布局 · 树形导航 · 属性检查器</span>
+      <span style="flex:1;"></span>
+      <button class="qmdp-pick-button" data-dir="D" data-label="分栏式">选择 D · 分栏式</button>
+    </div>
+  </div>
+
+</div><!-- /dir-grid -->
+
+<!-- ====== 三拨盘滑块 ====== -->
+<div class="dials-section">
+  <h3>设计参数调节</h3>
+  <div class="dials-row">
+    <div class="dial-item">
+      <label>视觉冒险度 <span class="val" id="val-variance">5</span></label>
+      <input type="range" id="dial-variance" min="1" max="10" value="5" data-qmdp-output="#val-variance">
+    </div>
+    <div class="dial-item">
+      <label>动效强度 <span class="val" id="val-motion">5</span></label>
+      <input type="range" id="dial-motion" min="1" max="10" value="5" data-qmdp-output="#val-motion">
+    </div>
+    <div class="dial-item">
+      <label>信息密度 <span class="val" id="val-density">7</span></label>
+      <input type="range" id="dial-density" min="1" max="10" value="7" data-qmdp-output="#val-density">
+    </div>
+  </div>
+</div>
+
+<!-- ====== 说明区 ====== -->
+<div class="explanation-section">
+  <h3>各方向详细说明</h3>
+  <div class="explanation-grid">
+    <div class="explanation-item">
+      <h4><span class="b">A</span> 命令面板式 <span style="font-size:11px;color:#92400e;font-weight:600;">★ 推荐</span></h4>
+      <div class="meta-row"><strong>一句话气质：</strong>像 VS Code 命令面板 + Notion 的搜索体验</div>
+      <div class="meta-row"><strong>字体策略：</strong>系统无衬线（PingFang SC / Microsoft YaHei）</div>
+      <div class="meta-row"><strong>色彩策略：</strong>中性灰底 + #525252 重音色</div>
+      <div class="meta-row"><strong>布局动作：</strong>搜索框即命令入口；词条/子实体选择用 Popover 面板（点击展开，搜索即过滤）</div>
+      <div class="meta-row"><strong>记忆点：</strong>Ctrl+K 打开命令面板，全程键盘可达</div>
+      <div class="meta-row" style="margin-top:6px;color:#92400e;"><strong>推荐理由：</strong>平衡了效率与学习成本。Popover 选择器比 dropdown 高效得多，命令面板入口给高级用户加速路径，同时保留了直观的点击操作。</div>
+    </div>
+    <div class="explanation-item">
+      <h4><span class="b">B</span> 结构化表单式</h4>
+      <div class="meta-row"><strong>一句话气质：</strong>像专业的后台管理系统（Stripe Dashboard）</div>
+      <div class="meta-row"><strong>字体策略：</strong>系统无衬线，暖灰调</div>
+      <div class="meta-row"><strong>色彩策略：</strong>暖灰底（Stone 系）+ 绿色强调（#166534）</div>
+      <div class="meta-row"><strong>布局动作：</strong>固定词条用双面板 Transfer List（左可用 / 右已选），直观清晰</div>
+      <div class="meta-row"><strong>记忆点：</strong>Transfer List 的双面板结构，一眼看清已选和可选</div>
+    </div>
+    <div class="explanation-item">
+      <h4><span class="b">C</span> 暗色工作台</h4>
+      <div class="meta-row"><strong>一句话气质：</strong>像 Cursor / VS Code 的暗色 IDE 面板</div>
+      <div class="meta-row"><strong>字体策略：</strong>系统无衬线，深色底高对比</div>
+      <div class="meta-row"><strong>色彩策略：</strong>深色底 #1a1a1a + 浅灰面板 #262626</div>
+      <div class="meta-row"><strong>布局动作：</strong>Token Input 替代 dropdown（输入即搜索，回车即添加）；Ctrl+K 命令面板</div>
+      <div class="meta-row"><strong>记忆点：</strong>键盘驱动的暗色专业工作台，长时间使用不刺眼</div>
+    </div>
+    <div class="explanation-item">
+      <h4><span class="b">D</span> 分栏式</h4>
+      <div class="meta-row"><strong>一句话气质：</strong>像 Xcode / Unity Inspector 的三栏开发工具</div>
+      <div class="meta-row"><strong>字体策略：</strong>系统无衬线，紧凑的信息密度</div>
+      <div class="meta-row"><strong>色彩策略：</strong>浅灰底 + 黑色重音（#1a1a1a）</div>
+      <div class="meta-row"><strong>布局动作：</strong>左侧树形导航 + 中间编辑区 + 右侧属性检查器（词条/子实体拖拽管理）</div>
+      <div class="meta-row"><strong>记忆点：</strong>三栏 IDE 布局，属性检查器实时反映选中实体的配置</div>
+    </div>
+  </div>
+  <div class="explanation-note">
+    <strong>所有方向共通优化：</strong><br>
+    ① 左侧面板统一为 搜索 → 筛选 Chip → 新增按钮（加大） → 全选/已选 → 列表<br>
+    ② "启动端字段"重命名为"战斗属性"<br>
+    ③ 槽位计数放在对应编辑区标题旁（如"动态词条 · 已用 2/3"）<br>
+    ④ 槽位=0 时自动隐藏编辑区<br>
+    ⑤ 子实体改为纯引用（只显示名称+类别，不内联编辑字段）<br>
+    ⑥ 分类管理按钮移到词条 Tab 的新增按钮上方
+  </div>
+</div>
+
+</div><!-- /container -->
+
+<!-- 确认弹层 -->
+<div class="modal-overlay" id="modal">
+  <div class="modal-box">
+    <h3 id="modal-title">确认选择</h3>
+    <div class="sub" id="modal-sub"></div>
+    <div class="info-row"><span class="k">视觉冒险度</span><span class="v" id="m-var">5</span></div>
+    <div class="info-row"><span class="k">动效强度</span><span class="v" id="m-mot">5</span></div>
+    <div class="info-row"><span class="k">信息密度</span><span class="v" id="m-den">7</span></div>
+    <textarea id="m-adjust" placeholder="调整建议（可选）：如"要 A 的留白 + C 的配色"、或"动效再少一点""></textarea>
+    <div class="modal-actions">
+      <button id="btn-cancel">取消</button>
+      <button class="primary" id="btn-confirm">确认并回传</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+(function() {
+  const DIRS = [
+    { id:'A', label:'命令面板式', name:'命令面板式 · 搜索驱动 Popover 选择器' },
+    { id:'B', label:'结构化表单式', name:'结构化表单式 · Transfer List 双面板' },
+    { id:'C', label:'暗色工作台', name:'暗色工作台 · Token Input + 命令面板' },
+    { id:'D', label:'分栏式', name:'分栏式 · 三栏 IDE 布局 + 属性检查器' }
+  ];
+
+  let pendingDir = null;
+
+  // 获取当前拨盘值
+  function getDials() {
+    return {
+      variance: parseInt(document.getElementById('dial-variance').value),
+      motion: parseInt(document.getElementById('dial-motion').value),
+      density: parseInt(document.getElementById('dial-density').value)
+    };
+  }
+
+  // 拨盘滑块实时更新数值
+  document.querySelectorAll('input[type="range"]').forEach(slider => {
+    const outputId = slider.dataset.qmdpOutput;
+    const output = outputId ? document.querySelector(outputId) : null;
+    const update = () => { if (output) output.textContent = slider.value; };
+    slider.addEventListener('input', update);
+    update();
+  });
+
+  // 键盘 1-4
+  document.addEventListener('keydown', e => {
+    if (e.key >= '1' && e.key <= '4' && !e.target.closest('input,textarea,select')) {
+      const idx = parseInt(e.key) - 1;
+      if (idx < DIRS.length) openModal(DIRS[idx]);
+    }
+    if (e.key === 'Escape') closeModal();
+  });
+
+  // 选择按钮点击
+  document.querySelectorAll('.qmdp-pick-button').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const dirId = btn.dataset.dir;
+      const dir = DIRS.find(d => d.id === dirId);
+      if (dir) openModal(dir);
+    });
+  });
+
+  function openModal(dir) {
+    pendingDir = dir;
+    const dials = getDials();
+    document.getElementById('modal-title').textContent = '确认选择：方案 ' + dir.id;
+    document.getElementById('modal-sub').textContent = dir.name;
+    document.getElementById('m-var').textContent = dials.variance;
+    document.getElementById('m-mot').textContent = dials.motion;
+    document.getElementById('m-den').textContent = dials.density;
+    document.getElementById('m-adjust').value = '';
+    document.getElementById('modal').classList.add('open');
+  }
+
+  function closeModal() {
+    pendingDir = null;
+    document.getElementById('modal').classList.remove('open');
+  }
+
+  document.getElementById('btn-cancel').addEventListener('click', closeModal);
+  document.getElementById('modal').addEventListener('click', e => {
+    if (e.target === document.getElementById('modal')) closeModal();
+  });
+
+  document.getElementById('btn-confirm').addEventListener('click', () => {
+    if (!pendingDir) return;
+    const dials = getDials();
+    const adjustments = document.getElementById('m-adjust').value.trim();
+    const payload = {
+      id: pendingDir.id,
+      label: pendingDir.label,
+      name: pendingDir.name,
+      notes: '',
+      dials,
+      adjustments
+    };
+
+    // 高亮选中卡片
+    document.querySelectorAll('.dir-card').forEach(c => c.classList.remove('selected'));
+    const card = document.querySelector(`.dir-card[data-dir="${pendingDir.id}"]`);
+    if (card) card.classList.add('selected');
+
+    closeModal();
+
+    // POST 回传
+    fetch('/api/select', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(r => r.json()).then(data => {
+      showToast('已回传：方案 ' + pendingDir.id + ' · ' + pendingDir.label);
+      console.log('Selection saved:', data);
+    }).catch(err => {
+      showToast('已选择：方案 ' + pendingDir.id + ' · ' + pendingDir.label + '（回传服务未连接）');
+      console.warn('POST /api/select failed:', err);
+    });
+  });
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(t._tid);
+    t._tid = setTimeout(() => t.classList.remove('show'), 2500);
+  }
+})();
+</script>
+
+</body>
+</html>

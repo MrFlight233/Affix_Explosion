@@ -1,0 +1,14 @@
+{
+  "id": "A",
+  "label": "命令面板式",
+  "name": "命令面板式 · 搜索驱动 Popover 选择器",
+  "notes": "",
+  "dials": {
+    "variance": 5,
+    "motion": 5,
+    "density": 7
+  },
+  "adjustments": "",
+  "source": "preview",
+  "receivedAt": "2026-07-21T08:58:57.596Z"
+}
