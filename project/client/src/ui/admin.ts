@@ -859,6 +859,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     h += `</div>`;
     h += `</div>`;
     h += `<div class="admin-form-section"><h4>被动加成</h4>`;
+    h += `<div id="ef-passive-damage-field" class="admin-field" style="${isActiveVal ? 'display:none;' : ''}"><label>伤害加成(正=增伤,负=增强治疗)</label><input id="ef-passive-damage" type="number" value="${v('damage', 0)}" step="any"></div>`;
     h += `<div class="admin-field"><label>生命加成</label><input id="ef-hpBonus" type="number" value="${v('hpBonus', 0)}"></div>`;
     h += `<div class="admin-field"><label>生命恢复加成</label><input id="ef-hpRegenerationBonus" type="number" value="${v('hpRegenerationBonus', 0)}"></div>`;
     h += `<div class="admin-field"><label>耐力加成</label><input id="ef-staminaBonus" type="number" value="${v('staminaBonus', 0)}"></div>`;
@@ -1023,9 +1024,12 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     // isActive 切换
     const isActiveSel = document.getElementById('ef-isActive') as HTMLSelectElement;
     const actionFields = document.getElementById('ef-action-fields');
+    const passiveDamageField = document.getElementById('ef-passive-damage-field');
     if (isActiveSel && actionFields) {
       isActiveSel.addEventListener('change', () => {
-        actionFields.style.display = isActiveSel.value === '有' ? '' : 'none';
+        const isActive = isActiveSel.value === '有';
+        actionFields.style.display = isActive ? '' : 'none';
+        if (passiveDamageField) passiveDamageField.style.display = isActive ? 'none' : '';
       });
     }
 
@@ -1054,7 +1058,9 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         isActive: (document.getElementById('ef-isActive') as HTMLSelectElement).value === '有',
         staminaCost: parseInt((document.getElementById('ef-staminaCost') as HTMLInputElement).value) || 0,
         actionTime: parseInt((document.getElementById('ef-actionTime') as HTMLInputElement).value) || 0,
-        damage: parseFloat((document.getElementById('ef-damage') as HTMLInputElement).value) || 0,
+        damage: (document.getElementById('ef-isActive') as HTMLSelectElement).value === '有'
+          ? parseFloat((document.getElementById('ef-damage') as HTMLInputElement).value) || 0
+          : parseFloat((document.getElementById('ef-passive-damage') as HTMLInputElement).value) || 0,
         targetFaction: (document.getElementById('ef-targetFaction') as HTMLSelectElement).value || null,
         targetType: (document.getElementById('ef-targetType') as HTMLSelectElement).value || null,
         targetOrder: (document.getElementById('ef-targetOrder') as HTMLSelectElement).value || null,

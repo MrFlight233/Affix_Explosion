@@ -354,7 +354,7 @@ function showFullItemPool() {
       // === 被动加成 ===
       {
         const bonuses: string[] = [];
-        if (entity.damage && !entity.isActive) bonuses.push(`伤害 +${entity.damage}`);
+        if (entity.damage && !entity.isActive) bonuses.push(`伤害 ${entity.damage > 0 ? '+' : ''}${entity.damage}`);
         if (entity.staminaRegenerationBonus) bonuses.push(`耐力恢复 +${entity.staminaRegenerationBonus}/秒`);
         if (entity.staminaBonus) bonuses.push(`耐力 +${entity.staminaBonus}`);
         if (entity.hpRegenerationBonus) bonuses.push(`生命恢复 +${entity.hpRegenerationBonus}/秒`);

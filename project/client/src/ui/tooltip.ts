@@ -66,7 +66,7 @@ function renderEntityTooltip(tip: HTMLElement, def: EntityDef) {
   // 被动加成
   if (hasPsv) {
     html += '<div class="tt-section">被动加成</div>';
-    if (def.damage && !def.isActive) html += `<div class="tt-row"><span class="tt-label">伤害加成:</span>+${def.damage}</div>`;
+    if (def.damage && !def.isActive) html += `<div class="tt-row"><span class="tt-label">伤害加成:</span>${def.damage > 0 ? '+' : ''}${def.damage}</div>`;
     if (def.hpBonus) html += `<div class="tt-row"><span class="tt-label">生命加成:</span>${def.hpBonus > 0 ? '+' : ''}${def.hpBonus}</div>`;
     if (def.hpRegenerationBonus) html += `<div class="tt-row"><span class="tt-label">生命恢复:</span>+${def.hpRegenerationBonus}/秒</div>`;
     if (def.staminaBonus) html += `<div class="tt-row"><span class="tt-label">耐力加成:</span>+${def.staminaBonus}</div>`;

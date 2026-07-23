@@ -468,7 +468,7 @@ function renderTooltipTree(
     if (hasPassive(def)) {
       h += tipSection('被动加成');
       h += '<div class="sb-tip-grid">';
-      if (!def.isActive && def.damage) h += tipkv('伤害加成', '+' + def.damage);
+      if (!def.isActive && def.damage) h += tipkv('伤害加成', (def.damage > 0 ? '+' : '') + def.damage);
       if (def.hpBonus) h += tipkv('生命加成', (def.hpBonus > 0 ? '+' : '') + def.hpBonus);
       if (def.hpRegenerationBonus) h += tipkv('生命恢复加成', '+' + def.hpRegenerationBonus + '/s');
       if (def.staminaBonus) h += tipkv('耐力加成', '+' + def.staminaBonus);
@@ -1132,7 +1132,7 @@ function hideSimTooltip() {
     // 被动加成
     if (edef && hasPassive(edef)) {
       h += '<div class="sb-card-stats">';
-      if (!edef.isActive && edef.damage) h += `伤害加成: +${edef.damage}  `;
+      if (!edef.isActive && edef.damage) h += `伤害加成: ${edef.damage > 0 ? '+' : ''}${edef.damage}  `;
       if (edef.hpBonus) h += `生命加成: ${edef.hpBonus > 0 ? '+' : ''}${edef.hpBonus}  `;
       if (edef.hpRegenerationBonus) h += `生命恢复: +${edef.hpRegenerationBonus}/s  `;
       if (edef.staminaBonus) h += `耐力加成: +${edef.staminaBonus}  `;

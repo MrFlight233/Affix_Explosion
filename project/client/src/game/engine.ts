@@ -515,7 +515,11 @@ export class GameEngine {
         const isActive = getEffectiveValue(child, 'isActive') ?? cdef.isActive;
         if (isActive) {
           const wDamage = Number(getEffectiveValue(child, 'damage') ?? 0);
-          let weaponDamage = wDamage + passiveDamageBonus + growthStack;
+          let weaponDamage = wDamage + growthStack;
+          // 符号感知：正的被动加成只影响正伤害武器，负的只影响负伤害（治疗）武器
+          if ((passiveDamageBonus > 0 && wDamage > 0) || (passiveDamageBonus < 0 && wDamage < 0)) {
+            weaponDamage += passiveDamageBonus;
+          }
           weapons.push({
             name: String(getEffectiveValue(child, 'name') ?? cdef.name),
             actionTime: Number(getEffectiveValue(child, 'actionTime') ?? 0),
@@ -601,8 +605,12 @@ export class GameEngine {
             if (adef?.id === 'strength') extraDmg += adef.value;
           }
         }
+        const netPassive = collected.passiveDamageBonus - extraDmg;
         for (const w of collected.weapons) {
-          w.damage += collected.passiveDamageBonus - extraDmg;
+          // 符号感知：正的被动加成只影响正伤害武器，负的只影响负伤害（治疗）武器
+          if ((netPassive > 0 && w.damage > 0) || (netPassive < 0 && w.damage < 0)) {
+            w.damage += netPassive;
+          }
         }
       }
 
