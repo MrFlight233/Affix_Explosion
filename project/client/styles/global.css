@@ -360,7 +360,11 @@ body {
   pointer-events: none;
   box-shadow: 2px 2px 6px rgba(0,0,0,0.1);
 }
-#tooltip .tt-name { font-size: 14px; font-weight: bold; margin-bottom: 4px; }
+#tooltip .tt-name { font-size: 14px; font-weight: bold; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: baseline; }
+#tooltip .tt-price { font-size: 12px; font-weight: 500; color: var(--accent, #c9a03a); white-space: nowrap; }
+#tooltip .tt-cat { font-size: 11px; color: var(--text-dim); margin-bottom: 4px; }
+#tooltip .tt-section { font-size: 10px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; padding: 6px 0 2px; border-top: 1px solid var(--border-light); margin-top: 4px; }
+#tooltip .tt-section:first-of-type { border-top: none; margin-top: 0; }
 #tooltip .tt-row { display: flex; gap: 12px; }
 #tooltip .tt-label { color: var(--text-dim); }
 
@@ -1325,8 +1329,14 @@ body {
 .sb-tip-header {
   padding: 10px 12px 6px;
   border-bottom: 1px solid var(--sb-border);
+  display: flex; justify-content: space-between; align-items: baseline;
 }
-.sb-tip-name { font-weight: 600; font-size: 13px; color: var(--sb-text); margin-bottom: 4px; }
+.sb-tip-name { font-weight: 600; font-size: 13px; color: var(--sb-text); }
+.sb-tip-price { font-size: 12px; font-weight: 500; color: var(--sb-accent, #c9a03a); white-space: nowrap; }
+.sb-tip-cat {
+  font-size: 11px; color: var(--sb-text-muted);
+  padding: 2px 12px 4px;
+}
 .sb-tip-badges {
   font-size: 10px; font-weight: 500; color: var(--sb-text-muted);
   display: flex; flex-wrap: wrap; gap: 2px 4px;

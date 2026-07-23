@@ -319,11 +319,11 @@ function showFullItemPool() {
     const affix = getAffixDef(id);
 
     if (entity) {
-      const label = [isStarter(entity) ? '启动端' : '', entity.isActive ? '可触发' : '', (!isStarter(entity) && !entity.isActive) ? '被动加成' : ''].filter(Boolean).join(' / ');
+      const label = getEntityCategory(entity).join(' / ');
       const row = (k: string, v: string, extraClass?: string) =>
         `<tr><td class="tt-label" style="white-space:nowrap;vertical-align:top;padding-right:10px;">${k}</td><td${extraClass ? ` class="${extraClass}"` : ''}>${v}</td></tr>`;
 
-      let h = `<div class="tt-name" style="margin-bottom:8px;">${entity.name} <span style="font-size:12px;color:var(--text-dim);font-weight:normal;">[${label} · ${getEntityCategory(entity).join(' / ')}]</span></div>`;
+      let h = `<div class="tt-name" style="margin-bottom:8px;">${entity.name} <span style="font-size:12px;color:var(--text-dim);font-weight:normal;">${label}</span></div>`;
       h += '<table style="font-size:13px;line-height:1.9;width:100%;">';
 
       // === 基础属性 ===
@@ -352,10 +352,9 @@ function showFullItemPool() {
       }
 
       // === 被动加成 ===
-      if (!isStarter(entity) && !entity.isActive) {
+      {
         const bonuses: string[] = [];
-        if (entity.damage) bonuses.push(`伤害 +${entity.damage}`);
-        
+        if (entity.damage && !entity.isActive) bonuses.push(`伤害 +${entity.damage}`);
         if (entity.staminaRegenerationBonus) bonuses.push(`耐力恢复 +${entity.staminaRegenerationBonus}/秒`);
         if (entity.staminaBonus) bonuses.push(`耐力 +${entity.staminaBonus}`);
         if (entity.hpRegenerationBonus) bonuses.push(`生命恢复 +${entity.hpRegenerationBonus}/秒`);
@@ -374,6 +373,15 @@ function showFullItemPool() {
       if (!isStarter(entity)) h += row('实体槽位', entity.entitySlots > 0 ? String(entity.entitySlots) : '—');
       h += row('词条槽位', String(entity.dynamicAffixSlots));
       h += row('基础价值', entity.value + ' 金币');
+
+      // === 前置词条 ===
+      if (entity.poolPrerequisite && entity.poolPrerequisite.length > 0) {
+        h += '<tr><td colspan="2" style="font-weight:bold;padding-top:8px;border-bottom:1px solid #eee;">前置词条</td></tr>';
+        for (const pid of entity.poolPrerequisite) {
+          const resolved = resolveAffix(pid);
+          h += row(resolved.name, resolved.effect || '—');
+        }
+      }
 
       // === 固定词条 ===
       h += '<tr><td colspan="2" style="font-weight:bold;padding-top:8px;border-bottom:1px solid #eee;">固定词条</td></tr>';

@@ -394,9 +394,27 @@ function getTypeBadges(def: EntityDef, inst?: ItemInstance | null): string[] {
       }
     }
   }
-  if (def.isActive) tags.push('可触发');
-  if (!def.isActive) tags.push('被动');
   return tags;
+}
+
+/** 检查实体是否有被动加成（根据字段值判断，不依赖类型分类） */
+function hasPassive(def: EntityDef): boolean {
+  return (!def.isActive && (def.damage || 0) !== 0)
+    || (def.hpBonus || 0) !== 0
+    || (def.hpRegenerationBonus || 0) !== 0
+    || (def.staminaBonus || 0) !== 0
+    || (def.staminaRegenerationBonus || 0) !== 0;
+}
+
+/** 将词条/实体ID数组解析为中文名称 */
+function resolveNames(ids: string[]): string {
+  return ids.map(id => {
+    const ad = getAffixDef(id);
+    if (ad) return ad.name;
+    const ed = getEntityDef(id);
+    if (ed) return ed.name;
+    return id;
+  }).join('、') || '无';
 }
 
 /** 递归渲染实例子树（tooltip 用），depth=0 为顶层 */
@@ -409,21 +427,29 @@ function renderTooltipTree(
   let h = '';
 
   if (depth === 0) {
-    // 顶层属性
+    // 分类
+    const cat = getEntityCategory(def).join(' / ');
+    h += `<div class="sb-tip-cat">${cat}</div>`;
+
+    // 基本信息
+    h += tipSection('基本信息');
+    h += '<div class="sb-tip-grid">';
     if (isSt) {
       const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${def.hp}/${def.hp}`;
       const stam = combatUnit ? `${Math.floor(combatUnit.currentStamina)}/${combatUnit.maxStamina}` : `${def.maxStamina}/${def.maxStamina}`;
       const sRegen = combatUnit ? combatUnit.staminaRegen : def.staminaRegen;
       const hRegen = combatUnit ? combatUnit.hpRegeneration : (def.hpRegen || 0);
-      h += tipSection('生存');
-      h += '<div class="sb-tip-grid">';
-      h += tipkv('HP', hp) + tipkv('耐力', stam);
+      h += tipkv('生命', hp) + tipkv('耐力', stam);
       h += tipkv('耐力恢复', sRegen + '/s') + tipkv('生命恢复', hRegen + '/s');
-      h += tipkv('负重', def.maxLoad);
-      h += '</div>';
+      h += tipkv('负重上限', def.maxLoad);
     }
+    h += tipkv('槽位消耗', def.slotCost);
+    if (!isSt) h += tipkv('重量', def.weight + 'g');
+    h += '</div>';
+
+    // 主动动作
     if (def.isActive) {
-      h += tipSection('攻击');
+      h += tipSection('主动动作');
       h += '<div class="sb-tip-grid">';
       let dmg = def.damage, time = (def.actionTime / 1000).toFixed(1) + 's';
       if (combatUnit) {
@@ -431,44 +457,58 @@ function renderTooltipTree(
         if (matched) { dmg = matched.damage; time = `${(Math.max(matched.remainingTime, 0) / 1000).toFixed(1)}s`; }
       }
       h += tipkv('伤害', dmg) + tipkv('耗时', time);
-      h += tipkv('耐耗', def.staminaCost) + tipkv('目标', def.targetType || '—');
-      if (def.targetOrder) h += tipkv('顺序', def.targetOrder);
-      if (def.priorityTarget != null) h += tipkv('优先目标', def.priorityTarget);
+      h += tipkv('耐耗', def.staminaCost) + tipkv('针对类型', def.targetType || '—');
+      if (def.targetOrder) h += tipkv('针对顺序', def.targetOrder);
+      if (def.priorityTarget != null) h += tipkv('优先目标', '第' + def.priorityTarget + '位');
+      if (def.targetFaction) h += tipkv('针对目标', def.targetFaction);
       h += '</div>';
     }
-    if (!def.isActive) {
-      h += tipSection('属性');
+
+    // 被动加成
+    if (hasPassive(def)) {
+      h += tipSection('被动加成');
       h += '<div class="sb-tip-grid">';
-      if (def.damage) h += tipkv('伤害加成', '+' + def.damage);
+      if (!def.isActive && def.damage) h += tipkv('伤害加成', '+' + def.damage);
       if (def.hpBonus) h += tipkv('生命加成', (def.hpBonus > 0 ? '+' : '') + def.hpBonus);
       if (def.hpRegenerationBonus) h += tipkv('生命恢复加成', '+' + def.hpRegenerationBonus + '/s');
       if (def.staminaBonus) h += tipkv('耐力加成', '+' + def.staminaBonus);
       if (def.staminaRegenerationBonus) h += tipkv('耐力恢复加成', '+' + def.staminaRegenerationBonus + '/s');
-      h += tipkv('重量', def.weight);
       h += '</div>';
     }
-    // 自身槽耗
-    h += `<div class="sb-tip-slotcost">自身槽耗 ${def.slotCost}</div>`;
 
-    // 固定词条 — 一行一条
-    if (def.fixedAffixes.length > 0) {
-      h += tipSection('固定词条');
-      for (const fa of def.fixedAffixes) {
-        const fd = getAffixDef(fa);
-        h += `<div class="sb-tip-fixed-row" style="${indent}">${fd?.name || fa}  <span class="sb-tip-fixed-effect">${fd?.effect || ''}</span></div>`;
+    // 词条
+    const hasAffixInfo = def.poolPrerequisite.length > 0
+      || def.fixedAffixes.length > 0
+      || def.dynamicAffixSlots > 0
+      || (def.preloadedDynamicAffixes && def.preloadedDynamicAffixes.length > 0);
+    if (hasAffixInfo) {
+      h += tipSection('词条');
+      if (def.poolPrerequisite.length > 0) {
+        h += `<div class="sb-tip-fixed-row" style="${indent}">前置词条: ${resolveNames(def.poolPrerequisite)}</div>`;
+      }
+      if (def.fixedAffixes.length > 0) {
+        for (const fa of def.fixedAffixes) {
+          const fd = getAffixDef(fa);
+          h += `<div class="sb-tip-fixed-row" style="${indent}">${fd?.name || fa}  <span class="sb-tip-fixed-effect">${fd?.effect || ''}</span></div>`;
+        }
+      }
+      if (def.dynamicAffixSlots > 0) {
+        h += `<div class="sb-tip-fixed-row" style="${indent}">动态词条槽位: ${def.dynamicAffixSlots}</div>`;
+      }
+      if (def.preloadedDynamicAffixes && def.preloadedDynamicAffixes.length > 0) {
+        h += `<div class="sb-tip-fixed-row" style="${indent}">预装动态词条: ${resolveNames(def.preloadedDynamicAffixes)}</div>`;
       }
     }
   }
 
-  // children: 先词条后实体
+  // children: 已挂载的动态词条 + 子实体
   const affixes = (item.children || []).filter(c => c.type === 'affix');
   const entities = (item.children || []).filter(c => c.type === 'entity');
-  const affixSlots = def.dynamicAffixSlots || 0;
   const effSlots = getEffectiveEntitySlots(def);
   const usedSlots = countUsedSlots(item);
 
-  if (depth === 0 && (affixSlots > 0 || affixes.length > 0)) {
-    h += tipSection(`动态词条 (${affixes.length}/${affixSlots} 槽位)`);
+  if (depth === 0 && affixes.length > 0) {
+    h += tipSection(`已挂载词条 (${affixes.length})`);
     for (const a of affixes) {
       const ad = getAffixDef(a.defId);
       h += `<div class="sb-tip-tree-row" style="${tipIndent(1)}">${ad?.name || a.defId}  <span class="sb-tip-muted">[${getCategoryName(ad?.category || '')}]</span>  ${ad?.effect || ''}</div>`;
@@ -491,16 +531,14 @@ function renderTooltipTree(
       let row = `<div class="sb-tip-tree-row" style="${depth === 0 ? tipIndent(1) : indent}">`;
       row += `<span class="sb-tip-entity-name">${cd.name}</span>`;
       if (isStarter(cd)) {
-        row += `  HP:${cd.hp}/${cd.hp}  耐力:${cd.maxStamina}/${cd.maxStamina}`;
-      } else if (cd.isActive) {
-        row += `  伤:${cd.damage}  ${(cd.actionTime / 1000).toFixed(1)}s  顺序:${cd.targetOrder || ''}`;
-      } else {
-        row += `  重:${cd.weight}  ${getEntityCategory(cd).join(' / ')}`;
+        row += `  HP:${cd.hp}  耐力:${cd.maxStamina}`;
+      }
+      if (cd.isActive) {
+        row += `  伤:${cd.damage}  ${(cd.actionTime / 1000).toFixed(1)}s`;
       }
       row += `  <span class="sb-tip-muted">槽耗${cd.slotCost}</span>`;
       row += '</div>';
       h += row;
-      // 递归子实体的子实体
       h += renderTooltipTree(child, cd, depth + 1, sideFirst, combatUnit);
     }
   }
@@ -535,93 +573,146 @@ function showSimTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affix', 
     if (instanceId) {
       inst = findItemInSlots(state.playerSlots, instanceId) || findItemInSlots(state.enemySlots, instanceId);
     }
-    const badges = getTypeBadges(def, inst);
+    // Header: 名称(左) + 价格(右) 同行
+    const value = inst ? computeTotalValue(inst) : def.value;
     let h = `<div class="sb-tip-header"><div class="sb-tip-name">${def.name}</div>`;
-    h += `<div class="sb-tip-badges">${badges.join(' · ')}</div></div>`;
+    h += `<div class="sb-tip-price">价${value}</div></div>`;
+
+    const isSt = isStarter(def);
+    const renderPoolDef = () => {
+      let html = '';
+      // 分类
+      const cat = getEntityCategory(def).join(' / ');
+      html += `<div class="sb-tip-cat">${cat}</div>`;
+
+      // 基本信息
+      html += tipSection('基本信息');
+      html += '<div class="sb-tip-grid">';
+      if (isSt) {
+        html += tipkv('生命', def.hp) + tipkv('耐力', def.maxStamina);
+        html += tipkv('耐力恢复', def.staminaRegen + '/s') + tipkv('生命恢复', (def.hpRegen || 0) + '/s');
+        html += tipkv('负重上限', def.maxLoad);
+      }
+      html += tipkv('槽位消耗', def.slotCost);
+      if (!isSt) html += tipkv('重量', def.weight + 'g');
+      html += '</div>';
+
+      // 主动动作
+      if (def.isActive) {
+        html += tipSection('主动动作');
+        html += '<div class="sb-tip-grid">';
+        html += tipkv('伤害', def.damage) + tipkv('耗时', (def.actionTime / 1000).toFixed(1) + 's');
+        html += tipkv('耐耗', def.staminaCost) + tipkv('针对类型', def.targetType || '—');
+        if (def.targetOrder) html += tipkv('针对顺序', def.targetOrder);
+        if (def.priorityTarget != null) html += tipkv('优先目标', '第' + def.priorityTarget + '位');
+        if (def.targetFaction) html += tipkv('针对目标', def.targetFaction);
+        html += '</div>';
+      }
+
+      // 被动加成
+      if (hasPassive(def)) {
+        html += tipSection('被动加成');
+        html += '<div class="sb-tip-grid">';
+        if (!def.isActive && def.damage) html += tipkv('伤害加成', '+' + def.damage);
+        if (def.hpBonus) html += tipkv('生命加成', (def.hpBonus > 0 ? '+' : '') + def.hpBonus);
+        if (def.hpRegenerationBonus) html += tipkv('生命恢复加成', '+' + def.hpRegenerationBonus + '/s');
+        if (def.staminaBonus) html += tipkv('耐力加成', '+' + def.staminaBonus);
+        if (def.staminaRegenerationBonus) html += tipkv('耐力恢复加成', '+' + def.staminaRegenerationBonus + '/s');
+        html += '</div>';
+      }
+
+      // 词条
+      const hasAffixInfo = def.poolPrerequisite.length > 0
+        || def.fixedAffixes.length > 0
+        || def.dynamicAffixSlots > 0
+        || (def.preloadedDynamicAffixes && def.preloadedDynamicAffixes.length > 0);
+      if (hasAffixInfo) {
+        html += tipSection('词条');
+        if (def.poolPrerequisite.length > 0) {
+          html += `<div class="sb-tip-fixed-row">前置词条: ${resolveNames(def.poolPrerequisite)}</div>`;
+        }
+        if (def.fixedAffixes.length > 0) {
+          for (const fa of def.fixedAffixes) {
+            const fd = getAffixDef(fa);
+            html += `<div class="sb-tip-fixed-row">${fd?.name || fa}  <span class="sb-tip-fixed-effect">${fd?.effect || ''}</span></div>`;
+          }
+        }
+        if (def.dynamicAffixSlots > 0) {
+          html += `<div class="sb-tip-fixed-row">动态词条槽位: ${def.dynamicAffixSlots}</div>`;
+        }
+        if (def.preloadedDynamicAffixes && def.preloadedDynamicAffixes.length > 0) {
+          html += `<div class="sb-tip-fixed-row">预装动态词条: ${resolveNames(def.preloadedDynamicAffixes)}</div>`;
+        }
+      }
+
+      // 子实体（defaultChildren）
+      const defaultKids = def.defaultChildren || [];
+      if (defaultKids.length > 0) {
+        html += tipSection(`预装子实体 (${defaultKids.length})`);
+        for (const kidSpec of defaultKids) {
+          const kidId = typeof kidSpec === 'string' ? kidSpec : kidSpec.defId;
+          const cd = getEntityDef(kidId);
+          if (!cd) continue;
+          let row = `<div class="sb-tip-tree-row" style="${tipIndent(1)}"><span class="sb-tip-entity-name">${cd.name}</span>`;
+          if (isStarter(cd)) {
+            row += `  HP:${cd.hp}  耐力:${cd.maxStamina}`;
+          }
+          if (cd.isActive) {
+            row += `  伤:${cd.damage}  ${(cd.actionTime / 1000).toFixed(1)}s`;
+          }
+          row += `  <span class="sb-tip-muted">槽耗${cd.slotCost}</span></div>`;
+          html += row;
+        }
+      }
+
+      // 子实体槽位
+      if (def.entitySlots > 0) {
+        if (defaultKids.length === 0) {
+          html += tipSection('子实体');
+        }
+        html += `<div class="sb-tip-fixed-row">实体槽位: ${def.entitySlots}</div>`;
+      }
+      return html;
+    };
 
     if (inst) {
       // 实例模式：递归渲染完整树
       let cu: CombatUnitRuntime | null | undefined = undefined;
       h += renderTooltipTree(inst, def, 0, undefined, cu);
-      h += '<div class="sb-tip-footer">';
-      h += `<span>价值</span><span>${computeTotalValue(inst)}</span>`;
-      h += '</div>';
     } else {
-      // 池物品模式：静态定义 + defaultChildren
-      const isSt = isStarter(def);
-      if (isSt) {
-        h += tipSection('生存');
-        h += '<div class="sb-tip-grid">';
-        h += tipkv('HP', def.hp) + tipkv('耐力', def.maxStamina);
-        h += tipkv('耐力恢复', def.staminaRegen + '/s') + tipkv('生命恢复', (def.hpRegen || 0) + '/s') + tipkv('负重', def.maxLoad);
-        h += '</div>';
-      }
-      if (def.isActive) {
-        h += tipSection('攻击');
-        h += '<div class="sb-tip-grid">';
-        h += tipkv('伤害', def.damage) + tipkv('耗时', (def.actionTime / 1000).toFixed(1) + 's');
-        h += tipkv('耐耗', def.staminaCost) + tipkv('目标', def.targetType || '—');
-        if (def.targetOrder) h += tipkv('顺序', def.targetOrder);
-        if (def.priorityTarget != null) h += tipkv('优先目标', def.priorityTarget);
-        h += '</div>';
-      }
-      if (!def.isActive) {
-        h += tipSection('属性');
-        h += '<div class="sb-tip-grid">';
-        if (def.damage) h += tipkv('伤害加成', '+' + def.damage);
-        if (def.hpBonus) h += tipkv('生命加成', (def.hpBonus > 0 ? '+' : '') + def.hpBonus);
-        if (def.hpRegenerationBonus) h += tipkv('生命恢复加成', '+' + def.hpRegenerationBonus + '/s');
-        if (def.staminaBonus) h += tipkv('耐力加成', '+' + def.staminaBonus);
-        if (def.staminaRegenerationBonus) h += tipkv('耐力恢复加成', '+' + def.staminaRegenerationBonus + '/s');
-        h += tipkv('重量', def.weight);
-        h += '</div>';
-      }
-      h += `<div class="sb-tip-slotcost">自身槽耗 ${def.slotCost}</div>`;
-      if (def.fixedAffixes.length > 0) {
-        h += tipSection('固定词条');
-        for (const fa of def.fixedAffixes) {
-          const fd = getAffixDef(fa);
-          h += `<div class="sb-tip-fixed-row">${fd?.name || fa}  <span class="sb-tip-fixed-effect">${fd?.effect || ''}</span></div>`;
-        }
-      }
-      const defaultKids: string[] = (def as any).defaultChildren || [];
-      if (defaultKids.length > 0) {
-        h += tipSection(`子实体 (${defaultKids.length})`);
-        for (const kidId of defaultKids) {
-          const cd = getEntityDef(kidId);
-          if (!cd) continue;
-          let row = `<div class="sb-tip-tree-row" style="${tipIndent(1)}"><span class="sb-tip-entity-name">${cd.name}</span>`;
-          if (isStarter(cd)) {
-            row += `  HP:${cd.hp}/${cd.hp}  耐力:${cd.maxStamina}/${cd.maxStamina}`;
-          } else if (cd.isActive) {
-            row += `  伤:${cd.damage}  ${(cd.actionTime / 1000).toFixed(1)}s  顺序:${cd.targetOrder || ''}`;
-          } else {
-            row += `  重:${cd.weight}  ${getEntityCategory(cd).join(' / ')}`;
-          }
-          row += `  <span class="sb-tip-muted">槽耗${cd.slotCost}</span></div>`;
-          h += row;
-        }
-      }
-      h += '<div class="sb-tip-footer">';
-      h += `<span>价值</span><span>${def.value}</span>`;
-      h += '</div>';
+      // 池物品模式
+      h += renderPoolDef();
     }
     inner.innerHTML = h;
   } else {
     const def = getAffixDef(defId);
     if (!def) return;
+    // Header: 名称(左) + 价格(右) 同行
     let h = `<div class="sb-tip-header"><div class="sb-tip-name">${def.name}</div>`;
-    h += `<div class="sb-tip-badges">${getCategoryName(def.category)}</div></div>`;
-    h += tipSection('效果');
+    h += `<div class="sb-tip-price">价${Math.abs(def.costValue)}</div></div>`;
+    // 分类
+    h += `<div class="sb-tip-cat">${getCategoryName(def.category)}</div>`;
+    // 效果描述
+    h += tipSection('效果描述');
     h += `<div class="sb-tip-effect">${def.effect}</div>`;
-    h += tipSection('参数');
+    // 基本信息
+    h += tipSection('基本信息');
     h += '<div class="sb-tip-grid">';
-    h += tipkv('槽耗', def.slotCost);
-    if (def.repeatable) h += tipkv('可重复', '是');
+    h += tipkv('数值', def.value);
+    h += tipkv('槽位消耗', def.slotCost);
+    h += tipkv('可重复', def.repeatable ? '是' : '否');
     h += '</div>';
-    h += '<div class="sb-tip-footer">';
-    h += `<span>价值</span><span>${Math.abs(def.costValue)}</span>`;
-    h += '</div>';
+    // 词条
+    const hasAffixInfo = def.prerequisite.length > 0 || def.poolPrerequisite.length > 0;
+    if (hasAffixInfo) {
+      h += tipSection('词条');
+      if (def.prerequisite.length > 0) {
+        h += `<div class="sb-tip-fixed-row">前置词条: ${resolveNames(def.prerequisite)}</div>`;
+      }
+      if (def.poolPrerequisite.length > 0) {
+        h += `<div class="sb-tip-fixed-row">池前置: ${resolveNames(def.poolPrerequisite)}</div>`;
+      }
+    }
     inner.innerHTML = h;
   }
 
@@ -820,14 +911,10 @@ function hideSimTooltip() {
   }
 
   function renderPoolEntityRow(e: EntityDef): string {
-    const cat = getEntityCategory(e).join(' / ');
-    let info = `价${e.value}  槽耗${e.slotCost}`;
-    if (e.isActive) info = `伤:${e.damage} ${(e.actionTime / 1000).toFixed(1)}s  ${info}`;
     return `<div class="sb-pool-item" data-defid="${e.id}" data-type="entity"
       data-source="pool" draggable="true">
       <span class="item-name">${e.name}</span>
-      <span class="item-stat">${cat}</span>
-      <span class="item-stat">${info}</span>
+      <span class="item-stat">价${e.value}  槽耗${e.slotCost}</span>
     </div>`;
   }
 
@@ -1042,6 +1129,16 @@ function hideSimTooltip() {
       if (mode === 'build') h += `  价值: ${edef.value}`;
       h += '</div>';
     }
+    // 被动加成
+    if (edef && hasPassive(edef)) {
+      h += '<div class="sb-card-stats">';
+      if (!edef.isActive && edef.damage) h += `伤害加成: +${edef.damage}  `;
+      if (edef.hpBonus) h += `生命加成: ${edef.hpBonus > 0 ? '+' : ''}${edef.hpBonus}  `;
+      if (edef.hpRegenerationBonus) h += `生命恢复: +${edef.hpRegenerationBonus}/s  `;
+      if (edef.staminaBonus) h += `耐力加成: +${edef.staminaBonus}  `;
+      if (edef.staminaRegenerationBonus) h += `耐力恢复: +${edef.staminaRegenerationBonus}/s`;
+      h += '</div>';
+    }
     h += '</div>';
 
     // Block 2: 主动动作
@@ -1065,7 +1162,9 @@ function hideSimTooltip() {
 
     // Block 3: 词条
     const dynAffixCount = (item.children || []).filter(c => c.type === 'affix').length;
-    const hasAffixBlock = (edef && edef.dynamicAffixSlots > 0) || dynAffixCount > 0 || (edef && edef.fixedAffixes.length > 0);
+    const hasAffixBlock = (edef && edef.dynamicAffixSlots > 0) || dynAffixCount > 0 || (edef && edef.fixedAffixes.length > 0)
+      || (edef && edef.poolPrerequisite.length > 0)
+      || (edef && edef.preloadedDynamicAffixes && edef.preloadedDynamicAffixes.length > 0);
     if (hasAffixBlock) {
       h += '<div class="sb-card-block">';
       const affixSlots = edef ? edef.dynamicAffixSlots : 0;
@@ -1075,6 +1174,14 @@ function hideSimTooltip() {
       h += `<div class="sb-block-title" data-affixblocktoggle="${instanceId}" style="cursor:pointer;">`;
       h += `词条 · ${dynAffixCount}/${affixSlots} 槽位 <span style="font-weight:400;color:var(--sb-text-muted,inherit);margin-left:2px;">${affixBlockCollapsed ? '展开' : '收起'}</span></div>`;
       h += `<div class="sb-foldable${affixBlockCollapsed ? ' sb-folded' : ''}">`;
+      // 前置词条
+      if (edef && edef.poolPrerequisite.length > 0) {
+        h += `<div class="sb-card-stats">前置词条: ${resolveNames(edef.poolPrerequisite)}</div>`;
+      }
+      // 预装动态词条
+      if (edef && edef.preloadedDynamicAffixes && edef.preloadedDynamicAffixes.length > 0) {
+        h += `<div class="sb-card-stats">预装动态词条: ${resolveNames(edef.preloadedDynamicAffixes)}</div>`;
+      }
       // 固定词条
       if (edef && edef.fixedAffixes.length > 0) {
         const fixCollapsed = state.collapsedFixedAffixRows.has(instanceId);
