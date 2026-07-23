@@ -113,7 +113,6 @@ export class GameEngine {
   rightPanel: string | null = null;
 
   // 战斗相关
-  combatSpeed = 1; // 0.5 | 1 | 2
   combatRunning = false;
   combatPaused = false;
   combatPlayerUnits: CombatUnitRuntime[] | null = null;
@@ -762,15 +761,18 @@ export class GameEngine {
     return false;
   }
 
-  /** 时间线驱动战斗引擎（内部核心，不含状态管理） */
+  /** 固定时间步长战斗引擎（内部核心，不含状态管理）。
+   *  每 100ms 推进一次，恢复和武器冷却均匀递减。
+   *  runCombat 和 runSimCombat 共用此引擎，区别仅在于 BD 来源和战后处理。 */
   private async _runBattleCore(
     playerUnits: CombatUnitRuntime[],
     enemyUnits: CombatUnitRuntime[],
     onEvent: (evt: CombatEvent) => void,
-    speed: number | (() => number),
     isPaused?: () => boolean,
   ): Promise<{ win: boolean }> {
     const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
+    const TICK_MS = 100; // 固定时间步长
+    const round6 = (v: number) => Math.round(v * 1e6) / 1e6;
 
     let simTime = 0;
     const MAX_SIM_TIME = 120000; // 2 分钟模拟时间上限
@@ -785,45 +787,37 @@ export class GameEngine {
         await delay(50);
       }
 
-      // 找到所有武器中最小的 remainingTime
-      let dt = Infinity;
-      const allWeapons: { unit: CombatUnitRuntime; weapon: CombatWeaponRuntime; isPlayer: boolean }[] = [];
+      await delay(TICK_MS);
 
+      simTime += TICK_MS;
+
+      // 构建存活单位的武器列表
+      const allWeapons: { unit: CombatUnitRuntime; weapon: CombatWeaponRuntime; isPlayer: boolean }[] = [];
       for (const u of playerUnits) {
         if (u.currentHp <= 0) continue;
         for (const w of u.weapons) {
-          if (w.remainingTime < dt) dt = w.remainingTime;
           allWeapons.push({ unit: u, weapon: w, isPlayer: true });
         }
       }
       for (const e of enemyUnits) {
         if (e.currentHp <= 0) continue;
         for (const w of e.weapons) {
-          if (w.remainingTime < dt) dt = w.remainingTime;
           allWeapons.push({ unit: e, weapon: w, isPlayer: false });
         }
       }
 
-      if (dt === Infinity || dt <= 0) dt = 100; // fallback
-
-      // 实际等待（speed 支持 getter 函数以允许运行时变速）
-      const currentSpeed = typeof speed === 'function' ? speed() : speed;
-      await delay(Math.max(dt / currentSpeed, 50));
-
-      simTime += dt;
-
       // 推进时间 + 耐力恢复 + 生命恢复
       for (const u of playerUnits) {
         if (u.currentHp <= 0) continue;
-        u.currentStamina = Math.min(u.currentStamina + u.staminaRegen * dt / 1000, u.maxStamina);
-        u.currentHp = Math.min(u.currentHp + u.hpRegeneration * dt / 1000, u.totalHp);
-        for (const w of u.weapons) w.remainingTime -= dt;
+        u.currentStamina = round6(Math.min(u.currentStamina + u.staminaRegen * TICK_MS / 1000, u.maxStamina));
+        u.currentHp = round6(Math.min(u.currentHp + u.hpRegeneration * TICK_MS / 1000, u.totalHp));
+        for (const w of u.weapons) w.remainingTime -= TICK_MS;
       }
       for (const e of enemyUnits) {
         if (e.currentHp <= 0) continue;
-        e.currentStamina = Math.min(e.currentStamina + e.staminaRegen * dt / 1000, e.maxStamina);
-        e.currentHp = Math.min(e.currentHp + e.hpRegeneration * dt / 1000, e.totalHp);
-        for (const w of e.weapons) w.remainingTime -= dt;
+        e.currentStamina = round6(Math.min(e.currentStamina + e.staminaRegen * TICK_MS / 1000, e.maxStamina));
+        e.currentHp = round6(Math.min(e.currentHp + e.hpRegeneration * TICK_MS / 1000, e.totalHp));
+        for (const w of e.weapons) w.remainingTime -= TICK_MS;
       }
 
       // 触发 remainingTime <= 0 的武器
@@ -842,7 +836,7 @@ export class GameEngine {
         }
 
         // 消耗耐力
-        unit.currentStamina -= effectiveCost;
+        unit.currentStamina = round6(unit.currentStamina - effectiveCost);
 
         // 选择目标（根据 targetFaction 决定从哪方选）
         const target = this.selectTarget(weapon, playerUnits, enemyUnits, isPlayer);
@@ -850,9 +844,7 @@ export class GameEngine {
 
         // 计算伤害（dmg 可为负值=恢复HP）
         const dmg = damage;
-        target.currentHp -= dmg;
-        // HP 上限保护（耐力系统已有此保护，HP 之前遗漏）
-        target.currentHp = Math.min(target.currentHp, target.totalHp);
+        target.currentHp = round6(Math.min(target.currentHp - dmg, target.totalHp));
 
         // 重置倒计时
         weapon.remainingTime = weapon.actionTime;
@@ -896,11 +888,11 @@ export class GameEngine {
     return { win };
   }
 
-  /** 时间线驱动战斗引擎（正式游戏）。接入在线对战池：上传 BD + 抽取对手，池空自动获胜 */
+  /** 正式战斗：上传 BD → 抽取对手 → 运行引擎 → 结算奖励。
+   *  BD 来源：engine.state.deploySlots。对手来源：在线对战池。 */
   async runCombat(
     onEvent: (evt: CombatEvent) => void,
     onEnd: (win: boolean, gold: number) => void,
-    speed: number,
   ) {
     const snapshots = this.calculateCombatSnapshots();
 
@@ -955,7 +947,7 @@ export class GameEngine {
 
     await new Promise(r => setTimeout(r, 300)); // 让 UI 先渲染
 
-    const result = await this._runBattleCore(playerUnits, enemyUnits, onEvent, speed);
+    const result = await this._runBattleCore(playerUnits, enemyUnits, onEvent);
 
     const goldReward = result.win ? (10 + this.state.round * 5 + this.state.deploySlots.length * 2) : 0;
 
@@ -978,13 +970,13 @@ export class GameEngine {
     return { win: result.win, enemies: enemyUnits, goldReward };
   }
 
-  /** 模拟对战：使用自定义双方 BD 运行战斗，无金币/生长/存档 */
+  /** 模拟对战：接收外部双方 BD → 运行引擎 → 通知结果。
+   *  BD 来源：外部传入 playerSlots / enemySlots。无金币、无生长、无存档。 */
   async runSimCombat(
     playerSlots: DeploySlot[],
     enemySlots: DeploySlot[],
     onEvent: (evt: CombatEvent) => void,
     onEnd: (win: boolean) => void,
-    speed: number | (() => number),
     isPaused?: () => boolean,
   ) {
     const playerSnaps = this.calculateCombatSnapshots(playerSlots);
@@ -1005,7 +997,7 @@ export class GameEngine {
 
     await new Promise(r => setTimeout(r, 300));
 
-    const result = await this._runBattleCore(playerUnits, enemyUnits, onEvent, speed, isPaused);
+    const result = await this._runBattleCore(playerUnits, enemyUnits, onEvent, isPaused);
 
     this.combatPlayerUnits = null;
     this.combatEnemyUnits = null;

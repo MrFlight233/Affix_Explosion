@@ -23,7 +23,6 @@ export class UIManager {
   // 战斗状态
   combatEnemies: CombatUnitSnapshot[] = [];
   combatLog: CombatEvent[] = [];
-  combatSpeed: number = 1;
   combatFinished: boolean = false;
   combatUpdateTimer: any = null;
 
@@ -484,16 +483,7 @@ export class UIManager {
   renderLeftButtons(isCombat: boolean) {
     const area = document.getElementById('left-btns')!;
     if (isCombat) {
-      const sp = this.combatSpeed;
-      area.innerHTML = `
-        <span style="font-size:12px;color:var(--text-dim);margin-right:4px;">速度:</span>
-        <button class="btn btn-small ${sp === 0.5 ? 'active' : ''}" id="btn-speed-05">0.5x</button>
-        <button class="btn btn-small ${sp === 1 ? 'active' : ''}" id="btn-speed-1">1x</button>
-        <button class="btn btn-small ${sp === 2 ? 'active' : ''}" id="btn-speed-2">2x</button>
-      `;
-      document.getElementById('btn-speed-05')!.onclick = () => { this.combatSpeed = 0.5; this.render(); };
-      document.getElementById('btn-speed-1')!.onclick = () => { this.combatSpeed = 1; this.render(); };
-      document.getElementById('btn-speed-2')!.onclick = () => { this.combatSpeed = 2; this.render(); };
+      area.innerHTML = ``;
       return;
     }
 
@@ -859,7 +849,6 @@ export class UIManager {
   // 开始战斗
   async startCombat() {
     this.combatLog = [];
-    this.combatSpeed = 1;
     this.combatFinished = false;
     this.engine.state.phase = 2;
     this.render();
@@ -891,7 +880,6 @@ export class UIManager {
         this.combatFinished = true;
         this.render();
       },
-      this.combatSpeed,
     );
   }
 

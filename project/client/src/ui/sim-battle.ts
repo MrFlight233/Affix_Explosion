@@ -37,7 +37,6 @@ interface SimBattleState {
   battlePaused: boolean;
   playerWin: boolean | null;
   battleLog: CombatEvent[];
-  combatSpeed: number;
   battleUpdateTimer: number | null;
   finalPlayerUnits: CombatUnitRuntime[] | null;
   finalEnemyUnits: CombatUnitRuntime[] | null;
@@ -73,7 +72,6 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
     battlePaused: false,
     playerWin: null,
     battleLog: [],
-    combatSpeed: 1,
     battleUpdateTimer: null,
     finalPlayerUnits: null,
     finalEnemyUnits: null,
@@ -201,7 +199,6 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       const target = e.target as HTMLElement;
       const backBtn = target.closest('#sb-btn-edit-back');
       const pauseBtn = target.closest('#sb-btn-pause');
-      const speedBtn = target.closest('[data-speed]');
       if (backBtn) {
         if (state.battleUpdateTimer !== null) { cancelAnimationFrame(state.battleUpdateTimer); state.battleUpdateTimer = null; }
         state.inBattle = false; state.battleFinished = false; state.battlePaused = false;
@@ -211,12 +208,6 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       if (pauseBtn) {
         state.battlePaused = !state.battlePaused;
         if (!state.battlePaused) state.lastTickWallTime = Date.now(); // 恢复时重置插值时钟
-        updateZone('sb-battle-header', renderBattleHeader());
-      }
-      if (speedBtn) {
-        state.combatSpeed = parseFloat((speedBtn as HTMLElement).dataset.speed!);
-        if (state.battlePaused) state.battlePaused = false;
-        state.lastTickWallTime = Date.now(); // 变速时重置插值时钟
         updateZone('sb-battle-header', renderBattleHeader());
       }
     });
@@ -392,7 +383,7 @@ function renderTooltipTree(
   if (depth === 0) {
     // 顶层属性
     if (isSt) {
-      const hp = combatUnit ? `${Math.max(combatUnit.currentHp, 0)}/${combatUnit.totalHp}` : `${def.hp}/${def.hp}`;
+      const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${def.hp}/${def.hp}`;
       const stam = combatUnit ? `${Math.floor(combatUnit.currentStamina)}/${combatUnit.maxStamina}` : `${def.maxStamina}/${def.maxStamina}`;
       const sRegen = combatUnit ? combatUnit.staminaRegen : def.staminaRegen;
       const hRegen = combatUnit ? combatUnit.hpRegeneration : (def.hpRegen || 0);
@@ -731,7 +722,6 @@ function hideSimTooltip() {
       ${state.battleFinished ? '<span>战斗结束</span>' : `<span>模拟时间: ${state.battleLog.length > 0 ? state.battleLog[state.battleLog.length - 1].time + 'ms' : '0ms'}</span>`}
       <span style="flex:1;"></span>
       <button class="sb-speed-btn${state.battlePaused ? ' paused' : ''}" id="sb-btn-pause">${state.battlePaused ? '已暂停' : '暂停'}</button>
-      ${[0.5, 1, 2].map(s => `<button class="sb-speed-btn${state.combatSpeed === s && !state.battlePaused ? ' active' : ''}" data-speed="${s}">${s}x</button>`).join('')}
     `;
   }
 
@@ -860,7 +850,7 @@ function hideSimTooltip() {
     const isActive = !isSt && edef.isActive;
 
     if (isSt) {
-      const hp = combatUnit ? `${Math.max(combatUnit.currentHp, 0)}/${combatUnit.totalHp}` : `${edef.hp}/${edef.hp}`;
+      const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${edef.hp}/${edef.hp}`;
       const stam = combatUnit ? `${Math.floor(combatUnit.currentStamina)}/${combatUnit.maxStamina}` : `${edef.maxStamina}/${edef.maxStamina}`;
       let s: string;
       if (mode === 'battle' && combatUnit && sideFirst) {
@@ -898,7 +888,7 @@ function hideSimTooltip() {
     } else {
       const cat = getEntityCategory(edef).join(' / ');
       if (mode === 'battle' && combatUnit && sideFirst) {
-        const hp = `${Math.max(combatUnit.currentHp, 0)}/${combatUnit.totalHp}`;
+        const hp = `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}`;
         return `${edef.name}  HP:<span id="cu-hp-${sideFirst}-${item.instanceId}">${hp}</span>  重:${edef.weight}  ${cat}`;
       }
       return `${edef.name}  HP:${edef.hp}  重:${edef.weight}  ${cat}`;
@@ -967,7 +957,7 @@ function hideSimTooltip() {
     h += '<div class="sb-card-block">';
     h += '<div class="sb-block-title">属性</div>';
     if (isSt) {
-      const hp = combatUnit ? `${Math.max(combatUnit.currentHp, 0)}/${combatUnit.totalHp}` : `${edef!.hp}/${edef!.hp}`;
+      const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${edef!.hp}/${edef!.hp}`;
       const stam = combatUnit ? `${Math.floor(combatUnit.currentStamina)}/${combatUnit.maxStamina}` : `${edef!.maxStamina}/${edef!.maxStamina}`;
       const sRegen = combatUnit ? combatUnit.staminaRegen : edef!.staminaRegen;
       const hRegen = combatUnit ? combatUnit.hpRegeneration : (edef!.hpRegen || 0);
@@ -986,7 +976,7 @@ function hideSimTooltip() {
     } else if (isEntity && edef) {
       h += '<div class="sb-card-stats">';
       if (mode === 'battle' && combatUnit) {
-        h += `HP: <span id="cu-hp-${sideFirst}-${item.instanceId}">${Math.max(combatUnit.currentHp, 0)}/${combatUnit.totalHp}</span>  `;
+        h += `HP: <span id="cu-hp-${sideFirst}-${item.instanceId}">${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}</span>  `;
       } else if (mode === 'build') {
         h += `HP: ${edef.hp}  `;
       }
@@ -1144,7 +1134,7 @@ function hideSimTooltip() {
       } else if (evt.targetName === '战斗开始') {
         h += `<div class="sb-log-entry">[0ms] 战斗开始</div>`;
       } else {
-        h += `<div class="sb-log-entry">[${evt.time}ms] ${evt.actorName} · ${evt.weaponName} -> ${evt.targetName} 伤害 ${evt.damage} (HP:${evt.targetHpAfter}/${evt.targetMaxHp})</div>`;
+        h += `<div class="sb-log-entry">[${evt.time}ms] ${evt.actorName} · ${evt.weaponName} -> ${evt.targetName} 伤害 ${evt.damage} (HP:${Math.round(evt.targetHpAfter)}/${evt.targetMaxHp})</div>`;
       }
     }
     return h;
@@ -1186,7 +1176,7 @@ function hideSimTooltip() {
       const unit = units.find(u => u.instanceId === instId);
       if (!unit) return;
       let newVal = '';
-      if (type === 'hp') newVal = `${Math.max(unit.currentHp, 0)}/${unit.totalHp}`;
+      if (type === 'hp') newVal = `${Math.round(Math.max(unit.currentHp, 0))}/${unit.totalHp}`;
       else if (type === 'sta') newVal = `${Math.floor(unit.currentStamina)}/${unit.maxStamina}`;
       else if (type === 'cd') {
         const wIdx = parseInt(parts[4] || '0');
@@ -1199,10 +1189,9 @@ function hideSimTooltip() {
             state.lastTickWallTime = Date.now();
           }
           weaponPrevRemaining.set(spanId, rawRemaining);
-          // 实时插值：从上个引擎 tick 起，模拟时间内经过的毫秒数
+          // 实时插值：从上个引擎 tick 起，经过的真实时间
           const wallElapsed = Date.now() - state.lastTickWallTime;
-          const simElapsed = wallElapsed * state.combatSpeed;
-          const displayMs = Math.max(rawRemaining - simElapsed, 0);
+          const displayMs = Math.max(rawRemaining - wallElapsed, 0);
           newVal = `${(displayMs / 1000).toFixed(1)}s`;
         }
       } else if (type === 'ov') {
@@ -2109,7 +2098,7 @@ function hideSimTooltip() {
           } else if (evt.targetName === '战斗开始') {
             entryHtml = '<div class="sb-log-entry">[0ms] 战斗开始</div>';
           } else {
-            entryHtml = `<div class="sb-log-entry">[${evt.time}ms] ${evt.actorName} · ${evt.weaponName} -> ${evt.targetName} 伤害 ${evt.damage} (HP:${evt.targetHpAfter}/${evt.targetMaxHp})</div>`;
+            entryHtml = `<div class="sb-log-entry">[${evt.time}ms] ${evt.actorName} · ${evt.weaponName} -> ${evt.targetName} 伤害 ${evt.damage} (HP:${Math.round(evt.targetHpAfter)}/${evt.targetMaxHp})</div>`;
           }
           logEl.insertAdjacentHTML('beforeend', entryHtml);
           logEl.scrollTop = logEl.scrollHeight;
@@ -2127,7 +2116,6 @@ function hideSimTooltip() {
         state.playerWin = win;
         renderZones();
       },
-      () => state.combatSpeed,
       () => state.battlePaused,
     );
 
