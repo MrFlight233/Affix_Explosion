@@ -613,7 +613,7 @@ function showSimTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affix', 
       if (hasPassive(def)) {
         html += tipSection('被动加成');
         html += '<div class="sb-tip-grid">';
-        if (!def.isActive && def.damage) html += tipkv('伤害加成', '+' + def.damage);
+        if (def.damageBonus) html += tipkv('伤害加成', (def.damageBonus > 0 ? '+' : '') + def.damageBonus);
         if (def.hpBonus) html += tipkv('生命加成', (def.hpBonus > 0 ? '+' : '') + def.hpBonus);
         if (def.hpRegenerationBonus) html += tipkv('生命恢复加成', '+' + def.hpRegenerationBonus + '/s');
         if (def.staminaBonus) html += tipkv('耐力加成', '+' + def.staminaBonus);
