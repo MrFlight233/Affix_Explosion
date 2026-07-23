@@ -31,13 +31,13 @@ export interface EntityDef {
   hp: number;
   maxStamina: number; staminaRegen: number; hpRegen: number; maxLoad: number;
 
-  // ---- 主动装备字段（isActive=true 时有效） ----
-  /** 启动端始终为 false */
+  // ---- 可触发动作字段（isActive=true 时有效） ----
+  /** 实体是否拥有可触发动作 */
   isActive: boolean;
   staminaCost: number;
-  /** 主动装备: 绝对毫秒值; 启动端/被动装备: 0 */
+  /** 触发间隔（毫秒），isActive=true 时有效，否则为 0 */
   actionTime: number;
-  /** 主动装备: 每次触发伤害（可为负值表示恢复HP）; 被动装备: 全局伤害加成（加至所有主动武器）; 启动端: 始终为 0 */
+  /** isActive=true 时: 每次触发伤害（可为负值=恢复HP）; isActive=false 时: 全局伤害加成（加至所有武器） */
   damage: number;
   targetType: string | null; targetOrder: string | null; priorityTarget: number | null;
   targetFaction: string | null; // '友方'|'敌人'|'所有'
@@ -209,7 +209,7 @@ export function isStarter(def: EntityDef): boolean {
   return def.fixedAffixes.includes('starter');
 }
 
-/** 判断是否为主动装备（非启动端且 isActive=true） */
+/** 判断是否为可触发动作实体（非启动端且 isActive=true） */
 export function isActiveEquipment(def: EntityDef): boolean {
   return !isStarter(def) && def.isActive;
 }

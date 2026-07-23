@@ -175,10 +175,10 @@ export class UIManager {
         html += `<span class="item-stat">耐力:${edef.maxStamina}/${edef.staminaRegen}/s 负重:${load}/${edef.maxLoad}</span>`;
         if (over) html += `<span class="item-stat warn">超重</span>`;
       } else if (edef.isActive) {
-        // 主动装备
+        // 可触发动作参数
         html += `<span class="item-stat">伤害:${edef.damage} 耗时:${edef.actionTime}ms 耐耗:${edef.staminaCost} ${edef.targetType}</span>`;
       } else {
-        // 被动装备
+        // 被动加成
         if (edef.damage) html += `<span class="item-stat">伤害加成:${edef.damage}</span>`;
         
         if (edef.staminaRegenerationBonus) html += `<span class="item-stat">耐恢:${edef.staminaRegenerationBonus}</span>`;

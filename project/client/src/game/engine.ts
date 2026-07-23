@@ -14,7 +14,7 @@ import { data as dataApi, saves as savesApi } from '../api/client';
 
 export type GamePhase = 1 | 2;
 
-// ---- 战斗单位快照（v3：启动端不自带攻击，武器独立触发） ----
+// ---- 战斗单位快照（v3：统一实体模型，可触发动作独立触发） ----
 
 export interface CombatUnitSnapshot {
   instanceId: string;   // 唯一实例 ID（来自 ItemInstance）
@@ -527,7 +527,7 @@ export class GameEngine {
             targetFaction: String((getEffectiveValue(child, 'targetFaction') ?? cdef.targetFaction) || '敌人'),
           });
         } else {
-          // 被动装备 → 累加伤害到被动池
+          // isActive=false 实体 → 累加伤害到被动池
           passiveDamageBonus += Number(getEffectiveValue(child, 'damage') ?? 0);
           // 递归处理容器内的嵌套子项
           if (child.children && child.children.length > 0) {

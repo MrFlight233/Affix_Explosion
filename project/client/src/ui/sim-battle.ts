@@ -394,7 +394,8 @@ function getTypeBadges(def: EntityDef, inst?: ItemInstance | null): string[] {
       }
     }
   }
-  tags.push(def.isActive ? '主动' : '被动');
+  if (def.isActive) tags.push('可触发');
+  if (!def.isActive) tags.push('被动');
   return tags;
 }
 
@@ -435,7 +436,7 @@ function renderTooltipTree(
       if (def.priorityTarget != null) h += tipkv('优先目标', def.priorityTarget);
       h += '</div>';
     }
-    if (!isSt && !def.isActive) {
+    if (!def.isActive) {
       h += tipSection('属性');
       h += '<div class="sb-tip-grid">';
       if (def.damage) h += tipkv('伤害加成', '+' + def.damage);
@@ -564,7 +565,7 @@ function showSimTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affix', 
         if (def.priorityTarget != null) h += tipkv('优先目标', def.priorityTarget);
         h += '</div>';
       }
-      if (!isSt && !def.isActive) {
+      if (!def.isActive) {
         h += tipSection('属性');
         h += '<div class="sb-tip-grid">';
         if (def.damage) h += tipkv('伤害加成', '+' + def.damage);
@@ -821,7 +822,7 @@ function hideSimTooltip() {
   function renderPoolEntityRow(e: EntityDef): string {
     const cat = getEntityCategory(e).join(' / ');
     let info = `价${e.value}  槽耗${e.slotCost}`;
-    if (!isStarter(e) && e.isActive) info = `伤:${e.damage} ${(e.actionTime / 1000).toFixed(1)}s  ${info}`;
+    if (e.isActive) info = `伤:${e.damage} ${(e.actionTime / 1000).toFixed(1)}s  ${info}`;
     return `<div class="sb-pool-item" data-defid="${e.id}" data-type="entity"
       data-source="pool" draggable="true">
       <span class="item-name">${e.name}</span>
@@ -876,7 +877,7 @@ function hideSimTooltip() {
     const edef = getEntityDef(item.defId);
     if (!edef) return item.defId;
     const isSt = isStarter(edef);
-    const isActive = !isSt && edef.isActive;
+    const isActive = edef.isActive;
 
     if (isSt) {
       const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${edef.hp}/${edef.hp}`;
@@ -988,7 +989,7 @@ function hideSimTooltip() {
     const affixBlockCollapsed = state.collapsedAffixBlocks.has(instanceId);
     const childBlockCollapsed = state.collapsedChildBlocks.has(instanceId);
     const isSt = isEntity && isStarter(def as EntityDef);
-    const isActive = isEntity && !isSt && (def as EntityDef).isActive;
+    const isActive = isEntity && (def as EntityDef).isActive;
     const edef = isEntity ? (def as EntityDef) : null;
     const starterHasActive = isSt && edef ? Boolean(getEffectiveValue(item, 'isActive') ?? edef.isActive) : false;
 

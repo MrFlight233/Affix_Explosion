@@ -100,13 +100,13 @@ export interface EntityDef {
   hpRegen: number;        // 生命恢复/秒
   maxLoad: number;
 
-  // ---- 主动装备字段（isActive=true 时有效） ----
-  /** 启动端始终为 false */
+  // ---- 可触发动作字段（isActive=true 时有效） ----
+  /** 实体是否拥有可触发动作 */
   isActive: boolean;
   staminaCost: number;
-  /** 主动装备: 绝对毫秒值; 启动端/被动装备: 0 */
+  /** 触发间隔（毫秒），isActive=true 时有效，否则为 0 */
   actionTime: number;
-  /** 主动装备: 每次触发伤害（可为负值表示恢复HP）; 被动装备: 全局伤害加成（加至所有主动武器）; 启动端: 自身主动动作伤害 */
+  /** isActive=true 时: 每次触发伤害（可为负值=恢复HP）; isActive=false 时: 全局伤害加成（加至所有武器） */
   damage: number;
   targetType: string | null;       // '近战'|'远程' — 针对类型
   targetOrder: string | null;      // '从上往下'|'从下往上' — 针对顺序
@@ -194,7 +194,7 @@ export interface CombatUnitSnapshot {
   activeWeapons: {
     name: string;
     actionTime: number;     // 绝对毫秒，固定值
-    damage: number;          // 武器自身伤害 + 被动装备 damage 加成
+    damage: number;          // 武器自身伤害 + isActive=false 实体 damage 加成
     staminaCost: number;
     targetType: string;      // '近战' | '远程'
     targetOrder: string;     // '从上往下' | '从下往上'

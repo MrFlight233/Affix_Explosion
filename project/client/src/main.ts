@@ -216,7 +216,7 @@ function showFullItemPool() {
           // 实体筛选按钮行
           listHtml += '<div class="filter-row" style="margin-bottom:4px;">';
           const efilters: { v: EntityFilter; label: string }[] = [
-            { v: 'all-entity', label: '全部实体' }, { v: 'starter', label: '启动端' }, { v: 'active', label: '主动装备' }, { v: 'passive', label: '被动装备' },
+            { v: 'all-entity', label: '全部实体' }, { v: 'starter', label: '启动端' }, { v: 'active', label: '可触发' }, { v: 'passive', label: '被动加成' },
           ];
           for (const f of efilters) {
             listHtml += `<button class="btn btn-small ${entityFilter === f.v ? 'active' : ''}" data-efilter="${f.v}">${f.label}</button>`;
@@ -233,7 +233,7 @@ function showFullItemPool() {
       }
 
       for (const e of filteredEntities) {
-        const typeLabel = isStarter(e) ? '启动端' : e.isActive ? '主动装备' : '被动装备';
+        const typeLabel = [isStarter(e) ? '启动端' : '', e.isActive ? '可触发' : '', (!isStarter(e) && !e.isActive) ? '被动加成' : ''].filter(Boolean).join(' / ');
         const sel = selectedId === e.id ? ' style="background:#f0f0f0;font-weight:bold;"' : '';
         listHtml += `<div class="item-row ip-item" data-id="${e.id}" data-type="entity"${sel}>`;
         listHtml += `<span class="item-name">${e.name}</span>`;
@@ -319,7 +319,7 @@ function showFullItemPool() {
     const affix = getAffixDef(id);
 
     if (entity) {
-      const label = isStarter(entity) ? '启动端' : entity.isActive ? '主动装备' : '被动装备';
+      const label = [isStarter(entity) ? '启动端' : '', entity.isActive ? '可触发' : '', (!isStarter(entity) && !entity.isActive) ? '被动加成' : ''].filter(Boolean).join(' / ');
       const row = (k: string, v: string, extraClass?: string) =>
         `<tr><td class="tt-label" style="white-space:nowrap;vertical-align:top;padding-right:10px;">${k}</td><td${extraClass ? ` class="${extraClass}"` : ''}>${v}</td></tr>`;
 
@@ -335,7 +335,7 @@ function showFullItemPool() {
         h += row('负重上限', String(entity.maxLoad));
       }
 
-      // === 主动装备 ===
+      // === 可触发动作参数 ===
       if (entity.isActive) {
         h += '<tr><td colspan="2" style="font-weight:bold;padding-top:8px;border-bottom:1px solid #eee;">战斗参数</td></tr>';
         h += row('伤害', String(entity.damage));

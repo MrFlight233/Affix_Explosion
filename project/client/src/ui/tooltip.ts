@@ -34,30 +34,35 @@ export function showTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affi
 
 function renderEntityTooltip(tip: HTMLElement, def: EntityDef) {
   const isSt = isStarter(def);
-  const label = isSt ? '启动端' : def.isActive ? '主动装备' : '被动装备';
+  // 统一实体模型：按条件独立显示标签，不使用互斥三元
+  const labels: string[] = [];
+  if (isSt) labels.push('启动端');
+  if (def.isActive) labels.push('可触发');
+  const hasPassive = !!(def.damage && !def.isActive) || def.hpBonus || def.hpRegenerationBonus || def.staminaBonus || def.staminaRegenerationBonus;
+  if (hasPassive) labels.push('被动加成');
+  const label = labels.join(' / ');
   const cat = getEntityCategory(def).join(' / ');
 
   let html = `<div class="tt-name">${def.name} [${label}-${cat}]</div>`;
 
   if (isSt) {
-    // 启动端
+    // 战斗属性
     html += `<div class="tt-row"><span class="tt-label">生命:</span>${def.hp}</div>`;
     html += `<div class="tt-row"><span class="tt-label">耐力:</span>${def.maxStamina} / ${def.staminaRegen}/s</div>`;
     html += `<div class="tt-row"><span class="tt-label">负重:</span>${def.maxLoad}</div>`;
   }
 
-  if (!isSt && def.isActive) {
-    // 主动装备
+  if (def.isActive) {
+    // 可触发动作参数
     html += `<div class="tt-row"><span class="tt-label">耗时:</span>${def.actionTime}ms</div>`;
     if (def.damage) html += `<div class="tt-row"><span class="tt-label">伤害:</span>${def.damage}</div>`;
     html += `<div class="tt-row"><span class="tt-label">耐力消耗:</span>${def.staminaCost}</div>`;
     html += `<div class="tt-row"><span class="tt-label">攻击:</span>${def.targetType} ${def.targetOrder}${def.priorityTarget ? ' [优先' + def.priorityTarget + ']' : ''}</div>`;
   }
 
-  if (!isSt && !def.isActive) {
-    // 被动装备
-    if (def.damage) html += `<div class="tt-row"><span class="tt-label">伤害加成:</span>+${def.damage}</div>`;
-    
+  if (hasPassive) {
+    // 被动加成
+    if (def.damage && !def.isActive) html += `<div class="tt-row"><span class="tt-label">伤害加成:</span>+${def.damage}</div>`;
     if (def.hpBonus) html += `<div class="tt-row"><span class="tt-label">生命加成:</span>${def.hpBonus > 0 ? '+' : ''}${def.hpBonus}</div>`;
     if (def.hpRegenerationBonus) html += `<div class="tt-row"><span class="tt-label">生命恢复加成:</span>+${def.hpRegenerationBonus}/秒</div>`;
     if (def.staminaBonus) html += `<div class="tt-row"><span class="tt-label">耐力加成:</span>+${def.staminaBonus}</div>`;
