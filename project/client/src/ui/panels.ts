@@ -179,7 +179,7 @@ export class UIManager {
         html += `<span class="item-stat">伤害:${edef.damage} 耗时:${edef.actionTime}ms 耐耗:${edef.staminaCost} ${edef.targetType}</span>`;
       } else {
         // 被动加成
-        if (edef.damage) html += `<span class="item-stat">伤害加成:${edef.damage}</span>`;
+        if (edef.damageBonus) html += `<span class="item-stat">伤害加成:${edef.damageBonus}</span>`;
         
         if (edef.staminaRegenerationBonus) html += `<span class="item-stat">耐恢:${edef.staminaRegenerationBonus}</span>`;
         if (edef.staminaBonus) html += `<span class="item-stat">耐力:${edef.staminaBonus}</span>`;

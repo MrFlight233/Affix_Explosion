@@ -30,6 +30,7 @@ export function initTables(): void {
       stamina_cost INTEGER NOT NULL DEFAULT 0,
       action_time INTEGER NOT NULL DEFAULT 0,
       damage      INTEGER NOT NULL DEFAULT 0,
+      damage_bonus INTEGER NOT NULL DEFAULT 0,
       target_type TEXT,
       target_order TEXT,
       priority_target INTEGER,
@@ -101,6 +102,8 @@ export function initTables(): void {
   migrateBattlePool(db);
   // ---- 迁移：被动加成字段扩展（regen_bonus → stamina_regeneration_bonus + 新增3列） ----
   migrateStaminaBonusFields(db);
+  // ---- 迁移：damage_bonus 字段拆分 ----
+  migrateDamageBonus(db);
 
   console.log('[DB] 所有表创建/验证完成');
 }
@@ -182,5 +185,25 @@ function migrateStaminaBonusFields(db: ReturnType<typeof getDB>): void {
     }
   } catch (e) {
     console.warn('[DB] 被动加成字段迁移跳过:', (e as Error).message);
+  }
+}
+
+/** 迁移 entities 表：damage → damage + damageBonus 字段拆分（幂等） */
+function migrateDamageBonus(db: ReturnType<typeof getDB>): void {
+  try {
+    const cols = db.prepare("PRAGMA table_info('entities')").all() as { name: string }[];
+    const colNames = new Set(cols.map(c => c.name));
+
+    if (!colNames.has('damage_bonus')) {
+      db.exec('ALTER TABLE entities ADD COLUMN damage_bonus INTEGER NOT NULL DEFAULT 0');
+      console.log('[DB] entities 表已迁移：添加 damage_bonus 列');
+      // 将现有 isActive=false 实体的 damage 值迁移到 damageBonus
+      const result = db.prepare(
+        "UPDATE entities SET damage_bonus = damage, damage = 0 WHERE is_active = 0 AND damage != 0"
+      ).run();
+      console.log(`[DB] damage_bonus 数据迁移完成：${result.changes} 行`);
+    }
+  } catch (e) {
+    console.warn('[DB] damage_bonus 迁移跳过:', (e as Error).message);
   }
 }

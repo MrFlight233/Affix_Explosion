@@ -35,7 +35,7 @@ export function showTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affi
 function renderEntityTooltip(tip: HTMLElement, def: EntityDef) {
   const isSt = isStarter(def);
   const cat = getEntityCategory(def).join(' / ');
-  const hasPsv = !!(def.damage && !def.isActive) || !!(def.hpBonus) || !!(def.hpRegenerationBonus) || !!(def.staminaBonus) || !!(def.staminaRegenerationBonus);
+  const hasPsv = !!(def.damageBonus) || !!(def.hpBonus) || !!(def.hpRegenerationBonus) || !!(def.staminaBonus) || !!(def.staminaRegenerationBonus);
 
   // 标题行: 名称(左) + 价格(右)
   let html = `<div class="tt-name"><span>${def.name}</span><span class="tt-price">价${def.value}</span></div>`;
@@ -66,7 +66,7 @@ function renderEntityTooltip(tip: HTMLElement, def: EntityDef) {
   // 被动加成
   if (hasPsv) {
     html += '<div class="tt-section">被动加成</div>';
-    if (def.damage && !def.isActive) html += `<div class="tt-row"><span class="tt-label">伤害加成:</span>${def.damage > 0 ? '+' : ''}${def.damage}</div>`;
+    if (def.damageBonus) html += `<div class="tt-row"><span class="tt-label">伤害加成:</span>${def.damageBonus > 0 ? '+' : ''}${def.damageBonus}</div>`;
     if (def.hpBonus) html += `<div class="tt-row"><span class="tt-label">生命加成:</span>${def.hpBonus > 0 ? '+' : ''}${def.hpBonus}</div>`;
     if (def.hpRegenerationBonus) html += `<div class="tt-row"><span class="tt-label">生命恢复:</span>+${def.hpRegenerationBonus}/秒</div>`;
     if (def.staminaBonus) html += `<div class="tt-row"><span class="tt-label">耐力加成:</span>+${def.staminaBonus}</div>`;

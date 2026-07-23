@@ -515,11 +515,8 @@ export class GameEngine {
         const isActive = getEffectiveValue(child, 'isActive') ?? cdef.isActive;
         if (isActive) {
           const wDamage = Number(getEffectiveValue(child, 'damage') ?? 0);
-          let weaponDamage = wDamage + growthStack;
-          // 符号感知：正的被动加成只影响正伤害武器，负的只影响负伤害（治疗）武器
-          if ((passiveDamageBonus > 0 && wDamage > 0) || (passiveDamageBonus < 0 && wDamage < 0)) {
-            weaponDamage += passiveDamageBonus;
-          }
+          const weaponDamage = wDamage + growthStack;
+          // 被动伤害加成统一在 calculateCombatSnapshots 阶段应用，避免双重累加
           weapons.push({
             name: String(getEffectiveValue(child, 'name') ?? cdef.name),
             actionTime: Number(getEffectiveValue(child, 'actionTime') ?? 0),
@@ -531,8 +528,8 @@ export class GameEngine {
             targetFaction: String((getEffectiveValue(child, 'targetFaction') ?? cdef.targetFaction) || '敌人'),
           });
         } else {
-          // isActive=false 实体 → 累加伤害到被动池
-          passiveDamageBonus += Number(getEffectiveValue(child, 'damage') ?? 0);
+          // isActive=false 实体 → 累加 damageBonus 到被动池
+          passiveDamageBonus += Number(getEffectiveValue(child, 'damageBonus') ?? 0);
           // 递归处理容器内的嵌套子项
           if (child.children && child.children.length > 0) {
             const nested = this.collectFromChildren(child.children, growthStack);
@@ -577,6 +574,7 @@ export class GameEngine {
         collected.totalStaminaBonus += edef.staminaBonus;
         collected.totalHpBonus += edef.hpBonus;
         collected.totalHpRegenerationBonus += edef.hpRegenerationBonus;
+        collected.passiveDamageBonus += Number(getEffectiveValue(slot.entity, 'damageBonus') ?? edef.damageBonus ?? 0);
       }
 
       // ★ 启动端自身如果是主动实体，也加入武器列表

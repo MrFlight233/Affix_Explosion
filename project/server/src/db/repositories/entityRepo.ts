@@ -53,6 +53,7 @@ export class EntityRepo {
       staminaCost: def.staminaCost ?? 0,
       actionTime: def.actionTime ?? 0,
       damage: def.damage ?? 0,
+      damageBonus: def.damageBonus ?? 0,
       targetType: def.targetType ?? def.attackType ?? null,
       targetOrder: def.targetOrder ?? def.attackOrder ?? null,
       priorityTarget: def.priorityTarget ?? null,
@@ -72,7 +73,7 @@ export class EntityRepo {
         fixed_affixes, dynamic_affix_slots, pool_prerequisite,
         default_children, preloaded_dynamic_affixes,
         hp, max_stamina, stamina_regen, hp_regen, max_load,
-        is_active, stamina_cost, action_time, damage,
+        is_active, stamina_cost, action_time, damage, damage_bonus,
         target_type, target_order, priority_target, target_faction,
         stamina_regeneration_bonus, stamina_bonus, hp_regeneration_bonus, hp_bonus, updated_at
       ) VALUES (
@@ -80,7 +81,7 @@ export class EntityRepo {
         @fixed_affixes, @dynamic_affix_slots, @pool_prerequisite,
         @default_children, @preloaded_dynamic_affixes,
         @hp, @max_stamina, @stamina_regen, @hp_regen, @max_load,
-        @is_active, @stamina_cost, @action_time, @damage,
+        @is_active, @stamina_cost, @action_time, @damage, @damage_bonus,
         @target_type, @target_order, @priority_target, @target_faction,
         @stamina_regeneration_bonus, @stamina_bonus, @hp_regeneration_bonus, @hp_bonus, @updated_at
       )
@@ -132,7 +133,7 @@ export class EntityRepo {
         pool_prerequisite=@pool_prerequisite,
         default_children=@default_children, preloaded_dynamic_affixes=@preloaded_dynamic_affixes,
         hp=@hp, max_stamina=@max_stamina, stamina_regen=@stamina_regen, hp_regen=@hp_regen, max_load=@max_load,
-        is_active=@is_active, stamina_cost=@stamina_cost, action_time=@action_time, damage=@damage,
+        is_active=@is_active, stamina_cost=@stamina_cost, action_time=@action_time, damage=@damage, damage_bonus=@damage_bonus,
         target_type=@target_type, target_order=@target_order,
         priority_target=@priority_target, target_faction=@target_faction,
         stamina_regeneration_bonus=@stamina_regeneration_bonus, stamina_bonus=@stamina_bonus, hp_regeneration_bonus=@hp_regeneration_bonus, hp_bonus=@hp_bonus, updated_at=@updated_at

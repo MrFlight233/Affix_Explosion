@@ -37,8 +37,10 @@ export interface EntityDef {
   staminaCost: number;
   /** 触发间隔（毫秒），isActive=true 时有效，否则为 0 */
   actionTime: number;
-  /** isActive=true 时: 每次触发伤害（可为负值=恢复HP）; isActive=false 时: 全局伤害加成（加至所有武器） */
+  /** 每次触发伤害（可为负值=恢复HP），isActive=true 时有效 */
   damage: number;
+  /** 全局伤害加成（加至所有武器），独立于 isActive */
+  damageBonus: number;
   targetType: string | null; targetOrder: string | null; priorityTarget: number | null;
   targetFaction: string | null; // '友方'|'敌人'|'所有'
 

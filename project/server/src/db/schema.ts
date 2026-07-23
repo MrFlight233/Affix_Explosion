@@ -31,6 +31,7 @@ export const entities = sqliteTable('entities', {
   staminaCost: integer('stamina_cost').notNull().default(0),
   actionTime: integer('action_time').notNull().default(0),
   damage: integer('damage').notNull().default(0),
+  damageBonus: integer('damage_bonus').notNull().default(0),
   targetType: text('target_type'),
   targetOrder: text('target_order'),
   priorityTarget: integer('priority_target'),
