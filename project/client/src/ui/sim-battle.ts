@@ -1031,10 +1031,6 @@ function hideSimTooltip() {
       return `${edef.name}  伤:${dmg}  ${time}  顺序:${order}${edef.priorityTarget ? ' 优先' + edef.priorityTarget : ''}`;
     } else {
       const cat = getEntityCategory(edef).join(' / ');
-      if (mode === 'battle' && combatUnit && sideFirst) {
-        const hp = `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}`;
-        return `${edef.name}  HP:<span id="cu-hp-${sideFirst}-${item.instanceId}">${hp}</span>  重:${edef.weight}  ${cat}`;
-      }
       return `${edef.name}  HP:${edef.hp}  重:${edef.weight}  ${cat}`;
     }
   }
@@ -1120,11 +1116,8 @@ function hideSimTooltip() {
       h += '</div>';
     } else if (isEntity && edef) {
       h += '<div class="sb-card-stats">';
-      if (mode === 'battle' && combatUnit) {
-        h += `HP: <span id="cu-hp-${sideFirst}-${item.instanceId}">${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}</span>  `;
-      } else if (mode === 'build') {
-        h += `HP: ${edef.hp}  `;
-      }
+      // 非启动端子实体无独立 combatUnit，统一显示 EntityDef HP
+      h += `HP: ${edef.hp}  `;
       h += `槽耗: ${edef.slotCost}  重: ${edef.weight}`;
       if (mode === 'build') h += `  价值: ${edef.value}`;
       h += '</div>';
