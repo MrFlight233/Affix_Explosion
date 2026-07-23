@@ -82,19 +82,25 @@ export class BattleRepo {
     }
   }
 
-  /** 随机抽取指定回合的 1 个对手 BD（含自己），池空返回 null */
+  /** 随机抽取指定回合的 1 个对手 BD（含自己），池空返回 null。
+   *  两步随机：先取最近 100 条（走主键索引），再 JS 侧随机选取。 */
   findByRound(round: number): any | null {
     const db = getDB();
-    const row = db.prepare(`
+
+    // 第一步：用主键索引高效取最近 100 条（无全表扫描）
+    const pool = db.prepare(`
       SELECT id, username, round, bd_json
       FROM battle_pool
       WHERE round = ?
-      ORDER BY RANDOM()
-      LIMIT 1
-    `).get(round) as any;
+      ORDER BY id DESC
+      LIMIT 100
+    `).all(round) as any[];
 
-    if (!row) return null;
-    return { ...row, bd_json: JSON.parse(row.bd_json) };
+    if (pool.length === 0) return null;
+
+    // 第二步：从 100 条内存池中随机取 1 条
+    const picked = pool[Math.floor(Math.random() * pool.length)];
+    return { ...picked, bd_json: JSON.parse(picked.bd_json) };
   }
 }
 

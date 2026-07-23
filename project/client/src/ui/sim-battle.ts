@@ -141,7 +141,8 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       const btn = (e.target as HTMLElement).closest('#sb-btn-back');
       if (btn) {
         hideSimTooltip();
-        if (state.battleUpdateTimer) clearInterval(state.battleUpdateTimer);
+        if (state.battleUpdateTimer) { cancelAnimationFrame(state.battleUpdateTimer); state.battleUpdateTimer = null; }
+        if (tooltipEl) { tooltipEl.remove(); tooltipEl = null; }
         onBack();
       }
     });
@@ -170,6 +171,8 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       if (bd) {
         if (side === 'player') state.playerSlots = bd;
         else state.enemySlots = bd;
+        // 所有可折叠卡片默认折叠
+        collapseAllCards(bd);
         renderZones();
         showToast(`已从对战池抽取 ${side === 'player' ? '玩家' : '对手'} BD`);
       } else {
@@ -200,7 +203,10 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       const backBtn = target.closest('#sb-btn-edit-back');
       const pauseBtn = target.closest('#sb-btn-pause');
       if (backBtn) {
+        hideSimTooltip();
+        cancelled = true;
         if (state.battleUpdateTimer !== null) { cancelAnimationFrame(state.battleUpdateTimer); state.battleUpdateTimer = null; }
+        if (tooltipEl) { tooltipEl.remove(); tooltipEl = null; }
         state.inBattle = false; state.battleFinished = false; state.battlePaused = false;
         state.battleLog = [];
         renderZones();
@@ -279,6 +285,27 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       }
     }
     return null;
+  }
+
+  /** 递归收集 DeploySlot 树中所有实体的 instanceId */
+  function collectEntityIds(slots: DeploySlot[]): string[] {
+    const ids: string[] = [];
+    const walk = (item: ItemInstance) => {
+      if (item.type === 'entity') ids.push(item.instanceId);
+      for (const c of (item.children || [])) walk(c);
+    };
+    for (const s of slots) {
+      walk(s.entity);
+      for (const c of s.children) walk(c);
+    }
+    return ids;
+  }
+
+  /** 将 BD 所有可折叠卡片设为折叠状态 */
+  function collapseAllCards(slots: DeploySlot[]) {
+    for (const id of collectEntityIds(slots)) {
+      state.collapsedCards.add(id);
+    }
   }
 
   function removeFromSlots(slots: DeploySlot[], instanceId: string): boolean {
@@ -482,6 +509,7 @@ function renderTooltipTree(
 
 let tooltipEl: HTMLElement | null = null;
 let tipShowTimer: ReturnType<typeof setTimeout> | null = null;
+let cancelled = false;
 
 function ensureTooltip(): HTMLElement {
   if (!tooltipEl) {
@@ -681,7 +709,8 @@ function hideSimTooltip() {
       document.getElementById('sb-battle-log')!.innerHTML = renderBattleLog();
       const resultEl = document.getElementById('sb-battle-result')!;
       if (state.battleFinished) {
-        resultEl.innerHTML = state.playerWin ? '玩家胜利！' : '玩家失败';
+        const durationSec = (engine.combatTime / 1000).toFixed(1);
+        resultEl.innerHTML = `${state.playerWin ? '玩家胜利' : '玩家失败'} · 用时 ${durationSec}s`;
         resultEl.style.display = '';
       } else {
         resultEl.style.display = 'none';
@@ -719,7 +748,7 @@ function hideSimTooltip() {
     return `
       <button class="btn" id="sb-btn-edit-back">← 返回编辑</button>
       <strong>模拟对战 · 回合${state.round}</strong>
-      ${state.battleFinished ? '<span>战斗结束</span>' : `<span>模拟时间: ${state.battleLog.length > 0 ? state.battleLog[state.battleLog.length - 1].time + 'ms' : '0ms'}</span>`}
+      ${state.battleFinished ? `<span>战斗结束 · 用时 ${(engine.combatTime / 1000).toFixed(1)}s</span>` : `<span>模拟时间: ${(engine.combatTime / 1000).toFixed(1)}s</span>`}
       <span style="flex:1;"></span>
       <button class="sb-speed-btn${state.battlePaused ? ' paused' : ''}" id="sb-btn-pause">${state.battlePaused ? '已暂停' : '暂停'}</button>
     `;
@@ -1130,11 +1159,11 @@ function hideSimTooltip() {
     let h = '';
     for (const evt of state.battleLog) {
       if (evt.effects.includes('击杀')) {
-        h += `<div class="sb-log-entry kill">[${evt.time}ms] ${evt.targetName} 击杀!</div>`;
+        h += `<div class="sb-log-entry kill">[${(evt.time / 1000).toFixed(1)}s] ${evt.targetName} 击杀!</div>`;
       } else if (evt.targetName === '战斗开始') {
-        h += `<div class="sb-log-entry">[0ms] 战斗开始</div>`;
+        h += `<div class="sb-log-entry">[0.0s] 战斗开始</div>`;
       } else {
-        h += `<div class="sb-log-entry">[${evt.time}ms] ${evt.actorName} · ${evt.weaponName} -> ${evt.targetName} 伤害 ${evt.damage} (HP:${Math.round(evt.targetHpAfter)}/${evt.targetMaxHp})</div>`;
+        h += `<div class="sb-log-entry">[${(evt.time / 1000).toFixed(1)}s] ${evt.actorName} · ${evt.weaponName} -> ${evt.targetName} 伤害 ${evt.damage} (HP:${Math.round(evt.targetHpAfter)}/${evt.targetMaxHp})</div>`;
       }
     }
     return h;
@@ -1214,11 +1243,11 @@ function hideSimTooltip() {
       const unit = units.find(u => u.instanceId === instId);
       card.classList.toggle('dead', !!(unit && unit.currentHp <= 0));
     });
-    // 更新时间（日志渲染已移至 onEvent 即时处理，这里只更新时间显示）
-    if (state.battleLog.length > 0 && !state.battleFinished) {
-      const lastTime = state.battleLog[state.battleLog.length - 1].time;
+    // 更新时间（从 engine.combatTime 读取实时时间，不依赖日志事件）
+    if (!state.battleFinished) {
+      const simSec = (engine.combatTime / 1000).toFixed(1);
       const timeSpan = document.querySelector('#sb-battle-header span');
-      if (timeSpan) timeSpan.textContent = `模拟时间: ${lastTime}ms`;
+      if (timeSpan) timeSpan.textContent = `模拟时间: ${simSec}s`;
     }
   }
 
@@ -2082,29 +2111,32 @@ function hideSimTooltip() {
     state.battleLog = [];
     state.finalPlayerUnits = null;
     state.finalEnemyUnits = null;
+    cancelled = false;
 
     // 先启动 runSimCombat（内部会设置 combatPlayerUnits），再渲染 UI
     const battlePromise = engine.runSimCombat(
       state.playerSlots,
       state.enemySlots,
       (evt) => {
+        if (cancelled) return;
         state.battleLog.push(evt);
         // 即时增量渲染日志（消除 100ms 轮询延迟）
         const logEl = document.getElementById('sb-battle-log');
         if (logEl && !state.battleFinished) {
           let entryHtml: string;
           if (evt.effects.includes('击杀')) {
-            entryHtml = `<div class="sb-log-entry kill">[${evt.time}ms] ${evt.targetName} 击杀!</div>`;
+            entryHtml = `<div class="sb-log-entry kill">[${(evt.time / 1000).toFixed(1)}s] ${evt.targetName} 击杀!</div>`;
           } else if (evt.targetName === '战斗开始') {
-            entryHtml = '<div class="sb-log-entry">[0ms] 战斗开始</div>';
+            entryHtml = '<div class="sb-log-entry">[0.0s] 战斗开始</div>';
           } else {
-            entryHtml = `<div class="sb-log-entry">[${evt.time}ms] ${evt.actorName} · ${evt.weaponName} -> ${evt.targetName} 伤害 ${evt.damage} (HP:${Math.round(evt.targetHpAfter)}/${evt.targetMaxHp})</div>`;
+            entryHtml = `<div class="sb-log-entry">[${(evt.time / 1000).toFixed(1)}s] ${evt.actorName} · ${evt.weaponName} -> ${evt.targetName} 伤害 ${evt.damage} (HP:${Math.round(evt.targetHpAfter)}/${evt.targetMaxHp})</div>`;
           }
           logEl.insertAdjacentHTML('beforeend', entryHtml);
           logEl.scrollTop = logEl.scrollHeight;
         }
       },
       (win) => {
+        if (cancelled) return;
         // 保存快照后再清理
         state.finalPlayerUnits = engine.combatPlayerUnits ? [...engine.combatPlayerUnits] : null;
         state.finalEnemyUnits = engine.combatEnemyUnits ? [...engine.combatEnemyUnits] : null;
@@ -2117,6 +2149,7 @@ function hideSimTooltip() {
         renderZones();
       },
       () => state.battlePaused,
+      () => cancelled,
     );
 
     // 渲染战斗 UI（此时 runSimCombat 已设置 combatPlayerUnits/combatEnemyUnits，并过了 300ms 初始延迟）
@@ -2140,7 +2173,16 @@ function hideSimTooltip() {
     };
     state.battleUpdateTimer = requestAnimationFrame(patchLoop);
 
-    await battlePromise;
+    try {
+      await battlePromise;
+    } catch (e) {
+      console.error('[startSimBattle] 战斗异常', e);
+    } finally {
+      if (state.battleUpdateTimer !== null) {
+        cancelAnimationFrame(state.battleUpdateTimer);
+        state.battleUpdateTimer = null;
+      }
+    }
   }
 
   // ============================================================

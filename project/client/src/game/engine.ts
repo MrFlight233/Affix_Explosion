@@ -117,6 +117,7 @@ export class GameEngine {
   combatPaused = false;
   combatPlayerUnits: CombatUnitRuntime[] | null = null;
   combatEnemyUnits: CombatUnitRuntime[] | null = null;
+  combatTime: number = 0;
   onCombatEvent?: (event: CombatEvent) => void;
   onCombatEnd?: (win: boolean, goldReward: number) => void;
 
@@ -763,25 +764,32 @@ export class GameEngine {
 
   /** 固定时间步长战斗引擎（内部核心，不含状态管理）。
    *  每 100ms 推进一次，恢复和武器冷却均匀递减。
-   *  runCombat 和 runSimCombat 共用此引擎，区别仅在于 BD 来源和战后处理。 */
+   *  runCombat 和 runSimCombat 共用此引擎，区别仅在于 BD 来源和战后处理。
+   *  isCancelled 回调用于战斗中途退出时立即中断引擎。 */
   private async _runBattleCore(
     playerUnits: CombatUnitRuntime[],
     enemyUnits: CombatUnitRuntime[],
     onEvent: (evt: CombatEvent) => void,
     isPaused?: () => boolean,
+    isCancelled?: () => boolean,
   ): Promise<{ win: boolean }> {
     const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
     const TICK_MS = 100; // 固定时间步长
     const round6 = (v: number) => Math.round(v * 1e6) / 1e6;
 
-    let simTime = 0;
-    const MAX_SIM_TIME = 120000; // 2 分钟模拟时间上限
+    this.combatTime = 0;
+    const MAX_COMBAT_TIME = 120000; // 2 分钟战斗时间上限
+    const PENALTY_START_MS = 60000; // 60秒后开始软狂暴
+    let lastPenaltySecond = 0;
 
     while (
       playerUnits.some(u => u.currentHp > 0) &&
       enemyUnits.some(e => e.currentHp > 0) &&
-      simTime < MAX_SIM_TIME
+      this.combatTime < MAX_COMBAT_TIME
     ) {
+      // 取消检查
+      if (isCancelled?.()) break;
+
       // 暂停检查
       while (isPaused?.()) {
         await delay(50);
@@ -789,7 +797,7 @@ export class GameEngine {
 
       await delay(TICK_MS);
 
-      simTime += TICK_MS;
+      this.combatTime += TICK_MS;
 
       // 构建存活单位的武器列表
       const allWeapons: { unit: CombatUnitRuntime; weapon: CombatWeaponRuntime; isPlayer: boolean }[] = [];
@@ -854,7 +862,7 @@ export class GameEngine {
         if (Math.abs(dmg) >= target.totalHp * 0.3) effects.push(dmg > 0 ? '重击' : '大回复');
 
         onEvent({
-          time: Math.round(simTime),
+          time: Math.round(this.combatTime),
           actorName: unit.entityName,
           weaponName: weapon.name,
           targetName: target.entityName,
@@ -867,7 +875,7 @@ export class GameEngine {
         // 击杀事件
         if (target.currentHp <= 0) {
           onEvent({
-            time: Math.round(simTime),
+            time: Math.round(this.combatTime),
             actorName: '',
             weaponName: '',
             targetName: target.entityName,
@@ -879,12 +887,47 @@ export class GameEngine {
         }
       }
 
+      // ── 60秒超时惩罚（软狂暴）──
+      if (this.combatTime > PENALTY_START_MS) {
+        const overtimeSeconds = Math.floor((this.combatTime - PENALTY_START_MS) / 1000);
+        if (overtimeSeconds > lastPenaltySecond) {
+          lastPenaltySecond = overtimeSeconds;
+          const penaltyDamage = overtimeSeconds * 10;
+
+          const applyPenalty = (units: CombatUnitRuntime[]) => {
+            for (const u of units) {
+              if (u.currentHp <= 0) continue;
+              u.currentHp = round6(Math.max(u.currentHp - penaltyDamage, 0));
+              if (u.currentHp <= 0) {
+                onEvent({
+                  time: Math.round(this.combatTime), actorName: '', weaponName: '',
+                  targetName: u.entityName, damage: penaltyDamage,
+                  targetHpAfter: 0, targetMaxHp: u.totalHp, effects: ['击杀'],
+                });
+              }
+            }
+          };
+          applyPenalty(playerUnits);
+          applyPenalty(enemyUnits);
+
+          onEvent({
+            time: Math.round(this.combatTime), actorName: '', weaponName: '',
+            targetName: '超时惩罚', damage: penaltyDamage,
+            targetHpAfter: 0, targetMaxHp: 0,
+            effects: [`${overtimeSeconds}秒`],
+          });
+        }
+      }
+
       // 更新战斗状态供 UI 轮询
       this.combatPlayerUnits = playerUnits;
       this.combatEnemyUnits = enemyUnits;
     }
 
-    const win = playerUnits.some(u => u.currentHp > 0);
+    // 胜负判定：双方同灭/120秒上限/敌方全灭 → 玩家胜
+    const playerAlive = playerUnits.some(u => u.currentHp > 0);
+    const enemyAlive = enemyUnits.some(e => e.currentHp > 0);
+    const win = this.combatTime >= MAX_COMBAT_TIME || playerAlive || !enemyAlive;
     return { win };
   }
 
@@ -947,27 +990,30 @@ export class GameEngine {
 
     await new Promise(r => setTimeout(r, 300)); // 让 UI 先渲染
 
-    const result = await this._runBattleCore(playerUnits, enemyUnits, onEvent);
+    try {
+      const result = await this._runBattleCore(playerUnits, enemyUnits, onEvent);
 
-    const goldReward = result.win ? (10 + this.state.round * 5 + this.state.deploySlots.length * 2) : 0;
+      const goldReward = result.win ? (10 + this.state.round * 5 + this.state.deploySlots.length * 2) : 0;
 
-    if (result.win) {
-      for (const slot of this.state.deploySlots) {
-        const hasGrowth = this.hasGrowthAffix(slot.children) ||
-          (slot.entity.children && this.hasGrowthAffix(slot.entity.children));
-        if (hasGrowth) {
-          const cur = this.state.growthStacks[slot.entity.instanceId] || 0;
-          if (cur < 10) this.state.growthStacks[slot.entity.instanceId] = cur + 1;
+      if (result.win) {
+        for (const slot of this.state.deploySlots) {
+          const hasGrowth = this.hasGrowthAffix(slot.children) ||
+            (slot.entity.children && this.hasGrowthAffix(slot.entity.children));
+          if (hasGrowth) {
+            const cur = this.state.growthStacks[slot.entity.instanceId] || 0;
+            if (cur < 10) this.state.growthStacks[slot.entity.instanceId] = cur + 1;
+          }
         }
+        this.state.gold += goldReward;
       }
-      this.state.gold += goldReward;
-    }
 
-    this.combatPlayerUnits = null;
-    this.combatEnemyUnits = null;
-    this.notify();
-    onEnd(result.win, goldReward);
-    return { win: result.win, enemies: enemyUnits, goldReward };
+      this.notify();
+      onEnd(result.win, goldReward);
+      return { win: result.win, enemies: enemyUnits, goldReward };
+    } finally {
+      this.combatPlayerUnits = null;
+      this.combatEnemyUnits = null;
+    }
   }
 
   /** 模拟对战：接收外部双方 BD → 运行引擎 → 通知结果。
@@ -978,6 +1024,7 @@ export class GameEngine {
     onEvent: (evt: CombatEvent) => void,
     onEnd: (win: boolean) => void,
     isPaused?: () => boolean,
+    isCancelled?: () => boolean,
   ) {
     const playerSnaps = this.calculateCombatSnapshots(playerSlots);
     const enemySnaps = this.calculateCombatSnapshots(enemySlots);
@@ -997,11 +1044,13 @@ export class GameEngine {
 
     await new Promise(r => setTimeout(r, 300));
 
-    const result = await this._runBattleCore(playerUnits, enemyUnits, onEvent, isPaused);
-
-    this.combatPlayerUnits = null;
-    this.combatEnemyUnits = null;
-    onEnd(result.win);
+    try {
+      const result = await this._runBattleCore(playerUnits, enemyUnits, onEvent, isPaused, isCancelled);
+      onEnd(result.win);
+    } finally {
+      this.combatPlayerUnits = null;
+      this.combatEnemyUnits = null;
+    }
   }
 
   // ---- 存档（单存档，无槽位） ----

@@ -861,26 +861,30 @@ export class UIManager {
       this.updateCombatDynamicValues();
     }, 100);
 
-    await this.engine.runCombat(
-      (evt) => {
-        this.combatLog.push(evt);
-        this.renderCombatLogPanel();
-      },
-      (win, gold) => {
-        // 清除实时更新
-        if (this.combatUpdateTimer) { clearInterval(this.combatUpdateTimer); this.combatUpdateTimer = null; }
+    try {
+      await this.engine.runCombat(
+        (evt) => {
+          this.combatLog.push(evt);
+          this.renderCombatLogPanel();
+        },
+        (win, gold) => {
+          if (win) {
+            this.showToast(`战斗胜利！+${gold}金币`);
+          } else {
+            this.showToast('战斗失败');
+          }
 
-        if (win) {
-          this.showToast(`战斗胜利！+${gold}金币`);
-        } else {
-          this.showToast('战斗失败');
-        }
-
-        // 保持战斗面板 + 日志，等待玩家点"继续"
-        this.combatFinished = true;
-        this.render();
-      },
-    );
+          // 保持战斗面板 + 日志，等待玩家点"继续"
+          this.combatFinished = true;
+          this.render();
+        },
+      );
+    } finally {
+      if (this.combatUpdateTimer) {
+        clearInterval(this.combatUpdateTimer);
+        this.combatUpdateTimer = null;
+      }
+    }
   }
 
   // ======================== 存档（单存档） ========================
