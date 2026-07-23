@@ -106,7 +106,7 @@ export interface EntityDef {
   staminaCost: number;
   /** 主动装备: 绝对毫秒值; 启动端/被动装备: 0 */
   actionTime: number;
-  /** 主动装备: 每次触发伤害（可为负值表示恢复HP）; 被动装备: 全局伤害加成（加至所有主动武器）; 启动端: 始终为 0 */
+  /** 主动装备: 每次触发伤害（可为负值表示恢复HP）; 被动装备: 全局伤害加成（加至所有主动武器）; 启动端: 自身主动动作伤害 */
   damage: number;
   targetType: string | null;       // '近战'|'远程' — 针对类型
   targetOrder: string | null;      // '从上往下'|'从下往上' — 针对顺序

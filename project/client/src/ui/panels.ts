@@ -25,6 +25,8 @@ export class UIManager {
   combatLog: CombatEvent[] = [];
   combatFinished: boolean = false;
   combatUpdateTimer: any = null;
+  lastTickWallTime: number = 0;
+  weaponPrevRemaining: Map<string, number> = new Map();
 
   constructor(engine: GameEngine) {
     this.engine = engine;
@@ -724,7 +726,7 @@ export class UIManager {
     show('all');
   }
 
-  /** 更新战斗中动态值（HP/耐力/倒计时），只操作 DOM 文本节点，不 re-render */
+  /** 更新战斗中动态值（HP/耐力/倒计时），只操作 DOM 文本节点，不 re-render。倒计时使用 wall-clock 插值实现平滑递减 */
   private updateCombatDynamicValues() {
     const pu = this.engine.combatPlayerUnits;
     const eu = this.engine.combatEnemyUnits;
@@ -733,12 +735,24 @@ export class UIManager {
       if (!units) return;
       for (const u of units) {
         const hpEl = document.getElementById(`cu-hp-${prefix}-${u.entityId}`);
-        if (hpEl) hpEl.textContent = `HP:${Math.max(u.currentHp, 0)}/${u.totalHp}`;
+        if (hpEl) hpEl.textContent = `HP:${Math.round(Math.max(u.currentHp, 0))}/${u.totalHp}`;
         const stamEl = document.getElementById(`cu-stam-${prefix}-${u.entityId}`);
         if (stamEl) stamEl.textContent = `耐力:${Math.floor(u.currentStamina)}/${u.maxStamina}`;
         for (let wi = 0; wi < u.weapons.length; wi++) {
+          const w = u.weapons[wi];
           const cdEl = document.getElementById(`cu-cd-${prefix}-${u.entityId}-${wi}`);
-          if (cdEl) cdEl.textContent = `倒计时:${(u.weapons[wi].remainingTime / 1000).toFixed(1)}s`;
+          if (!cdEl) continue;
+          const key = `${prefix}-${u.entityId}-${wi}`;
+          const prev = this.weaponPrevRemaining.get(key);
+          // 检测引擎 tick：remainingTime 变化时更新时间戳
+          if (prev !== undefined && prev !== w.remainingTime) {
+            this.lastTickWallTime = Date.now();
+          }
+          this.weaponPrevRemaining.set(key, w.remainingTime);
+          // wall-clock 插值：从上个引擎 tick 起，经过的真实时间
+          const wallElapsed = Date.now() - this.lastTickWallTime;
+          const displayMs = Math.max(w.remainingTime - wallElapsed, 0);
+          cdEl.textContent = `倒计时:${(displayMs / 1000).toFixed(1)}s`;
         }
       }
     };
@@ -856,7 +870,9 @@ export class UIManager {
     // 延迟让 UI 渲染
     await new Promise(r => setTimeout(r, 300));
 
-    // 启动实时更新（100ms 间隔）
+    // 启动实时更新（100ms 间隔，含 wall-clock 插值）
+    this.lastTickWallTime = Date.now();
+    this.weaponPrevRemaining.clear();
     this.combatUpdateTimer = setInterval(() => {
       this.updateCombatDynamicValues();
     }, 100);
@@ -866,6 +882,7 @@ export class UIManager {
         (evt) => {
           this.combatLog.push(evt);
           this.renderCombatLogPanel();
+          this.lastTickWallTime = Date.now(); // 引擎 tick 时间戳
         },
         (win, gold) => {
           if (win) {

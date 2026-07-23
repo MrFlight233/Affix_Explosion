@@ -889,6 +889,33 @@ function hideSimTooltip() {
       }
       if (combatUnit?.isOverloaded) s += '  超重';
       if (combatUnit && combatUnit.currentHp <= 0) s += '  阵亡';
+
+      // 启动端自身有主动动作时，追加动作信息
+      const effIsActive = edef ? Boolean(getEffectiveValue(item, 'isActive') ?? edef.isActive) : false;
+      if (effIsActive && edef) {
+        let dmg: number, time: string, order: string;
+        if (mode === 'battle' && combatUnit) {
+          const sw = combatUnit.weapons[0]; // 启动端武器始终在 index 0
+          if (sw && sw.name === edef.name) {
+            dmg = sw.damage;
+            time = sideFirst
+              ? `倒计时:<span id="cu-cd-${sideFirst}-${combatUnit.instanceId}-0">${(Math.max(sw.remainingTime, 0) / 1000).toFixed(1)}s</span>`
+              : `倒计时:${(Math.max(sw.remainingTime, 0) / 1000).toFixed(1)}s`;
+            order = sw.targetOrder;
+          } else {
+            dmg = Number(getEffectiveValue(item, 'damage') ?? 0);
+            time = `耗时:${(Number(getEffectiveValue(item, 'actionTime') ?? 0) / 1000).toFixed(1)}s`;
+            order = String((getEffectiveValue(item, 'targetOrder') ?? edef.targetOrder) || '');
+          }
+        } else {
+          dmg = Number(getEffectiveValue(item, 'damage') ?? 0);
+          time = `耗时:${(Number(getEffectiveValue(item, 'actionTime') ?? 0) / 1000).toFixed(1)}s`;
+          order = String((getEffectiveValue(item, 'targetOrder') ?? edef.targetOrder) || '');
+        }
+        s += `  伤:${dmg}  ${time}  顺序:${order}`;
+        if (edef.priorityTarget) s += ' 优先' + edef.priorityTarget;
+      }
+
       return s;
     } else if (isActive) {
       let dmg: number, time: string, order: string;
@@ -963,6 +990,7 @@ function hideSimTooltip() {
     const isSt = isEntity && isStarter(def as EntityDef);
     const isActive = isEntity && !isSt && (def as EntityDef).isActive;
     const edef = isEntity ? (def as EntityDef) : null;
+    const starterHasActive = isSt && edef ? Boolean(getEffectiveValue(item, 'isActive') ?? edef.isActive) : false;
 
     const deadClass = (combatUnit && combatUnit.currentHp <= 0) ? ' dead' : '';
     const collapsedClass = cardCollapsed ? ' sb-card-collapsed' : '';
@@ -1016,7 +1044,7 @@ function hideSimTooltip() {
     h += '</div>';
 
     // Block 2: 主动动作
-    if (isActive && edef) {
+    if ((isActive || starterHasActive) && edef) {
       h += '<div class="sb-card-block">';
       h += '<div class="sb-block-title">主动动作</div>';
       h += '<div class="sb-card-stats">';

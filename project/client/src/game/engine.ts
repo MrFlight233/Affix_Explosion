@@ -575,6 +575,23 @@ export class GameEngine {
         collected.totalHpRegenerationBonus += edef.hpRegenerationBonus;
       }
 
+      // ★ 启动端自身如果是主动实体，也加入武器列表
+      if (isStarter(edef)) {
+        const selfIsActive = getEffectiveValue(slot.entity, 'isActive') ?? edef.isActive;
+        if (selfIsActive) {
+          collected.weapons.unshift({
+            name: edef.name,
+            actionTime: Number(getEffectiveValue(slot.entity, 'actionTime') ?? 0),
+            damage: Number(getEffectiveValue(slot.entity, 'damage') ?? 0) + growthStack,
+            staminaCost: Number(getEffectiveValue(slot.entity, 'staminaCost') ?? 0),
+            targetType: String((getEffectiveValue(slot.entity, 'targetType') ?? edef.targetType) || '近战'),
+            targetOrder: String((getEffectiveValue(slot.entity, 'targetOrder') ?? edef.targetOrder) || '从上往下'),
+            priorityTarget: (getEffectiveValue(slot.entity, 'priorityTarget') ?? edef.priorityTarget) as number | null,
+            targetFaction: String((getEffectiveValue(slot.entity, 'targetFaction') ?? edef.targetFaction) || '敌人'),
+          });
+        }
+      }
+
       // strength 词条加成（仅 starter）
       let extraDmg = 0;
       if (isStarter(edef)) {
