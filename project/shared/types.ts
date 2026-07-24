@@ -147,6 +147,18 @@ export interface AffixDef {
   effect: string;
   /** 命中效果列表 */
   onHitEffects?: OnHitEffect[];
+
+  // ---- 被动加成（与 EntityDef 对齐，挂载到启动端子树上时生效） ----
+  /** 被动加成: 耐力恢复/秒 */
+  staminaRegenerationBonus: number;
+  /** 被动加成: 耐力 */
+  staminaBonus: number;
+  /** 被动加成: 生命恢复/秒 */
+  hpRegenerationBonus: number;
+  /** 被动加成: 生命 */
+  hpBonus: number;
+  /** 全局伤害加成（加至所有武器），独立于 isActive */
+  damageBonus: number;
 }
 
 // ---- 物品实例（带实例 ID） ----

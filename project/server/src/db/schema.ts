@@ -57,6 +57,11 @@ export const affixes = sqliteTable('affixes', {
   target: text('target').notNull().default('self'),
   effect: text('effect').notNull().default(''),
   onHitEffects: text('on_hit_effects').notNull().default('[]'),
+  staminaRegenerationBonus: integer('stamina_regeneration_bonus').notNull().default(0),
+  staminaBonus: integer('stamina_bonus').notNull().default(0),
+  hpRegenerationBonus: integer('hp_regeneration_bonus').notNull().default(0),
+  hpBonus: integer('hp_bonus').notNull().default(0),
+  damageBonus: integer('damage_bonus').notNull().default(0),
   createdAt: text('created_at').notNull().default("(datetime('now'))"),
   updatedAt: text('updated_at').notNull().default("(datetime('now'))"),
 });

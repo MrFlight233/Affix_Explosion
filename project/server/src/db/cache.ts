@@ -98,6 +98,11 @@ export function affixRowToDef(row: Record<string, any>): Record<string, any> {
     poolPrerequisite: parseJsonField(row.pool_prerequisite) ?? [],
     effect: row.effect,
     onHitEffects: parseJsonField(row.on_hit_effects) ?? [],
+    damageBonus: row.damage_bonus ?? 0,
+    staminaRegenerationBonus: row.stamina_regeneration_bonus ?? 0,
+    staminaBonus: row.stamina_bonus ?? 0,
+    hpRegenerationBonus: row.hp_regeneration_bonus ?? 0,
+    hpBonus: row.hp_bonus ?? 0,
   };
 }
 
@@ -114,6 +119,11 @@ export function affixDefToRow(def: Record<string, any>): Record<string, any> {
     pool_prerequisite: serializeJsonField(def.poolPrerequisite),
     effect: def.effect ?? '',
     on_hit_effects: serializeJsonField(def.onHitEffects),
+    damage_bonus: def.damageBonus ?? 0,
+    stamina_regeneration_bonus: def.staminaRegenerationBonus ?? 0,
+    stamina_bonus: def.staminaBonus ?? 0,
+    hp_regeneration_bonus: def.hpRegenerationBonus ?? 0,
+    hp_bonus: def.hpBonus ?? 0,
     updated_at: new Date().toISOString(),
   };
 }

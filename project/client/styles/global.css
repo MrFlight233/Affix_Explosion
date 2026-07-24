@@ -1091,6 +1091,23 @@ body {
 .sb-pool-cat-header {
   font-size: 11px; font-weight: 600; color: var(--sb-text-secondary);
   padding: 10px 10px 4px; letter-spacing: 0.02em;
+  cursor: pointer; user-select: none;
+}
+.sb-pool-cat-header:hover { color: var(--sb-text); }
+
+/* 大类标题（实体 / 词条） */
+.sb-pool-sec-header {
+  font-size: 12px; font-weight: 700; color: var(--sb-text);
+  padding: 12px 10px 4px; letter-spacing: 0.03em;
+  cursor: pointer; user-select: none;
+  border-top: 1px solid var(--sb-border);
+}
+.sb-pool-sec-header:hover { background: #f8f8f8; }
+
+/* 空状态提示 */
+.sb-pool-empty {
+  font-size: 11px; color: var(--sb-text-muted);
+  padding: 8px 12px; font-style: italic;
 }
 
 /* 物品池作为移除目标 */

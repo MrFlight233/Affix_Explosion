@@ -107,6 +107,8 @@ export function initTables(): void {
   migrateDamageBonus(db);
   // ---- 迁移：affixes 表新增 on_hit_effects 列 ----
   migrateAffixOnHitEffects(db);
+  // ---- 迁移：affixes 表新增被动加成 5 列 ----
+  migrateAffixPassiveBonuses(db);
 
   console.log('[DB] 所有表创建/验证完成');
 }
@@ -223,5 +225,49 @@ function migrateAffixOnHitEffects(db: ReturnType<typeof getDB>): void {
     }
   } catch (e) {
     console.warn('[DB] affixes on_hit_effects 迁移跳过:', (e as Error).message);
+  }
+}
+
+/** 迁移 affixes 表：新增被动加成 5 列 + 种子数据映射（幂等） */
+function migrateAffixPassiveBonuses(db: ReturnType<typeof getDB>): void {
+  try {
+    const cols = db.prepare("PRAGMA table_info('affixes')").all() as { name: string }[];
+    const colNames = new Set(cols.map(c => c.name));
+
+    // 1. 添加缺失的列
+    const newCols = [
+      { sql: 'damage_bonus', name: 'damage_bonus' },
+      { sql: 'stamina_regeneration_bonus', name: 'stamina_regeneration_bonus' },
+      { sql: 'stamina_bonus', name: 'stamina_bonus' },
+      { sql: 'hp_regeneration_bonus', name: 'hp_regeneration_bonus' },
+      { sql: 'hp_bonus', name: 'hp_bonus' },
+    ];
+
+    for (const col of newCols) {
+      if (!colNames.has(col.name)) {
+        db.exec(`ALTER TABLE affixes ADD COLUMN ${col.sql} INTEGER NOT NULL DEFAULT 0`);
+        console.log(`[DB] affixes 表已迁移：添加 ${col.name} 列（被动加成）`);
+      }
+    }
+
+    // 2. 种子数据映射（将已知词条的 value 映射到对应被动加成字段）
+    //    SQLite 的 UPDATE 幂等安全：多次执行也不会破坏数据
+    const mappings: { id: string; col: string; val: number }[] = [
+      { id: 'strength',       col: 'damage_bonus',                val: 2 },
+      { id: 'constitution',   col: 'hp_bonus',                    val: 20 },
+      { id: 'endurance',      col: 'stamina_bonus',               val: 50 },
+      { id: 'willpower',      col: 'stamina_regeneration_bonus',  val: 3 },
+      { id: 'combat_regen',   col: 'hp_regeneration_bonus',       val: 2 },
+    ];
+
+    for (const m of mappings) {
+      const row = db.prepare('SELECT value FROM affixes WHERE id = ?').get(m.id) as any;
+      if (row && row.value !== 0) {
+        db.prepare(`UPDATE affixes SET ${m.col} = ? WHERE id = ? AND ${m.col} = 0`).run(m.val, m.id);
+      }
+    }
+    console.log('[DB] affixes 被动加成数据迁移完成');
+  } catch (e) {
+    console.warn('[DB] affixes 被动加成迁移跳过:', (e as Error).message);
   }
 }

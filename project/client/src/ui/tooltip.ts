@@ -111,8 +111,18 @@ function renderAffixTooltip(tip: HTMLElement, def: any) {
   html += `<div class="tt-cat">${getCategoryName(def.category)}</div>`;
   html += '<div class="tt-section">效果描述</div>';
   html += `<div class="tt-row"><span class="tt-label">效果:</span>${def.effect}</div>`;
+  // 被动加成
+  const hasPsv = !!(def.damageBonus) || !!(def.hpBonus) || !!(def.hpRegenerationBonus) || !!(def.staminaBonus) || !!(def.staminaRegenerationBonus);
+  if (hasPsv) {
+    html += '<div class="tt-section">被动加成</div>';
+    if (def.damageBonus) html += `<div class="tt-row"><span class="tt-label">伤害加成:</span>${def.damageBonus > 0 ? '+' : ''}${def.damageBonus}</div>`;
+    if (def.hpBonus) html += `<div class="tt-row"><span class="tt-label">生命加成:</span>${def.hpBonus > 0 ? '+' : ''}${def.hpBonus}</div>`;
+    if (def.hpRegenerationBonus) html += `<div class="tt-row"><span class="tt-label">生命恢复:</span>+${def.hpRegenerationBonus}/秒</div>`;
+    if (def.staminaBonus) html += `<div class="tt-row"><span class="tt-label">耐力加成:</span>+${def.staminaBonus}</div>`;
+    if (def.staminaRegenerationBonus) html += `<div class="tt-row"><span class="tt-label">耐力恢复:</span>+${def.staminaRegenerationBonus}/秒</div>`;
+  }
+
   html += '<div class="tt-section">基本信息</div>';
-  html += `<div class="tt-row"><span class="tt-label">数值:</span>${def.value}</div>`;
   html += `<div class="tt-row"><span class="tt-label">槽位消耗:</span>${def.slotCost}</div>`;
   html += `<div class="tt-row"><span class="tt-label">可重复:</span>${def.repeatable ? '是' : '否'}</div>`;
   html += '<div class="tt-section">词条</div>';

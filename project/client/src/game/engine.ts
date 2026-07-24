@@ -589,23 +589,27 @@ export class GameEngine {
         } else {
           // isActive=false 实体 → 累加 damageBonus 到被动池
           passiveDamageBonus += Number(getEffectiveValue(child, 'damageBonus') ?? 0);
-          // 递归处理容器内的嵌套子项
-          if (child.children && child.children.length > 0) {
-            const nested = this.collectFromChildren(child.children, growthStack);
-            totalStaminaRegenerationBonus += nested.totalStaminaRegenerationBonus;
-            totalStaminaBonus += nested.totalStaminaBonus;
-            totalHpBonus += nested.totalHpBonus;
-            totalHpRegenerationBonus += nested.totalHpRegenerationBonus;
-            totalLoad += nested.totalLoad;
-            passiveDamageBonus += nested.passiveDamageBonus;
-            for (const w of nested.weapons) weapons.push(w);
-          }
+        }
+        // 递归处理嵌套子项（isActive 和 !isActive 实体都需要：武器上的词条、嵌套实体等）
+        if (child.children && child.children.length > 0) {
+          const nested = this.collectFromChildren(child.children, growthStack);
+          totalStaminaRegenerationBonus += nested.totalStaminaRegenerationBonus;
+          totalStaminaBonus += nested.totalStaminaBonus;
+          totalHpBonus += nested.totalHpBonus;
+          totalHpRegenerationBonus += nested.totalHpRegenerationBonus;
+          totalLoad += nested.totalLoad;
+          passiveDamageBonus += nested.passiveDamageBonus;
+          for (const w of nested.weapons) weapons.push(w);
         }
       }
       if (child.type === 'affix') {
         const adef = getAffixDef(child.defId);
-        if (adef?.id === 'strength') {
-          passiveDamageBonus += adef.value;
+        if (adef) {
+          totalStaminaRegenerationBonus += adef.staminaRegenerationBonus ?? 0;
+          totalStaminaBonus += adef.staminaBonus ?? 0;
+          totalHpBonus += adef.hpBonus ?? 0;
+          totalHpRegenerationBonus += adef.hpRegenerationBonus ?? 0;
+          passiveDamageBonus += adef.damageBonus ?? 0;
         }
       }
     }
@@ -661,8 +665,7 @@ export class GameEngine {
         }
       }
 
-      // strength 词条加成 + onHitEffects 收集
-      let extraDmg = 0;
+      // onHitEffects 收集
       // ★ starter 直属 onHitEffects 传播源（slot.entity.children + slot.children 的 affix 都传播）
       const starterOnHitEffects: OnHitEffect[] = [];
 
@@ -693,7 +696,6 @@ export class GameEngine {
         for (const c of slot.children) {
           if (c.type === 'affix') {
             const adef = getAffixDef(c.defId);
-            if (adef?.id === 'strength') extraDmg += adef.value;
             if (adef?.onHitEffects) {
               for (const e of adef.onHitEffects) {
                 starterOnHitEffects.push({ type: e.type, params: { ...e.params } });
@@ -709,7 +711,7 @@ export class GameEngine {
           }
         }
 
-        const netPassive = collected.passiveDamageBonus - extraDmg;
+        const netPassive = collected.passiveDamageBonus;
         for (const w of collected.weapons) {
           // 符号感知：正的被动加成只影响正伤害武器，负的只影响负伤害（治疗）武器
           if ((netPassive > 0 && w.damage > 0) || (netPassive < 0 && w.damage < 0)) {

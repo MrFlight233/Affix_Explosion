@@ -23,10 +23,10 @@ interface SimBattleState {
   playerSlots: DeploySlot[];
   enemySlots: DeploySlot[];
   poolCollapsed: boolean;
-  poolTab: 'all' | 'entity' | 'affix';
   poolSearch: string;
   entityCatFilter: string;
   affixCatFilter: string;
+  collapsedPoolSections: Set<string>;  // "section:entity" | "section:affix" | "cat:武器" | ...
   collapsedCards: Set<string>;
   collapsedAffixBlocks: Set<string>;
   collapsedChildBlocks: Set<string>;
@@ -58,10 +58,10 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
     playerSlots: [],
     enemySlots: [],
     poolCollapsed: false,
-    poolTab: 'all',
     poolSearch: '',
     entityCatFilter: 'all',
     affixCatFilter: 'all',
+    collapsedPoolSections: new Set(),
     collapsedCards: new Set(),
     collapsedAffixBlocks: new Set(),
     collapsedChildBlocks: new Set(),
@@ -695,10 +695,22 @@ function showSimTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affix', 
     // 效果描述
     h += tipSection('效果描述');
     h += `<div class="sb-tip-effect">${def.effect}</div>`;
+    // 被动加成
+    const hasPsv = !!(def.damageBonus) || !!(def.hpBonus) || !!(def.hpRegenerationBonus)
+      || !!(def.staminaBonus) || !!(def.staminaRegenerationBonus);
+    if (hasPsv) {
+      h += tipSection('被动加成');
+      h += '<div class="sb-tip-grid">';
+      if (def.damageBonus) h += tipkv('伤害加成', `${def.damageBonus > 0 ? '+' : ''}${def.damageBonus}`);
+      if (def.hpBonus) h += tipkv('生命加成', `${def.hpBonus > 0 ? '+' : ''}${def.hpBonus}`);
+      if (def.hpRegenerationBonus) h += tipkv('生命恢复', `+${def.hpRegenerationBonus}/秒`);
+      if (def.staminaBonus) h += tipkv('耐力加成', `+${def.staminaBonus}`);
+      if (def.staminaRegenerationBonus) h += tipkv('耐力恢复', `+${def.staminaRegenerationBonus}/秒`);
+      h += '</div>';
+    }
     // 基本信息
     h += tipSection('基本信息');
     h += '<div class="sb-tip-grid">';
-    h += tipkv('数值', def.value);
     h += tipkv('槽位消耗', def.slotCost);
     h += tipkv('可重复', def.repeatable ? '是' : '否');
     h += '</div>';
@@ -846,68 +858,99 @@ function hideSimTooltip() {
     `;
   }
 
-  function renderPoolContent(): string {
-    const { entities, affixes } = buildPoolItemList();
+  // 只生成筛选区 HTML（分类按钮 + 搜索框），筛选/折叠变化时需要重绘以更新 active/折叠状态
+  function renderPoolFilters(): string {
     const ecats = getEntityCategoryFilters();
     const aCatObjs = getAffixFilterCategories();
 
     let h = '<div id="sb-pool-filters">';
-    // Tab
+    // 实体类别筛选
     h += '<div class="filter-row">';
-    for (const t of ['all', 'entity', 'affix'] as const) {
-      const label = t === 'all' ? '全部' : t === 'entity' ? '实体' : '词条';
-      h += `<button class="sb-filter-btn${state.poolTab === t ? ' active' : ''}" data-pooltab="${t}">${label}</button>`;
+    for (const c of ecats) {
+      h += `<button class="sb-filter-btn${state.entityCatFilter === c ? ' active' : ''}" data-ecat="${c}">${c === 'all' ? '全部实体' : c}</button>`;
     }
     h += '</div>';
-
-    // 实体类别
-    if (state.poolTab === 'all' || state.poolTab === 'entity') {
-      h += '<div class="filter-row">';
-      for (const c of ecats) {
-        h += `<button class="sb-filter-btn${state.entityCatFilter === c ? ' active' : ''}" data-ecat="${c}">${c === 'all' ? '全部实体' : c}</button>`;
-      }
-      h += '</div>';
+    // 词条类别筛选
+    h += '<div class="filter-row">';
+    h += `<button class="sb-filter-btn${state.affixCatFilter === 'all' ? ' active' : ''}" data-acat="all">全部词条</button>`;
+    for (const c of aCatObjs) {
+      h += `<button class="sb-filter-btn${state.affixCatFilter === c.id ? ' active' : ''}" data-acat="${c.id}">${c.name}</button>`;
     }
-
-    // 词条类别
-    if (state.poolTab === 'all' || state.poolTab === 'affix') {
-      h += '<div class="filter-row">';
-      h += `<button class="sb-filter-btn${state.affixCatFilter === 'all' ? ' active' : ''}" data-acat="all">全部词条</button>`;
-      for (const c of aCatObjs) {
-        h += `<button class="sb-filter-btn${state.affixCatFilter === c.id ? ' active' : ''}" data-acat="${c.id}">${c.name}</button>`;
-      }
-      h += '</div>';
-    }
-
-    // 搜索
+    h += '</div>';
+    // 搜索：搜索触发时只更新列表区，不重建输入框，因此 value 只负责首次/筛选触发时的回显
     h += `<input id="sb-pool-search" type="text" placeholder="搜索名称/ID/效果..." value="${escHtml(state.poolSearch)}">`;
     h += '</div>';
+    return h;
+  }
 
-    // 列表
-    h += '<div id="sb-item-list">';
-    if (state.poolTab === 'all' || state.poolTab === 'entity') {
-      // 按类别分组
-      const grouped = new Map<string, EntityDef[]>();
-      for (const e of entities) {
-        const cat = getEntityCategory(e)[0] || '未知';
-        if (!grouped.has(cat)) grouped.set(cat, []);
-        grouped.get(cat)!.push(e);
-      }
-      for (const [cat, items] of grouped) {
-        h += `<div class="sb-pool-cat-header">${cat} <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${items.length}</span></div>`;
-        for (const e of items) {
-          h += renderPoolEntityRow(e);
+  // 只生成物品列表区 HTML（实体/词条两大区块），搜索触发时单独更新此区域避免销毁搜索输入框
+  function renderPoolItemList(): string {
+    const { entities, affixes } = buildPoolItemList();
+    const cs = state.collapsedPoolSections;
+
+    let h = '<div id="sb-item-list">';
+
+    // ── 实体区块 ──
+    const entitySecCollapsed = cs.has('section:entity');
+    h += `<div class="sb-pool-sec-header" data-toggle-section="section:entity">${entitySecCollapsed ? '▸' : '▾'} 实体 <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${entities.length}</span></div>`;
+    if (!entitySecCollapsed) {
+      if (entities.length === 0) {
+        h += '<div class="sb-pool-empty">无匹配实体</div>';
+      } else {
+        // 按实体分类分组
+        const grouped = new Map<string, EntityDef[]>();
+        for (const e of entities) {
+          const cat = getEntityCategory(e)[0] || '未知';
+          if (!grouped.has(cat)) grouped.set(cat, []);
+          grouped.get(cat)!.push(e);
+        }
+        for (const [cat, items] of grouped) {
+          const catKey = `cat:entity:${cat}`;
+          const catCollapsed = cs.has(catKey);
+          h += `<div class="sb-pool-cat-header" data-toggle-section="${catKey}">${catCollapsed ? '▸' : '▾'} ${cat} <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${items.length}</span></div>`;
+          if (!catCollapsed) {
+            for (const e of items) {
+              h += renderPoolEntityRow(e);
+            }
+          }
         }
       }
     }
-    if (state.poolTab === 'all' || state.poolTab === 'affix') {
-      h += `<div class="sb-pool-cat-header">词条 <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${affixes.length}</span></div>`;
-      for (const a of affixes) {
-        h += renderPoolAffixRow(a);
+
+    // ── 词条区块 ──
+    const affixSecCollapsed = cs.has('section:affix');
+    h += `<div class="sb-pool-sec-header" data-toggle-section="section:affix">${affixSecCollapsed ? '▸' : '▾'} 词条 <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${affixes.length}</span></div>`;
+    if (!affixSecCollapsed) {
+      if (affixes.length === 0) {
+        h += '<div class="sb-pool-empty">无匹配词条</div>';
+      } else {
+        // 按词条分类分组
+        const affixGrouped = new Map<string, AffixDef[]>();
+        for (const a of affixes) {
+          const catName = getCategoryName(a.category);
+          if (!affixGrouped.has(catName)) affixGrouped.set(catName, []);
+          affixGrouped.get(catName)!.push(a);
+        }
+        for (const [catName, items] of affixGrouped) {
+          const catKey = `cat:affix:${catName}`;
+          const catCollapsed = cs.has(catKey);
+          h += `<div class="sb-pool-cat-header" data-toggle-section="${catKey}">${catCollapsed ? '▸' : '▾'} ${catName} <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${items.length}</span></div>`;
+          if (!catCollapsed) {
+            for (const a of items) {
+              h += renderPoolAffixRow(a);
+            }
+          }
+        }
       }
     }
+
     h += '</div>';
     return h;
+  }
+
+  // 完整池子内容（筛选区 + 列表区），用于筛选/折叠变化时的完整重绘
+  function renderPoolContent(): string {
+    return renderPoolFilters() + renderPoolItemList();
   }
 
   function renderPoolEntityRow(e: EntityDef): string {
@@ -922,9 +965,7 @@ function hideSimTooltip() {
     return `<div class="sb-pool-item" data-defid="${a.id}" data-type="affix"
       data-source="pool" draggable="true">
       <span class="item-name">${a.name}</span>
-      <span class="item-stat">[${getCategoryName(a.category)}]</span>
-      <span class="item-stat">${a.effect}</span>
-      <span class="item-stat">价${Math.abs(a.costValue)}</span>
+      <span class="item-stat">价${Math.abs(a.costValue)}  槽耗${a.slotCost}</span>
     </div>`;
   }
 
@@ -1396,14 +1437,7 @@ function hideSimTooltip() {
   let poolSearchTimer: ReturnType<typeof setTimeout> | null = null;
 
   function bindPoolEvents() {
-    // 筛选按钮
-    document.querySelectorAll('#sb-pool [data-pooltab]').forEach(el => {
-      el.addEventListener('click', () => {
-        state.poolTab = (el as HTMLElement).dataset.pooltab as 'all' | 'entity' | 'affix';
-        updateZone('sb-pool', renderPoolContent());
-        bindPoolEvents();
-      });
-    });
+    // 实体类别筛选
     document.querySelectorAll('#sb-pool [data-ecat]').forEach(el => {
       el.addEventListener('click', () => {
         state.entityCatFilter = (el as HTMLElement).dataset.ecat!;
@@ -1411,6 +1445,7 @@ function hideSimTooltip() {
         bindPoolEvents();
       });
     });
+    // 词条类别筛选
     document.querySelectorAll('#sb-pool [data-acat]').forEach(el => {
       el.addEventListener('click', () => {
         state.affixCatFilter = (el as HTMLElement).dataset.acat!;
@@ -1419,15 +1454,29 @@ function hideSimTooltip() {
       });
     });
 
-    // 搜索（150ms 防抖）
+    // 折叠/展开（大类 + 子分类）
+    document.querySelectorAll('#sb-pool [data-toggle-section]').forEach(el => {
+      el.addEventListener('click', () => {
+        const key = (el as HTMLElement).dataset['toggleSection']!;
+        if (state.collapsedPoolSections.has(key)) {
+          state.collapsedPoolSections.delete(key);
+        } else {
+          state.collapsedPoolSections.add(key);
+        }
+        updateZone('sb-pool', renderPoolContent());
+        bindPoolEvents();
+      });
+    });
+
+    // 搜索（150ms 防抖）—— 只更新列表区，不销毁搜索输入框，自然保留焦点
     const searchInput = document.getElementById('sb-pool-search') as HTMLInputElement;
     if (searchInput) {
       searchInput.addEventListener('input', () => {
         if (poolSearchTimer) clearTimeout(poolSearchTimer);
         poolSearchTimer = setTimeout(() => {
           state.poolSearch = searchInput.value;
-          updateZone('sb-pool', renderPoolContent());
-          bindPoolEvents();
+          updateZone('sb-item-list', renderPoolItemList());
+          bindPoolItemEvents();
         }, 150);
       });
     }

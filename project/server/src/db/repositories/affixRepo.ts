@@ -48,16 +48,25 @@ export class AffixRepo {
       poolPrerequisite: def.poolPrerequisite ?? [],
       effect: def.effect ?? '',
       onHitEffects: def.onHitEffects ?? [],
+      damageBonus: def.damageBonus ?? 0,
+      staminaRegenerationBonus: def.staminaRegenerationBonus ?? 0,
+      staminaBonus: def.staminaBonus ?? 0,
+      hpRegenerationBonus: def.hpRegenerationBonus ?? 0,
+      hpBonus: def.hpBonus ?? 0,
     };
 
     const db = getDB();
     db.prepare(`
       INSERT INTO affixes (
         id, name, category, value, cost_value, slot_cost,
-        repeatable, prerequisite, pool_prerequisite, effect, on_hit_effects, updated_at
+        repeatable, prerequisite, pool_prerequisite, effect, on_hit_effects,
+        damage_bonus, stamina_regeneration_bonus, stamina_bonus, hp_regeneration_bonus, hp_bonus,
+        updated_at
       ) VALUES (
         @id, @name, @category, @value, @cost_value, @slot_cost,
-        @repeatable, @prerequisite, @pool_prerequisite, @effect, @on_hit_effects, @updated_at
+        @repeatable, @prerequisite, @pool_prerequisite, @effect, @on_hit_effects,
+        @damage_bonus, @stamina_regeneration_bonus, @stamina_bonus, @hp_regeneration_bonus, @hp_bonus,
+        @updated_at
       )
     `).run(affixDefToRow(filled));
 
@@ -87,7 +96,10 @@ export class AffixRepo {
         name=@name, category=@category, value=@value, cost_value=@cost_value,
         slot_cost=@slot_cost, repeatable=@repeatable,
         prerequisite=@prerequisite, pool_prerequisite=@pool_prerequisite,
-        effect=@effect, on_hit_effects=@on_hit_effects, updated_at=@updated_at
+        effect=@effect, on_hit_effects=@on_hit_effects,
+        damage_bonus=@damage_bonus, stamina_regeneration_bonus=@stamina_regeneration_bonus,
+        stamina_bonus=@stamina_bonus, hp_regeneration_bonus=@hp_regeneration_bonus,
+        hp_bonus=@hp_bonus, updated_at=@updated_at
       WHERE id=@id
     `).run(affixDefToRow(merged));
 

@@ -959,6 +959,13 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     h += `<div class="admin-field"><label>槽位消耗</label><input id="af-slotCost" type="number" value="${v('slotCost',0)}"></div>`;
     h += `<div class="admin-field"><label>可重复</label><input id="af-repeatable" type="checkbox" ${v('repeatable')?'checked':''}></div>`;
     h += `</div>`;
+    h += `<div class="admin-form-section"><h4>被动加成</h4>`;
+    h += `<div class="admin-field"><label>伤害加成(正=增伤,负=增强治疗)</label><input id="af-damageBonus" type="number" value="${v('damageBonus', 0)}" step="any"></div>`;
+    h += `<div class="admin-field"><label>生命加成</label><input id="af-hpBonus" type="number" value="${v('hpBonus', 0)}"></div>`;
+    h += `<div class="admin-field"><label>生命恢复加成</label><input id="af-hpRegenerationBonus" type="number" value="${v('hpRegenerationBonus', 0)}"></div>`;
+    h += `<div class="admin-field"><label>耐力加成</label><input id="af-staminaBonus" type="number" value="${v('staminaBonus', 0)}"></div>`;
+    h += `<div class="admin-field"><label>耐力恢复加成</label><input id="af-staminaRegenerationBonus" type="number" value="${v('staminaRegenerationBonus', 0)}"></div>`;
+    h += `</div>`;
     h += `<div class="admin-form-section"><h4>命中效果</h4>`;
     const onHit: any = v('onHitEffects')?.[0] || {};
     const effType = onHit.type || '';
@@ -1144,6 +1151,11 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         poolPrerequisite: getSelected('af-poolPrerequisite'),
         effect: (document.getElementById('af-effect') as HTMLInputElement).value.trim(),
         onHitEffects,
+        damageBonus: parseFloat((document.getElementById('af-damageBonus') as HTMLInputElement).value) || 0,
+        staminaRegenerationBonus: parseInt((document.getElementById('af-staminaRegenerationBonus') as HTMLInputElement).value) || 0,
+        staminaBonus: parseInt((document.getElementById('af-staminaBonus') as HTMLInputElement).value) || 0,
+        hpRegenerationBonus: parseInt((document.getElementById('af-hpRegenerationBonus') as HTMLInputElement).value) || 0,
+        hpBonus: parseInt((document.getElementById('af-hpBonus') as HTMLInputElement).value) || 0,
       };
       try {
         if (isNew) { await admin.createAffix(affix); showToast('词条创建成功'); }
