@@ -853,6 +853,11 @@ export class UIManager {
           logHtml += `<div class="combat-event">[${evt.time}ms] <b>${evt.targetName} 被击杀!</b></div>`;
         } else {
           logHtml += `<div class="combat-event">[${evt.time}ms] ${evt.actorName} ${evt.weaponName} ${evt.targetName} → ${evt.damage}伤害 (HP:${evt.targetHpAfter}/${evt.targetMaxHp})</div>`;
+          for (const eff of evt.effects) {
+            if (eff !== '击杀') {
+              logHtml += `<div class="combat-event" style="padding-left:20px">${eff}</div>`;
+            }
+          }
         }
       }
       scroll.innerHTML = logHtml;

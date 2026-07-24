@@ -137,8 +137,6 @@ export class GameEngine {
   combatPlayerUnits: CombatUnitRuntime[] | null = null;
   combatEnemyUnits: CombatUnitRuntime[] | null = null;
   combatTime: number = 0;
-  /** 实体→命中效果映射表（快照阶段构建，运行时查表） */
-  private entityOnHitEffects: Map<string, OnHitEffect[]> = new Map();
   onCombatEvent?: (event: CombatEvent) => void;
   onCombatEnd?: (win: boolean, goldReward: number) => void;
 
@@ -534,9 +532,9 @@ export class GameEngine {
               }
             }
           }
-          if (effects.length > 0) {
-            map.set(child.instanceId, effects);
-          }
+          // 始终注册，确保 starter 传播能覆盖所有 isActive 实体
+          const existing = map.get(child.instanceId) || [];
+          map.set(child.instanceId, [...existing, ...effects]);
         }
 
         // 递归处理嵌套子实体
@@ -615,9 +613,16 @@ export class GameEngine {
   }
 
   /** 从 DeploySlot 构建 CombatUnitSnapshot（v4：递归嵌套）。可传入自定义 slots 用于模拟对战。 */
-  calculateCombatSnapshots(slots?: DeploySlot[]): CombatUnitSnapshot[] {
+  calculateCombatSnapshots(slots?: DeploySlot[]): { snapshots: CombatUnitSnapshot[]; onHitEffects: Map<string, OnHitEffect[]> } {
     const deploySlots = slots ?? this.state.deploySlots;
     const units: CombatUnitSnapshot[] = [];
+    // ★ 构建实体→命中效果映射表（跨所有 slot 累加）
+    const entityOnHitEffects = new Map<string, OnHitEffect[]>();
+    const registerEffects = (instanceId: string, effects: OnHitEffect[]) => {
+      if (effects.length === 0) return;
+      const existing = entityOnHitEffects.get(instanceId) || [];
+      entityOnHitEffects.set(instanceId, [...existing, ...effects]);
+    };
     for (const slot of deploySlots) {
       const edef = getEntityDef(slot.entity.defId);
       if (!edef) continue;
@@ -656,17 +661,12 @@ export class GameEngine {
         }
       }
 
-      // strength 词条加成 + onHitEffects 收集（仅 starter）
+      // strength 词条加成 + onHitEffects 收集
       let extraDmg = 0;
-      if (isStarter(edef)) {
-        // ★ 构建实体→命中效果映射表
-        const entityOnHitEffects = new Map<string, OnHitEffect[]>();
-        const registerEffects = (instanceId: string, effects: OnHitEffect[]) => {
-          if (effects.length === 0) return;
-          const existing = entityOnHitEffects.get(instanceId) || [];
-          entityOnHitEffects.set(instanceId, [...existing, ...effects]);
-        };
+      // ★ starter 直属 onHitEffects 传播源（slot.entity.children + slot.children 的 affix 都传播）
+      const starterOnHitEffects: OnHitEffect[] = [];
 
+      if (isStarter(edef)) {
         // 步骤1：遍历子树，收集每个 isActive 实体的自身效果
         this.collectEntityOnHitEffects(allChildren, entityOnHitEffects);
         // starter 自身若是 isActive，也收集其直属 affix 效果
@@ -684,16 +684,16 @@ export class GameEngine {
           }
           if (starterEffects.length > 0) {
             registerEffects(slot.entity.instanceId, starterEffects);
+            // ★ 同时加入传播列表，使子树所有 isActive 实体也能获得此效果
+            starterOnHitEffects.push(...starterEffects);
           }
         }
 
-        // 步骤2：收集 starter 直属 onHitEffects（传播源 — slot.children 中的 affix）
-        const starterOnHitEffects: OnHitEffect[] = [];
+        // 步骤2：收集 slot.children 中的 affix onHitEffects
         for (const c of slot.children) {
           if (c.type === 'affix') {
             const adef = getAffixDef(c.defId);
             if (adef?.id === 'strength') extraDmg += adef.value;
-            // ★ 收集传播源效果
             if (adef?.onHitEffects) {
               for (const e of adef.onHitEffects) {
                 starterOnHitEffects.push({ type: e.type, params: { ...e.params } });
@@ -708,9 +708,6 @@ export class GameEngine {
             registerEffects(instanceId, starterOnHitEffects);
           }
         }
-
-        // 步骤4：存储 Map（供 _runBattleCore 使用）
-        this.entityOnHitEffects = entityOnHitEffects;
 
         const netPassive = collected.passiveDamageBonus - extraDmg;
         for (const w of collected.weapons) {
@@ -744,7 +741,7 @@ export class GameEngine {
         activeWeapons: collected.weapons,
       });
     }
-    return units;
+    return { snapshots: units, onHitEffects: entityOnHitEffects };
   }
 
   // ---- 敌方 BD 生成（v3：产出 CombatUnitSnapshot[]） ----
@@ -903,11 +900,12 @@ export class GameEngine {
     starter: CombatUnitRuntime,
     target: CombatUnitRuntime,
     damage: number,
+    onHitEffects: Map<string, OnHitEffect[]>,
   ): string[] {
     const labels: string[] = [];
     if (damage <= 0) return labels; // 仅正伤害触发
 
-    const effects = this.entityOnHitEffects.get(weapon.ownerInstanceId);
+    const effects = onHitEffects.get(weapon.ownerInstanceId);
     if (!effects || effects.length === 0) return labels;
 
     const ctx: OnHitContext = {
@@ -965,6 +963,8 @@ export class GameEngine {
   private async _runBattleCore(
     playerUnits: CombatUnitRuntime[],
     enemyUnits: CombatUnitRuntime[],
+    playerOnHitEffects: Map<string, OnHitEffect[]>,
+    enemyOnHitEffects: Map<string, OnHitEffect[]>,
     onEvent: (evt: CombatEvent) => void,
     isPaused?: () => boolean,
     isCancelled?: () => boolean,
@@ -1049,8 +1049,9 @@ export class GameEngine {
         const dmg = damage;
         target.currentHp = round6(Math.min(target.currentHp - dmg, target.totalHp));
 
-        // ★ 命中效果结算
-        const onHitLabels = this.resolveOnHitEffects(weapon, unit, target, dmg);
+        // ★ 命中效果结算（根据阵营选择正确的 Map）
+        const hitMap = isPlayer ? playerOnHitEffects : enemyOnHitEffects;
+        const onHitLabels = this.resolveOnHitEffects(weapon, unit, target, dmg, hitMap);
 
         // 重置倒计时
         weapon.remainingTime = weapon.actionTime;
@@ -1136,7 +1137,7 @@ export class GameEngine {
     onEvent: (evt: CombatEvent) => void,
     onEnd: (win: boolean, gold: number) => void,
   ) {
-    const snapshots = this.calculateCombatSnapshots();
+    const { snapshots, onHitEffects: playerOnHitEffects } = this.calculateCombatSnapshots();
 
     // 1. 上传 BD 到对战池（静默，失败不影响战斗）
     try {
@@ -1146,11 +1147,14 @@ export class GameEngine {
 
     // 2. 从对战池抽取对手
     let enemySnaps: CombatUnitSnapshot[] | null = null;
+    let enemyOnHitEffects: Map<string, OnHitEffect[]> = new Map();
     try {
       const { opponent } = await dataApi.getBattlePool(this.state.round);
       if (opponent && opponent.bd_json && Array.isArray(opponent.bd_json)) {
         console.log('[runCombat] 抽取对手成功', { round: this.state.round, slots: opponent.bd_json.length, opponent: opponent.username });
-        enemySnaps = this.calculateCombatSnapshots(opponent.bd_json as DeploySlot[]);
+        const enemyResult = this.calculateCombatSnapshots(opponent.bd_json as DeploySlot[]);
+        enemySnaps = enemyResult.snapshots;
+        enemyOnHitEffects = enemyResult.onHitEffects;
       } else {
         console.log('[runCombat] 池空，自动获胜', { round: this.state.round });
       }
@@ -1190,7 +1194,7 @@ export class GameEngine {
     await new Promise(r => setTimeout(r, 300)); // 让 UI 先渲染
 
     try {
-      const result = await this._runBattleCore(playerUnits, enemyUnits, onEvent);
+      const result = await this._runBattleCore(playerUnits, enemyUnits, playerOnHitEffects, enemyOnHitEffects, onEvent);
 
       const goldReward = result.win ? (10 + this.state.round * 5 + this.state.deploySlots.length * 2) : 0;
 
@@ -1225,8 +1229,8 @@ export class GameEngine {
     isPaused?: () => boolean,
     isCancelled?: () => boolean,
   ) {
-    const playerSnaps = this.calculateCombatSnapshots(playerSlots);
-    const enemySnaps = this.calculateCombatSnapshots(enemySlots);
+    const { snapshots: playerSnaps, onHitEffects: playerOnHit } = this.calculateCombatSnapshots(playerSlots);
+    const { snapshots: enemySnaps, onHitEffects: enemyOnHit } = this.calculateCombatSnapshots(enemySlots);
 
     const playerUnits = this.buildCombatRuntime(playerSnaps);
     const enemyUnits = this.buildCombatRuntime(enemySnaps);
@@ -1244,7 +1248,7 @@ export class GameEngine {
     await new Promise(r => setTimeout(r, 300));
 
     try {
-      const result = await this._runBattleCore(playerUnits, enemyUnits, onEvent, isPaused, isCancelled);
+      const result = await this._runBattleCore(playerUnits, enemyUnits, playerOnHit, enemyOnHit, onEvent, isPaused, isCancelled);
       onEnd(result.win);
     } finally {
       this.combatPlayerUnits = null;

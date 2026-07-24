@@ -1293,6 +1293,11 @@ function hideSimTooltip() {
         h += `<div class="sb-log-entry">[0.0s] 战斗开始</div>`;
       } else {
         h += `<div class="sb-log-entry">[${(evt.time / 1000).toFixed(1)}s] ${evt.actorName} · ${evt.weaponName} -> ${evt.targetName} 伤害 ${evt.damage} (HP:${Math.round(evt.targetHpAfter)}/${evt.targetMaxHp})</div>`;
+        for (const eff of evt.effects) {
+          if (eff !== '击杀') {
+            h += `<div class="sb-log-entry" style="padding-left:20px">${eff}</div>`;
+          }
+        }
       }
     }
     return h;
@@ -2259,6 +2264,11 @@ function hideSimTooltip() {
             entryHtml = '<div class="sb-log-entry">[0.0s] 战斗开始</div>';
           } else {
             entryHtml = `<div class="sb-log-entry">[${(evt.time / 1000).toFixed(1)}s] ${evt.actorName} · ${evt.weaponName} -> ${evt.targetName} 伤害 ${evt.damage} (HP:${Math.round(evt.targetHpAfter)}/${evt.targetMaxHp})</div>`;
+            for (const eff of evt.effects) {
+              if (eff !== '击杀') {
+                entryHtml += `<div class="sb-log-entry" style="padding-left:20px">${eff}</div>`;
+              }
+            }
           }
           logEl.insertAdjacentHTML('beforeend', entryHtml);
           logEl.scrollTop = logEl.scrollHeight;
