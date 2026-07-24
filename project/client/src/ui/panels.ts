@@ -851,8 +851,12 @@ export class UIManager {
       for (const evt of this.combatLog) {
         if (evt.effects.includes('击杀')) {
           logHtml += `<div class="combat-event">[${evt.time}ms] <b>${evt.targetName} 被击杀!</b></div>`;
+        } else if (!evt.actorName) {
+          // 系统事件（如"战斗开始"）— 只显示 targetName
+          logHtml += `<div class="combat-event">[${evt.time}ms] ${evt.targetName}</div>`;
         } else {
-          logHtml += `<div class="combat-event">[${evt.time}ms] ${evt.actorName} ${evt.weaponName} ${evt.targetName} → ${evt.damage}伤害 (HP:${evt.targetHpAfter}/${evt.targetMaxHp})</div>`;
+          const tl = evt.targetingLabel ? ` <span style="color:var(--text-dim)">[${evt.targetingLabel}]</span>` : '';
+          logHtml += `<div class="combat-event">[${evt.time}ms] ${evt.actorName}·${evt.weaponName}${tl} → ${evt.targetName} ${evt.damage}伤害 (HP:${evt.targetHpAfter}/${evt.targetMaxHp})</div>`;
           for (const eff of evt.effects) {
             if (eff !== '击杀') {
               logHtml += `<div class="combat-event" style="padding-left:20px">${eff}</div>`;
@@ -865,8 +869,121 @@ export class UIManager {
     }
   }
 
-  // 开始战斗
-  async startCombat() {
+  // ======================== 战斗预览（方案4：v6 新增） ========================
+
+  /** 生成一条 targeting 描述文本 */
+  private _describeTargeting(w: { targetFaction: string; targetCondition?: import('../game/data').TargetCondition; priorityTarget: number | null; targetOrder: string }): string {
+    const tc = w.targetCondition;
+    let rule = '';
+    if (tc?.sortBy === 'hp_asc') rule = 'HP最低优先';
+    else if (tc?.sortBy === 'hp_desc') rule = 'HP最高优先';
+    else if (tc?.sortBy === 'stamina_asc') rule = '耐力最低优先';
+    else if (tc?.sortBy === 'random') rule = '随机';
+    else if (w.priorityTarget !== null) rule = `前排优先${w.priorityTarget}`;
+    else if (w.targetOrder === '从下往上') rule = '从后往前';
+    else rule = '从上往下';
+
+    if (tc?.filterBy) {
+      const fbMap: Record<string, string> = { has_debuff: '有debuff', most_buffs: 'Buff最多', hp_below_50pct: 'HP<50%' };
+      rule += ` + ${fbMap[tc.filterBy] || tc.filterBy}`;
+    }
+    return `${rule} → ${w.targetFaction}`;
+  }
+
+  /** 渲染战斗预览面板 — 全屏对阵视图 */
+  renderCombatPreview() {
+    // 计算玩家快照
+    const { snapshots: playerSnaps } = this.engine.calculateCombatSnapshots();
+
+    // 尝试生成敌方快照（pool 为空时的 deterministic 后备）
+    let enemySnaps: CombatUnitSnapshot[] = [];
+    try { enemySnaps = this.engine.generateEnemyBD(); } catch (_) { /* 忽略 */ }
+
+    const buildUnitCard = (u: CombatUnitSnapshot, side: 'player' | 'enemy'): string => {
+      const cls = side === 'player' ? 'cp-player' : 'cp-enemy';
+      let h = `<div class="cp-unit ${cls}">`;
+      h += `<div class="cp-unit-name">${u.entityName}</div>`;
+      h += `<div class="cp-unit-meta">HP:${u.currentHp}/${u.totalHp} 耐力:${u.currentStamina}/${u.maxStamina}</div>`;
+      if (u.activeWeapons.length === 0) {
+        h += `<div class="cp-weapon empty">（无可触发动作）</div>`;
+      } else {
+        for (const w of u.activeWeapons) {
+          const desc = this._describeTargeting(w);
+          h += `<div class="cp-weapon">→ ${w.name} <span class="cp-targeting">${desc}</span></div>`;
+        }
+      }
+      h += `</div>`;
+      return h;
+    };
+
+    let html = '<div id="combat-preview-overlay">';
+    html += '<div id="combat-preview">';
+
+    // 头部
+    html += '<div id="cp-header">';
+    html += '<div class="cp-title">⚔ 战斗预览</div>';
+    html += '<div class="cp-subtitle">确认双方对阵信息后开始战斗</div>';
+    html += '</div>';
+
+    // 对阵主体
+    html += '<div id="cp-body">';
+    html += '<div id="cp-player-col">';
+    html += '<div class="cp-col-title">【己方】</div>';
+    if (playerSnaps.length === 0) {
+      html += '<div class="cp-empty">暂无上场单位</div>';
+    } else {
+      for (const u of playerSnaps) {
+        html += buildUnitCard(u, 'player');
+      }
+    }
+    html += '</div>';
+
+    html += '<div id="cp-vs">VS</div>';
+
+    html += '<div id="cp-enemy-col">';
+    html += '<div class="cp-col-title">【敌方】</div>';
+    if (enemySnaps.length === 0) {
+      html += '<div class="cp-empty">对手将从对战池抽取</div>';
+    } else {
+      for (const u of enemySnaps) {
+        html += buildUnitCard(u, 'enemy');
+      }
+    }
+    html += '</div>';
+    html += '</div>'; // #cp-body
+
+    // 底部按钮
+    html += '<div id="cp-footer">';
+    html += '<button id="cp-btn-start">开始战斗</button>';
+    html += '<button id="cp-btn-cancel" class="btn-secondary">取消</button>';
+    html += '</div>';
+
+    html += '</div></div>'; // #combat-preview + overlay
+
+    // 注入 overlay
+    const app = document.getElementById('app')!;
+    const existing = document.getElementById('combat-preview-overlay');
+    if (existing) existing.remove();
+    app.insertAdjacentHTML('beforeend', html);
+
+    // 绑定事件
+    document.getElementById('cp-btn-start')!.onclick = () => {
+      document.getElementById('combat-preview-overlay')!.remove();
+      this._doStartCombat();
+    };
+    document.getElementById('cp-btn-cancel')!.onclick = () => {
+      document.getElementById('combat-preview-overlay')!.remove();
+    };
+    // 点击遮罩关闭
+    document.getElementById('combat-preview-overlay')!.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).id === 'combat-preview-overlay') {
+        document.getElementById('combat-preview-overlay')!.remove();
+      }
+    });
+  }
+
+  /** 实际执行战斗（原 startCombat 逻辑） */
+  private async _doStartCombat() {
     this.combatLog = [];
     this.combatFinished = false;
     this.engine.state.phase = 2;
@@ -887,7 +1004,7 @@ export class UIManager {
         (evt) => {
           this.combatLog.push(evt);
           this.renderCombatLogPanel();
-          this.lastTickWallTime = Date.now(); // 引擎 tick 时间戳
+          this.lastTickWallTime = Date.now();
         },
         (win, gold) => {
           if (win) {
@@ -895,8 +1012,6 @@ export class UIManager {
           } else {
             this.showToast('战斗失败');
           }
-
-          // 保持战斗面板 + 日志，等待玩家点"继续"
           this.combatFinished = true;
           this.render();
         },
@@ -907,6 +1022,12 @@ export class UIManager {
         this.combatUpdateTimer = null;
       }
     }
+  }
+
+  // 开始战斗
+  async startCombat() {
+    // 先展示战斗预览，用户确认后由 renderCombatPreview 回调 _doStartCombat
+    this.renderCombatPreview();
   }
 
   // ======================== 存档（单存档） ========================

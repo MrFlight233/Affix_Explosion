@@ -856,6 +856,10 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     h += `<div class="admin-field"><label>针对类型</label><select id="ef-targetType"><option value="">—</option><option value="近战"${sel('targetType','近战')}>近战</option><option value="远程"${sel('targetType','远程')}>远程</option></select></div>`;
     h += `<div class="admin-field"><label>针对顺序</label><select id="ef-targetOrder"><option value="">—</option><option value="从上往下"${sel('targetOrder','从上往下')}>从上往下</option><option value="从下往上"${sel('targetOrder','从下往上')}>从下往上</option></select></div>`;
     h += `<div class="admin-field"><label>优先目标</label><select id="ef-priorityTarget"><option value="">无</option><option value="1"${v('priorityTarget')===1?' selected':''}>1</option><option value="2"${v('priorityTarget')===2?' selected':''}>2</option><option value="3"${v('priorityTarget')===3?' selected':''}>3</option></select></div>`;
+    // v6: 条件 Targeting
+    const tc = v('targetCondition');
+    h += `<div class="admin-field"><label>条件排序</label><select id="ef-tc-sortBy"><option value="">无</option><option value="hp_asc"${tc?.sortBy==='hp_asc'?' selected':''}>HP最低优先</option><option value="hp_desc"${tc?.sortBy==='hp_desc'?' selected':''}>HP最高优先</option><option value="stamina_asc"${tc?.sortBy==='stamina_asc'?' selected':''}>耐力最低优先</option><option value="random"${tc?.sortBy==='random'?' selected':''}>随机</option></select></div>`;
+    h += `<div class="admin-field"><label>条件过滤</label><select id="ef-tc-filterBy"><option value="">无</option><option value="has_debuff"${tc?.filterBy==='has_debuff'?' selected':''}>有负面状态</option><option value="most_buffs"${tc?.filterBy==='most_buffs'?' selected':''}>Buff最多</option><option value="hp_below_50pct"${tc?.filterBy==='hp_below_50pct'?' selected':''}>HP低于50%</option></select></div>`;
     h += `</div>`;
     h += `</div>`;
     h += `<div class="admin-form-section"><h4>被动加成</h4>`;
@@ -877,7 +881,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
       // 兼容旧数据：完整内联实体对象 → 提取差异
       const tpl = c?.id ? state.entities.find((e: any) => e.id === c.id) : null;
       const ov: any = {};
-      const fields = ['damage','damageBonus','actionTime','staminaCost','staminaRegenerationBonus','staminaBonus','hpRegenerationBonus','hpBonus','weight','value','isActive','targetType','targetOrder','priorityTarget','targetFaction','name','slotCost','entitySlots','dynamicAffixSlots','hp','maxStamina','staminaRegen','hpRegen','maxLoad','poolPrerequisite'];
+      const fields = ['damage','damageBonus','actionTime','staminaCost','staminaRegenerationBonus','staminaBonus','hpRegenerationBonus','hpBonus','weight','value','isActive','targetType','targetOrder','priorityTarget','targetFaction','targetCondition','name','slotCost','entitySlots','dynamicAffixSlots','hp','maxStamina','staminaRegen','hpRegen','maxLoad','poolPrerequisite'];
       for (const f of fields) { if (c[f] !== undefined && (!tpl || c[f] !== tpl[f])) ov[f] = c[f]; }
       const spec: DefaultChildSpec = { defId: c.id || 'unknown' };
       if (Object.keys(ov).length > 0) spec.overrides = ov;
@@ -959,12 +963,21 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     h += `<div class="admin-field"><label>槽位消耗</label><input id="af-slotCost" type="number" value="${v('slotCost',0)}"></div>`;
     h += `<div class="admin-field"><label>可重复</label><input id="af-repeatable" type="checkbox" ${v('repeatable')?'checked':''}></div>`;
     h += `</div>`;
+    h += `<div class="admin-form-section"><h4>前置条件</h4>`;
+    h += renderPopoverSelector('af-prerequisite','前置词条',v('prerequisite')||[],affixOpts);
+    h += renderPopoverSelector('af-poolPrerequisite','池前置',v('poolPrerequisite')||[],affixOpts);
+    h += `</div>`;
+    // v7: 被动加成总开关
+    const hasPB = v('hasPassiveBonuses') === true;
     h += `<div class="admin-form-section"><h4>被动加成</h4>`;
+    h += `<div class="admin-field"><label>被动加成模式</label><select id="af-hasPassiveBonuses"><option value="0"${!hasPB?' selected':''}>无</option><option value="1"${hasPB?' selected':''}>有</option></select></div>`;
+    h += `<div id="af-passive-fields" style="${hasPB?'':'display:none'}">`;
     h += `<div class="admin-field"><label>伤害加成(正=增伤,负=增强治疗)</label><input id="af-damageBonus" type="number" value="${v('damageBonus', 0)}" step="any"></div>`;
     h += `<div class="admin-field"><label>生命加成</label><input id="af-hpBonus" type="number" value="${v('hpBonus', 0)}"></div>`;
     h += `<div class="admin-field"><label>生命恢复加成</label><input id="af-hpRegenerationBonus" type="number" value="${v('hpRegenerationBonus', 0)}"></div>`;
     h += `<div class="admin-field"><label>耐力加成</label><input id="af-staminaBonus" type="number" value="${v('staminaBonus', 0)}"></div>`;
     h += `<div class="admin-field"><label>耐力恢复加成</label><input id="af-staminaRegenerationBonus" type="number" value="${v('staminaRegenerationBonus', 0)}"></div>`;
+    h += `</div>`;
     h += `</div>`;
     h += `<div class="admin-form-section"><h4>命中效果</h4>`;
     const onHit: any = v('onHitEffects')?.[0] || {};
@@ -972,9 +985,19 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     h += `<div class="admin-field"><label>效果类型</label><select id="af-onHitType"><option value="">无</option><option value="life_steal"${effType==='life_steal'?' selected':''}>life_steal — 吸血</option><option value="stamina_drain"${effType==='stamina_drain'?' selected':''}>stamina_drain — 削耐</option></select></div>`;
     h += `<div class="admin-field" id="af-onHitParams" style="${effType?'':'display:none'}"><label>参数</label><span style="display:flex;gap:4px;align-items:center"><input id="af-onHitPercent" type="number" value="${onHit.params?.percent ?? 0}" style="width:60px"> %<input id="af-onHitAmount" type="number" value="${onHit.params?.amount ?? 0}" style="width:60px"> 固定值</span></div>`;
     h += `</div>`;
-    h += `<div class="admin-form-section"><h4>前置条件</h4>`;
-    h += renderPopoverSelector('af-prerequisite','前置词条',v('prerequisite')||[],affixOpts);
-    h += renderPopoverSelector('af-poolPrerequisite','池前置',v('poolPrerequisite')||[],affixOpts);
+    // v7: targeting_modifier 扩展 — 主开关 + 全部 targeting 字段
+    const tm = v('targetingModifier');
+    const tmEnabled = !!(tm?.targetFaction !== undefined || tm?.targetOrder !== undefined ||
+      tm?.priorityTarget !== undefined || tm?.sortBy !== undefined || tm?.filterBy !== undefined);
+    h += `<div class="admin-form-section"><h4>Targeting 覆写（targeting_modifier）</h4>`;
+    h += `<div class="admin-field"><label>覆写模式</label><select id="af-tm-enabled"><option value="0"${!tmEnabled?' selected':''}>不修改</option><option value="1"${tmEnabled?' selected':''}>修改</option></select></div>`;
+    h += `<div id="af-tm-fields" style="${tmEnabled?'':'display:none'}">`;
+    h += `<div class="admin-field"><label>针对目标</label><select id="af-tm-targetFaction"><option value="">不修改</option><option value="友方"${tm?.targetFaction==='友方'?' selected':''}>友方</option><option value="敌人"${tm?.targetFaction==='敌人'?' selected':''}>敌人</option><option value="所有"${tm?.targetFaction==='所有'?' selected':''}>所有</option></select></div>`;
+    h += `<div class="admin-field"><label>针对顺序</label><select id="af-tm-targetOrder"><option value="">不修改</option><option value="从上往下"${tm?.targetOrder==='从上往下'?' selected':''}>从上往下</option><option value="从下往上"${tm?.targetOrder==='从下往上'?' selected':''}>从下往上</option></select></div>`;
+    h += `<div class="admin-field"><label>优先目标</label><select id="af-tm-priorityTarget"><option value="">不修改</option><option value="1"${tm?.priorityTarget===1?' selected':''}>1</option><option value="2"${tm?.priorityTarget===2?' selected':''}>2</option><option value="3"${tm?.priorityTarget===3?' selected':''}>3</option><option value="none"${tm?.priorityTarget===null?' selected':''}>无（清除优先位）</option></select></div>`;
+    h += `<div class="admin-field"><label>条件排序</label><select id="af-tm-sortBy"><option value="">不修改</option><option value="hp_asc"${tm?.sortBy==='hp_asc'?' selected':''}>HP最低优先</option><option value="hp_desc"${tm?.sortBy==='hp_desc'?' selected':''}>HP最高优先</option><option value="stamina_asc"${tm?.sortBy==='stamina_asc'?' selected':''}>耐力最低优先</option><option value="random"${tm?.sortBy==='random'?' selected':''}>随机</option><option value="none"${tm?.sortBy===null?' selected':''}>无（清除排序）</option></select></div>`;
+    h += `<div class="admin-field"><label>条件过滤</label><select id="af-tm-filterBy"><option value="">不修改</option><option value="has_debuff"${tm?.filterBy==='has_debuff'?' selected':''}>有负面状态</option><option value="most_buffs"${tm?.filterBy==='most_buffs'?' selected':''}>Buff最多</option><option value="hp_below_50pct"${tm?.filterBy==='hp_below_50pct'?' selected':''}>HP低于50%</option><option value="none"${tm?.filterBy===null?' selected':''}>无（清除过滤）</option></select></div>`;
+    h += `</div>`;
     h += `</div>`;
     h += `</div>`;
     return h;
@@ -1074,6 +1097,11 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         targetType: (document.getElementById('ef-targetType') as HTMLSelectElement).value || null,
         targetOrder: (document.getElementById('ef-targetOrder') as HTMLSelectElement).value || null,
         priorityTarget: (() => { const v = (document.getElementById('ef-priorityTarget') as HTMLSelectElement).value; return v ? parseInt(v) : null; })(),
+        targetCondition: (() => {
+          const sortBy = (document.getElementById('ef-tc-sortBy') as HTMLSelectElement).value || null;
+          const filterBy = (document.getElementById('ef-tc-filterBy') as HTMLSelectElement).value || null;
+          return sortBy || filterBy ? { sortBy: sortBy || undefined, filterBy: filterBy || undefined, fallback: 'targetOrder' as const } : undefined;
+        })(),
         staminaRegenerationBonus: parseInt((document.getElementById('ef-staminaRegenerationBonus') as HTMLInputElement).value) || 0,
         staminaBonus: parseInt((document.getElementById('ef-staminaBonus') as HTMLInputElement).value) || 0,
         hpRegenerationBonus: parseInt((document.getElementById('ef-hpRegenerationBonus') as HTMLInputElement).value) || 0,
@@ -1120,6 +1148,20 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
       if (onHitParamsDiv) onHitParamsDiv.style.display = onHitTypeSel.value ? '' : 'none';
     });
 
+    // v7: 被动加成主开关
+    const hasPBsel = document.getElementById('af-hasPassiveBonuses') as HTMLSelectElement;
+    const passiveFields = document.getElementById('af-passive-fields');
+    hasPBsel?.addEventListener('change', () => {
+      if (passiveFields) passiveFields.style.display = hasPBsel.value === '1' ? '' : 'none';
+    });
+
+    // v7: targeting modifier 主开关
+    const tmEnabledSel = document.getElementById('af-tm-enabled') as HTMLSelectElement;
+    const tmFields = document.getElementById('af-tm-fields');
+    tmEnabledSel?.addEventListener('change', () => {
+      if (tmFields) tmFields.style.display = tmEnabledSel.value === '1' ? '' : 'none';
+    });
+
     document.getElementById('af-btn-manage-cats')?.addEventListener('click', (e) => {
       e.preventDefault();
       showCatManager();
@@ -1151,11 +1193,33 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         poolPrerequisite: getSelected('af-poolPrerequisite'),
         effect: (document.getElementById('af-effect') as HTMLInputElement).value.trim(),
         onHitEffects,
+        // v7: passive bonus toggle
+        hasPassiveBonuses: (document.getElementById('af-hasPassiveBonuses') as HTMLSelectElement).value === '1',
         damageBonus: parseFloat((document.getElementById('af-damageBonus') as HTMLInputElement).value) || 0,
         staminaRegenerationBonus: parseInt((document.getElementById('af-staminaRegenerationBonus') as HTMLInputElement).value) || 0,
         staminaBonus: parseInt((document.getElementById('af-staminaBonus') as HTMLInputElement).value) || 0,
         hpRegenerationBonus: parseInt((document.getElementById('af-hpRegenerationBonus') as HTMLInputElement).value) || 0,
         hpBonus: parseInt((document.getElementById('af-hpBonus') as HTMLInputElement).value) || 0,
+        // v7: expanded targeting modifier with master toggle
+        targetingModifier: (() => {
+          const enabled = (document.getElementById('af-tm-enabled') as HTMLSelectElement).value === '1';
+          if (!enabled) return undefined;
+          const mod: any = {};
+          const tf = (document.getElementById('af-tm-targetFaction') as HTMLSelectElement).value;
+          if (tf) mod.targetFaction = tf;
+          const to = (document.getElementById('af-tm-targetOrder') as HTMLSelectElement).value;
+          if (to) mod.targetOrder = to;
+          const ptVal = (document.getElementById('af-tm-priorityTarget') as HTMLSelectElement).value;
+          if (ptVal === 'none') mod.priorityTarget = null;
+          else if (ptVal) mod.priorityTarget = parseInt(ptVal);
+          const sbVal = (document.getElementById('af-tm-sortBy') as HTMLSelectElement).value;
+          if (sbVal === 'none') mod.sortBy = null;
+          else if (sbVal) mod.sortBy = sbVal;
+          const fbVal = (document.getElementById('af-tm-filterBy') as HTMLSelectElement).value;
+          if (fbVal === 'none') mod.filterBy = null;
+          else if (fbVal) mod.filterBy = fbVal;
+          return Object.keys(mod).length > 0 ? mod : undefined;
+        })(),
       };
       try {
         if (isNew) { await admin.createAffix(affix); showToast('词条创建成功'); }

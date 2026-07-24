@@ -3,6 +3,29 @@
 // v5: 数据统一从服务端 API 加载，废弃客户端硬编码 fallback
 // ============================================================
 
+/** 条件 Targeting 配置（v6 新增）— 武器级别的目标选择偏好 */
+export interface TargetCondition {
+  sortBy?: 'hp_asc' | 'hp_desc' | 'stamina_asc' | 'random' | null;
+  filterBy?: 'has_debuff' | 'most_buffs' | 'hp_below_50pct' | null;
+  fallback?: 'targetOrder';
+}
+
+/** Targeting 覆写（v7 扩展）— 词条可覆写实体的任意 targeting 字段。
+ *  每个字段为 undefined 表示"不覆写该字段，保留实体原始值"。
+ *  多个 targeting_modifier 词条按 children 数组顺序从前到后依次合并。 */
+export interface TargetingModifier {
+  /** 覆写针对目标阵营 */
+  targetFaction?: string | null;
+  /** 覆写针对顺序 */
+  targetOrder?: string | null;
+  /** 覆写优先目标位（null = 覆写为"无优先"） */
+  priorityTarget?: number | null;
+  /** 覆写条件排序（null = 覆写为"不排序"） */
+  sortBy?: 'hp_asc' | 'hp_desc' | 'stamina_asc' | 'random' | null;
+  /** 覆写条件过滤（null = 覆写为"不过滤"） */
+  filterBy?: 'has_debuff' | 'most_buffs' | 'hp_below_50pct' | null;
+}
+
 /** 子实体规格（Template/Instance 分离）：引用模板 + 可选字段覆写 + 词条预设 */
 export interface DefaultChildSpec {
   defId: string;
@@ -43,6 +66,8 @@ export interface EntityDef {
   damageBonus: number;
   targetType: string | null; targetOrder: string | null; priorityTarget: number | null;
   targetFaction: string | null; // '友方'|'敌人'|'所有'
+  /** 条件 Targeting 配置（v6 新增）— 存在时优先级高于 priorityTarget/targetOrder */
+  targetCondition?: TargetCondition;
 
   // ---- 被动加成（对最外层启动端实体生效） ----
   /** 被动加成: 耐力恢复/秒 */
@@ -80,6 +105,10 @@ export interface AffixDef {
   hpBonus: number;
   /** 全局伤害加成（加至所有武器），独立于 isActive */
   damageBonus: number;
+  /** targeting_modifier 分类词条的专属效果（v7 扩展）— 可覆写所有 targeting 字段 */
+  targetingModifier?: TargetingModifier;
+  /** 是否有被动加成（v7 新增）。false → 引擎跳过被动累加，提升性能。 */
+  hasPassiveBonuses?: boolean;
 }
 
 export interface CategoryDef {

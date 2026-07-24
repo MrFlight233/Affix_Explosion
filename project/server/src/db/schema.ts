@@ -36,6 +36,7 @@ export const entities = sqliteTable('entities', {
   targetOrder: text('target_order'),
   priorityTarget: integer('priority_target'),
   targetFaction: text('target_faction'),
+  targetCondition: text('target_condition'),
   staminaRegenerationBonus: integer('stamina_regeneration_bonus').notNull().default(0),
   staminaBonus: integer('stamina_bonus').notNull().default(0),
   hpRegenerationBonus: integer('hp_regeneration_bonus').notNull().default(0),
@@ -62,6 +63,8 @@ export const affixes = sqliteTable('affixes', {
   hpRegenerationBonus: integer('hp_regeneration_bonus').notNull().default(0),
   hpBonus: integer('hp_bonus').notNull().default(0),
   damageBonus: integer('damage_bonus').notNull().default(0),
+  targetingModifier: text('targeting_modifier'),
+  hasPassiveBonuses: integer('has_passive_bonuses').notNull().default(0),
   createdAt: text('created_at').notNull().default("(datetime('now'))"),
   updatedAt: text('updated_at').notNull().default("(datetime('now'))"),
 });

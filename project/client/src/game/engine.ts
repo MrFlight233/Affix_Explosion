@@ -8,7 +8,7 @@ import {
   getEffectiveEntitySlots, countUsedSlots,
   findInTree, removeFromTreeChildren,
   ENTITY_DEFS, AFFIX_DEFS, getEntityCategory,
-  getEffectiveValue, OnHitEffect,
+  getEffectiveValue, OnHitEffect, TargetCondition, TargetingModifier,
 } from './data';
 import { data as dataApi, saves as savesApi } from '../api/client';
 
@@ -42,6 +42,8 @@ export interface CombatUnitSnapshot {
     targetOrder: string;
     priorityTarget: number | null;
     targetFaction: string;
+    /** 条件 Targeting 配置（v6 新增） */
+    targetCondition?: import('../data').TargetCondition;
     /** 拥有该武器的实体实例ID — 用于 entityOnHitEffects 查表 */
     ownerInstanceId: string;
   }[];
@@ -71,6 +73,8 @@ export interface CombatWeaponRuntime {
   targetOrder: string;
   priorityTarget: number | null;
   targetFaction: string;
+  /** 条件 Targeting 配置（v6 新增）— 存在时优先级高于 priorityTarget/targetOrder */
+  targetCondition?: import('../data').TargetCondition;
   /** 拥有该武器的实体实例ID */
   ownerInstanceId: string;
 }
@@ -100,6 +104,8 @@ export interface CombatEvent {
   targetHpAfter: number;
   targetMaxHp: number;
   effects: string[];
+  /** targeting 规则标签（v6 新增）— 用于战斗日志标注选目标策略 */
+  targetingLabel?: string;
 }
 
 // ---- 游戏状态 ----
@@ -574,6 +580,8 @@ export class GameEngine {
         if (isActive) {
           const wDamage = Number(getEffectiveValue(child, 'damage') ?? 0);
           const weaponDamage = wDamage + growthStack;
+          // ★ v7: 收集本实体直属 affix 子项中的 targeting_modifier（per-entity 生效）
+          const entityTargetingMods = this._collectEntityTargetingMods(child.children);
           // 被动伤害加成统一在 calculateCombatSnapshots 阶段应用，避免双重累加
           weapons.push({
             name: String(getEffectiveValue(child, 'name') ?? cdef.name),
@@ -581,9 +589,10 @@ export class GameEngine {
             damage: weaponDamage,
             staminaCost: Number(getEffectiveValue(child, 'staminaCost') ?? 0),
             targetType: String((getEffectiveValue(child, 'targetType') ?? cdef.targetType) || '近战'),
-            targetOrder: String((getEffectiveValue(child, 'targetOrder') ?? cdef.targetOrder) || '从上往下'),
-            priorityTarget: (getEffectiveValue(child, 'priorityTarget') ?? cdef.priorityTarget) as number | null,
-            targetFaction: String((getEffectiveValue(child, 'targetFaction') ?? cdef.targetFaction) || '敌人'),
+            targetOrder: this._mergeTargetingField('targetOrder', entityTargetingMods, child, cdef, '从上往下'),
+            priorityTarget: this._mergeTargetingField('priorityTarget', entityTargetingMods, child, cdef, null),
+            targetFaction: this._mergeTargetingField('targetFaction', entityTargetingMods, child, cdef, '敌人'),
+            targetCondition: this._mergeTargetCondition(entityTargetingMods, child, cdef),
             ownerInstanceId: child.instanceId,
           });
         } else {
@@ -605,11 +614,14 @@ export class GameEngine {
       if (child.type === 'affix') {
         const adef = getAffixDef(child.defId);
         if (adef) {
-          totalStaminaRegenerationBonus += adef.staminaRegenerationBonus ?? 0;
-          totalStaminaBonus += adef.staminaBonus ?? 0;
-          totalHpBonus += adef.hpBonus ?? 0;
-          totalHpRegenerationBonus += adef.hpRegenerationBonus ?? 0;
-          passiveDamageBonus += adef.damageBonus ?? 0;
+          // v7: 快速跳过无被动加成的词条（避免逐字段检查零值，提升性能）
+          if (adef.hasPassiveBonuses) {
+            totalStaminaRegenerationBonus += adef.staminaRegenerationBonus ?? 0;
+            totalStaminaBonus += adef.staminaBonus ?? 0;
+            totalHpBonus += adef.hpBonus ?? 0;
+            totalHpRegenerationBonus += adef.hpRegenerationBonus ?? 0;
+            passiveDamageBonus += adef.damageBonus ?? 0;
+          }
         }
       }
     }
@@ -651,15 +663,18 @@ export class GameEngine {
       if (isStarter(edef)) {
         const selfIsActive = getEffectiveValue(slot.entity, 'isActive') ?? edef.isActive;
         if (selfIsActive) {
+          // v7: 收集启动端直属 affix 子项中的 targeting_modifier（per-entity 生效）
+          const starterTargetingMods = this._collectEntityTargetingMods(allChildren);
           collected.weapons.unshift({
             name: edef.name,
             actionTime: Number(getEffectiveValue(slot.entity, 'actionTime') ?? 0),
             damage: Number(getEffectiveValue(slot.entity, 'damage') ?? 0) + growthStack,
             staminaCost: Number(getEffectiveValue(slot.entity, 'staminaCost') ?? 0),
             targetType: String((getEffectiveValue(slot.entity, 'targetType') ?? edef.targetType) || '近战'),
-            targetOrder: String((getEffectiveValue(slot.entity, 'targetOrder') ?? edef.targetOrder) || '从上往下'),
-            priorityTarget: (getEffectiveValue(slot.entity, 'priorityTarget') ?? edef.priorityTarget) as number | null,
-            targetFaction: String((getEffectiveValue(slot.entity, 'targetFaction') ?? edef.targetFaction) || '敌人'),
+            targetOrder: this._mergeTargetingField('targetOrder', starterTargetingMods, slot.entity, edef, '从上往下'),
+            priorityTarget: this._mergeTargetingField('priorityTarget', starterTargetingMods, slot.entity, edef, null),
+            targetFaction: this._mergeTargetingField('targetFaction', starterTargetingMods, slot.entity, edef, '敌人'),
+            targetCondition: this._mergeTargetCondition(starterTargetingMods, slot.entity, edef),
             ownerInstanceId: slot.entity.instanceId,
           });
         }
@@ -718,6 +733,7 @@ export class GameEngine {
             w.damage += netPassive;
           }
         }
+
       }
 
       const hp = edef.hp + collected.totalHpBonus;
@@ -839,12 +855,76 @@ export class GameEngine {
         targetOrder: w.targetOrder,
         priorityTarget: w.priorityTarget,
         targetFaction: w.targetFaction,
+        targetCondition: w.targetCondition,
         ownerInstanceId: w.ownerInstanceId,
       })),
     }));
   }
 
-  /** 根据 targetFaction 选择目标 */
+  /** 合并单个 targeting 字段（v7）：词条 modifiers（从前到后依次覆写）> entity override > entityDef */
+  private _mergeTargetingField<T>(
+    field: keyof TargetingModifier,
+    modifiers: TargetingModifier[],
+    item: ItemInstance,
+    def: EntityDef,
+    defaultValue: T,
+  ): T {
+    let result: T | undefined = undefined;
+    // ★ children 数组顺序：从前到后，后面的覆盖前面的
+    for (const mod of modifiers) {
+      const val = (mod as any)[field];
+      if (val !== undefined) result = val as T;
+    }
+    if (result !== undefined) return result;
+    const ov = (item.overrides as any)?.[field];
+    if (ov !== undefined) return ov as T;
+    return (def as any)[field] ?? defaultValue;
+  }
+
+  /** 合并 targetCondition（v7）：词条 modifiers > entity override > entityDef */
+  private _mergeTargetCondition(
+    modifiers: TargetingModifier[],
+    item: ItemInstance,
+    def: EntityDef,
+  ): TargetCondition | undefined {
+    let sortBy: any = undefined;
+    let filterBy: any = undefined;
+    // ★ children 数组顺序：从前到后
+    for (const mod of modifiers) {
+      if (mod.sortBy !== undefined) sortBy = mod.sortBy;
+      if (mod.filterBy !== undefined) filterBy = mod.filterBy;
+    }
+    // entity override
+    if (sortBy === undefined) {
+      sortBy = (item.overrides as any)?.targetCondition?.sortBy ?? def.targetCondition?.sortBy;
+    }
+    if (filterBy === undefined) {
+      filterBy = (item.overrides as any)?.targetCondition?.filterBy ?? def.targetCondition?.filterBy;
+    }
+    if (sortBy || filterBy) {
+      return { sortBy: sortBy ?? undefined, filterBy: filterBy ?? undefined, fallback: 'targetOrder' };
+    }
+    return undefined;
+  }
+
+  /** 收集实体直属 affix 子项中的 targeting_modifier（v7） */
+  private _collectEntityTargetingMods(children: ItemInstance[] | undefined): TargetingModifier[] {
+    const mods: TargetingModifier[] = [];
+    if (!children) return mods;
+    for (const sub of children) {
+      if (sub.type === 'affix') {
+        const adef = getAffixDef(sub.defId);
+        if (adef?.targetingModifier) mods.push(adef.targetingModifier);
+      }
+    }
+    return mods;
+  }
+
+  /** 根据 targetFaction + targetCondition + 位置兜底 选择目标（v6 重写：条件优先）
+   *
+   *  优先级：targetCondition（sortBy/filterBy） > priorityTarget > targetOrder
+   *  targetFaction 可由词条 targeting_modifier 覆写（v7）。
+   */
   private selectTarget(
     weapon: CombatWeaponRuntime,
     playerUnits: CombatUnitRuntime[],
@@ -853,37 +933,93 @@ export class GameEngine {
   ): CombatUnitRuntime | null {
     const faction = weapon.targetFaction || '敌人';
 
-    // 确定候选池
+    // 1. 按 targetFaction 确定候选池
     let candidates: CombatUnitRuntime[];
     if (faction === '友方') {
       candidates = isPlayer ? playerUnits : enemyUnits;
     } else if (faction === '所有') {
-      // 双方都搜索：先搜对方，再搜己方
       const opposing = isPlayer ? enemyUnits : playerUnits;
       const friendly = isPlayer ? playerUnits : enemyUnits;
       candidates = [...opposing, ...friendly];
     } else {
-      // '敌人'（默认）：对方
       candidates = isPlayer ? enemyUnits : playerUnits;
     }
 
-    const alive = candidates.filter(c => c.currentHp > 0);
+    // 2. 存活过滤
+    let alive = candidates.filter(c => c.currentHp > 0);
     if (alive.length === 0) return null;
 
-    // priorityTarget: 1-based index into candidates list
-    if (weapon.priorityTarget !== null) {
-      const idx = weapon.priorityTarget - 1;
+    // 3. 条件 Targeting 优先（v6 新增）
+    //    ★ 关键设计：条件优先于位置。挂载 targeting 词条后 priorityTarget 降级为兜底
+    const tc = weapon.targetCondition;
+    if (tc) {
+      let pool = alive;
+      // 3a. filterBy 过滤 — 过滤后池为空则保留原池
+      if (tc.filterBy) {
+        const filtered = pool.filter(c => this._matchesFilter(c, tc.filterBy!));
+        if (filtered.length > 0) pool = filtered;
+      }
+      // 3b. sortBy 排序
+      if (tc.sortBy && pool.length > 1) {
+        pool = this._sortCandidates(pool, tc.sortBy);
+      }
+      return pool[0];
+    }
+
+    // 4. 位置兜底：priorityTarget（1-based index）
+    const preferIdx = weapon.priorityTarget;
+    if (preferIdx !== null) {
+      const idx = preferIdx - 1;
       if (idx >= 0 && idx < candidates.length && candidates[idx].currentHp > 0) {
         return candidates[idx];
       }
     }
 
-    // fallback: targetOrder 搜索
+    // 5. 最终兜底：targetOrder 搜索（修复：从下往上取最后一位而非 for-return 首元素）
     if (weapon.targetOrder === '从下往上') {
-      for (let i = alive.length - 1; i >= 0; i--) return alive[i];
+      return alive[alive.length - 1];
     }
-    // 从上往下（默认）
     return alive[0];
+  }
+
+  /** 检查候选单位是否满足过滤条件（v6 新增） */
+  private _matchesFilter(unit: CombatUnitRuntime, filter: string): boolean {
+    switch (filter) {
+      case 'hp_below_50pct':
+        return unit.currentHp < unit.totalHp * 0.5;
+      case 'has_debuff':
+        // 预留：检测单位是否有负面状态
+        return (unit as any)._activeDebuffs?.length > 0;
+      case 'most_buffs':
+        // 预留：检测单位是否有正面 buff
+        return (unit as any)._activeBuffs?.length > 0;
+      default:
+        return true;
+    }
+  }
+
+  /** 按指定方式排序候选池（v6 新增）— 不改变原数组 */
+  private _sortCandidates(alive: CombatUnitRuntime[], sortBy: string): CombatUnitRuntime[] {
+    const sorted = [...alive];
+    switch (sortBy) {
+      case 'hp_asc':
+        sorted.sort((a, b) => a.currentHp - b.currentHp);
+        break;
+      case 'hp_desc':
+        sorted.sort((a, b) => b.currentHp - a.currentHp);
+        break;
+      case 'stamina_asc':
+        sorted.sort((a, b) => a.currentStamina - b.currentStamina);
+        break;
+      case 'random':
+        // Fisher-Yates shuffle
+        for (let i = sorted.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [sorted[i], sorted[j]] = [sorted[j], sorted[i]];
+        }
+        break;
+    }
+    return sorted;
   }
 
   /** 递归检查实体树中是否有 growth 词条 */
@@ -1058,6 +1194,21 @@ export class GameEngine {
         // 重置倒计时
         weapon.remainingTime = weapon.actionTime;
 
+        // 生成 targeting 标签（方案4）
+        const tc = weapon.targetCondition;
+        let targetingLabel = '';
+        if (tc?.sortBy === 'hp_asc') targetingLabel = 'HP最低优先';
+        else if (tc?.sortBy === 'hp_desc') targetingLabel = 'HP最高优先';
+        else if (tc?.sortBy === 'stamina_asc') targetingLabel = '耐力最低优先';
+        else if (tc?.sortBy === 'random') targetingLabel = '随机';
+        else if (weapon.priorityTarget !== null) targetingLabel = `前排优先${weapon.priorityTarget}`;
+        else if (weapon.targetOrder === '从下往上') targetingLabel = '从后往前';
+        else targetingLabel = '从上往下';
+
+        // v7: 非默认阵营时追加标注
+        if (weapon.targetFaction === '友方') targetingLabel += ' → 友方';
+        else if (weapon.targetFaction === '所有') targetingLabel += ' → 所有';
+
         // 发射事件
         const effects: string[] = [];
         if (onHitLabels.length > 0) effects.push(...onHitLabels);
@@ -1072,6 +1223,7 @@ export class GameEngine {
           targetHpAfter: Math.min(Math.max(target.currentHp, 0), target.totalHp),
           targetMaxHp: target.totalHp,
           effects,
+          targetingLabel,
         });
 
         // 击杀事件

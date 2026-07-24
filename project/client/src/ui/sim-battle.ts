@@ -8,6 +8,7 @@ import {
   getEntityDef, getAffixDef, isStarter, getEntityCategory, getEntityCategoryFilters,
   hasEntitySlots, getEffectiveEntitySlots, countUsedSlots, getEffectiveValue,
   getEntityClassCategoryIds, getCategoryName, getAffixFilterCategories,
+  TargetCondition,
 } from '../game/data';
 import { makeDraggable, makeDropZone, DragPayload, setDragPayload, getDragPayload } from './dragDrop';
 import { data as dataApi } from '../api/client';
@@ -461,6 +462,16 @@ function renderTooltipTree(
       if (def.targetOrder) h += tipkv('针对顺序', def.targetOrder);
       if (def.priorityTarget != null) h += tipkv('优先目标', '第' + def.priorityTarget + '位');
       if (def.targetFaction) h += tipkv('针对目标', def.targetFaction);
+      // v6: 条件 Targeting（优先显示运行时 matched 值，兜底模板值）
+      const tc = (combatUnit ? combatUnit.weapons.find(w => w.name === def.name)?.targetCondition : null) ?? def.targetCondition;
+      if (tc?.sortBy) {
+        const sortMap: Record<string, string> = { hp_asc: 'HP最低优先', hp_desc: 'HP最高优先', stamina_asc: '耐力最低优先', random: '随机' };
+        h += tipkv('条件排序', sortMap[tc.sortBy] || tc.sortBy);
+      }
+      if (tc?.filterBy) {
+        const fbMap: Record<string, string> = { has_debuff: '有debuff', most_buffs: 'Buff最多', hp_below_50pct: 'HP<50%' };
+        h += tipkv('条件过滤', fbMap[tc.filterBy] || tc.filterBy);
+      }
       h += '</div>';
     }
 
@@ -606,6 +617,15 @@ function showSimTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affix', 
         if (def.targetOrder) html += tipkv('针对顺序', def.targetOrder);
         if (def.priorityTarget != null) html += tipkv('优先目标', '第' + def.priorityTarget + '位');
         if (def.targetFaction) html += tipkv('针对目标', def.targetFaction);
+        // v6: 条件 Targeting
+        if (def.targetCondition?.sortBy) {
+          const sortMap: Record<string, string> = { hp_asc: 'HP最低优先', hp_desc: 'HP最高优先', stamina_asc: '耐力最低优先', random: '随机' };
+          html += tipkv('条件排序', sortMap[def.targetCondition.sortBy] || def.targetCondition.sortBy);
+        }
+        if (def.targetCondition?.filterBy) {
+          const fbMap: Record<string, string> = { has_debuff: '有debuff', most_buffs: 'Buff最多', hp_below_50pct: 'HP<50%' };
+          html += tipkv('条件过滤', fbMap[def.targetCondition.filterBy] || def.targetCondition.filterBy);
+        }
         html += '</div>';
       }
 
@@ -1333,7 +1353,8 @@ function hideSimTooltip() {
       } else if (evt.targetName === '战斗开始') {
         h += `<div class="sb-log-entry">[0.0s] 战斗开始</div>`;
       } else {
-        h += `<div class="sb-log-entry">[${(evt.time / 1000).toFixed(1)}s] ${evt.actorName} · ${evt.weaponName} -> ${evt.targetName} 伤害 ${evt.damage} (HP:${Math.round(evt.targetHpAfter)}/${evt.targetMaxHp})</div>`;
+        const tl = evt.targetingLabel ? ` <span style="color:#999;font-size:11px">[${evt.targetingLabel}]</span>` : '';
+        h += `<div class="sb-log-entry">[${(evt.time / 1000).toFixed(1)}s] ${evt.actorName} · ${evt.weaponName}${tl} -> ${evt.targetName} 伤害 ${evt.damage} (HP:${Math.round(evt.targetHpAfter)}/${evt.targetMaxHp})</div>`;
         for (const eff of evt.effects) {
           if (eff !== '击杀') {
             h += `<div class="sb-log-entry" style="padding-left:20px">${eff}</div>`;
@@ -2271,12 +2292,102 @@ function hideSimTooltip() {
     }
   }
 
+  // v7: targeting 描述辅助函数（复刻 panels.ts _describeTargeting 逻辑）
+  function describeTargeting(w: {
+    targetFaction: string; targetCondition?: TargetCondition;
+    priorityTarget: number | null; targetOrder: string;
+  }): string {
+    const tc = w.targetCondition;
+    let rule = '';
+    if (tc?.sortBy === 'hp_asc') rule = 'HP最低优先';
+    else if (tc?.sortBy === 'hp_desc') rule = 'HP最高优先';
+    else if (tc?.sortBy === 'stamina_asc') rule = '耐力最低优先';
+    else if (tc?.sortBy === 'random') rule = '随机';
+    else if (w.priorityTarget !== null) rule = `前排优先${w.priorityTarget}`;
+    else if (w.targetOrder === '从下往上') rule = '从后往前';
+    else rule = '从上往下';
+    if (tc?.filterBy) {
+      const fbMap: Record<string, string> = { has_debuff: '有debuff', most_buffs: 'Buff最多', hp_below_50pct: 'HP<50%' };
+      rule += ` + ${fbMap[tc.filterBy] || tc.filterBy}`;
+    }
+    return `${rule} → ${w.targetFaction}`;
+  }
+
+  // v7: 模拟战斗预览面板
+  function showSimBattlePreview() {
+    const app = document.getElementById('app')!;
+    const existing = document.getElementById('sb-combat-preview-overlay');
+    if (existing) existing.remove();
+
+    // 计算双方快照
+    const playerSnaps = engine.calculateCombatSnapshots(state.playerSlots).snapshots;
+    const enemySnaps = engine.calculateCombatSnapshots(state.enemySlots).snapshots;
+
+    const buildUnitCard = (u: any, side: 'player' | 'enemy'): string => {
+      let h = `<div class="sb-preview-unit sb-preview-${side}">`;
+      h += `<div class="sb-preview-unit-name">${u.entityName}</div>`;
+      h += `<div class="sb-preview-unit-meta">HP:${u.currentHp}/${u.totalHp} 耐力:${u.currentStamina}/${u.maxStamina}</div>`;
+      if (u.activeWeapons.length === 0) {
+        h += `<div class="sb-preview-weapon empty">（无可触发动作）</div>`;
+      } else {
+        for (const w of u.activeWeapons) {
+          const desc = describeTargeting(w);
+          h += `<div class="sb-preview-weapon">→ ${w.name} <span class="sb-preview-targeting">${desc}</span></div>`;
+        }
+      }
+      h += `</div>`;
+      return h;
+    };
+
+    let html = '<div id="sb-combat-preview-overlay">';
+    html += '<div id="sb-combat-preview">';
+    html += '<div id="sb-preview-header">';
+    html += '<div class="sb-preview-title">⚔ 模拟战斗预览</div>';
+    html += '<div class="sb-preview-subtitle">确认双方对阵信息后开始战斗</div>';
+    html += '</div>';
+    html += '<div id="sb-preview-body">';
+    html += '<div id="sb-preview-player-col">';
+    html += '<div class="sb-preview-col-title">【玩家】</div>';
+    if (playerSnaps.length === 0) html += '<div class="sb-preview-empty">无上场单位</div>';
+    else for (const u of playerSnaps) html += buildUnitCard(u, 'player');
+    html += '</div>';
+    html += '<div id="sb-preview-vs">VS</div>';
+    html += '<div id="sb-preview-enemy-col">';
+    html += '<div class="sb-preview-col-title">【敌方】</div>';
+    if (enemySnaps.length === 0) html += '<div class="sb-preview-empty">无上场单位</div>';
+    else for (const u of enemySnaps) html += buildUnitCard(u, 'enemy');
+    html += '</div>';
+    html += '</div>';
+    html += '<div id="sb-preview-footer">';
+    html += '<button id="sb-preview-btn-start">开始模拟战斗</button>';
+    html += '<button id="sb-preview-btn-cancel">取消</button>';
+    html += '</div>';
+    html += '</div></div>';
+    app.insertAdjacentHTML('beforeend', html);
+
+    document.getElementById('sb-preview-btn-start')!.onclick = () => {
+      document.getElementById('sb-combat-preview-overlay')!.remove();
+      _doStartSimBattle();
+    };
+    document.getElementById('sb-preview-btn-cancel')!.onclick = () => {
+      document.getElementById('sb-combat-preview-overlay')!.remove();
+    };
+    document.getElementById('sb-combat-preview-overlay')!.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).id === 'sb-combat-preview-overlay') {
+        document.getElementById('sb-combat-preview-overlay')!.remove();
+      }
+    });
+  }
+
   async function startSimBattle() {
     if (state.playerSlots.length === 0 && state.enemySlots.length === 0) {
       showToast('请至少为一方组建 BD');
       return;
     }
+    showSimBattlePreview();
+  }
 
+  async function _doStartSimBattle() {
     // 上传双方 BD 到对战池（静默，失败不影响战斗）
     try {
       const r1 = await dataApi.uploadBD(state.round, state.playerSlots);

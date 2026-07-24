@@ -35,6 +35,7 @@ export function initTables(): void {
       target_order TEXT,
       priority_target INTEGER,
       target_faction TEXT,
+      target_condition TEXT,
       stamina_regeneration_bonus INTEGER NOT NULL DEFAULT 0,
       stamina_bonus INTEGER NOT NULL DEFAULT 0,
       hp_regeneration_bonus INTEGER NOT NULL DEFAULT 0,
@@ -55,6 +56,8 @@ export function initTables(): void {
       pool_prerequisite TEXT NOT NULL DEFAULT '[]',
       effect      TEXT NOT NULL DEFAULT '',
       on_hit_effects TEXT NOT NULL DEFAULT '[]',
+      targeting_modifier TEXT,
+      has_passive_bonuses INTEGER NOT NULL DEFAULT 0,
       created_at  TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -109,6 +112,10 @@ export function initTables(): void {
   migrateAffixOnHitEffects(db);
   // ---- 迁移：affixes 表新增被动加成 5 列 ----
   migrateAffixPassiveBonuses(db);
+  // ---- 迁移：v6 targeting 体系（target_condition + targeting_modifier） ----
+  migrateTargetingV6(db);
+  // ---- 迁移：v7 被动加成总开关（has_passive_bonuses） ----
+  migrateAffixPassiveBonusesToggleV7(db);
 
   console.log('[DB] 所有表创建/验证完成');
 }
@@ -269,5 +276,47 @@ function migrateAffixPassiveBonuses(db: ReturnType<typeof getDB>): void {
     console.log('[DB] affixes 被动加成数据迁移完成');
   } catch (e) {
     console.warn('[DB] affixes 被动加成迁移跳过:', (e as Error).message);
+  }
+}
+
+/** 迁移 v6：entities 表新增 target_condition 列 + affixes 表新增 targeting_modifier 列 */
+function migrateTargetingV6(db: ReturnType<typeof getDB>): void {
+  try {
+    // entities.target_condition
+    const eCols = db.prepare("PRAGMA table_info('entities')").all() as { name: string }[];
+    if (!eCols.some(c => c.name === 'target_condition')) {
+      db.exec(`ALTER TABLE entities ADD COLUMN target_condition TEXT`);
+      console.log('[DB] entities 表已迁移：添加 target_condition 列（v6）');
+    }
+
+    // affixes.targeting_modifier
+    const aCols = db.prepare("PRAGMA table_info('affixes')").all() as { name: string }[];
+    if (!aCols.some(c => c.name === 'targeting_modifier')) {
+      db.exec(`ALTER TABLE affixes ADD COLUMN targeting_modifier TEXT`);
+      console.log('[DB] affixes 表已迁移：添加 targeting_modifier 列（v6）');
+    }
+  } catch (e) {
+    console.warn('[DB] v6 targeting 迁移跳过:', (e as Error).message);
+  }
+}
+
+/** 迁移 v7：affixes 表新增 has_passive_bonuses 列 + 回填旧数据（幂等） */
+function migrateAffixPassiveBonusesToggleV7(db: ReturnType<typeof getDB>): void {
+  try {
+    const cols = db.prepare("PRAGMA table_info('affixes')").all() as { name: string }[];
+    if (!cols.some(c => c.name === 'has_passive_bonuses')) {
+      db.exec('ALTER TABLE affixes ADD COLUMN has_passive_bonuses INTEGER NOT NULL DEFAULT 0');
+      console.log('[DB] affixes 表已迁移：添加 has_passive_bonuses 列（v7）');
+    }
+    // 回填旧数据：有任何非零被动加成 → has_passive_bonuses = 1
+    const result = db.prepare(`UPDATE affixes SET has_passive_bonuses = 1
+      WHERE (damage_bonus IS NOT NULL AND damage_bonus != 0)
+         OR (hp_bonus IS NOT NULL AND hp_bonus != 0)
+         OR (stamina_bonus IS NOT NULL AND stamina_bonus != 0)
+         OR (hp_regeneration_bonus IS NOT NULL AND hp_regeneration_bonus != 0)
+         OR (stamina_regeneration_bonus IS NOT NULL AND stamina_regeneration_bonus != 0)`).run();
+    console.log(`[DB] affixes has_passive_bonuses 回填完成：${result.changes} 行（v7）`);
+  } catch (e) {
+    console.warn('[DB] v7 has_passive_bonuses 迁移跳过:', (e as Error).message);
   }
 }
