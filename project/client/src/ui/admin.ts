@@ -959,6 +959,12 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     h += `<div class="admin-field"><label>槽位消耗</label><input id="af-slotCost" type="number" value="${v('slotCost',0)}"></div>`;
     h += `<div class="admin-field"><label>可重复</label><input id="af-repeatable" type="checkbox" ${v('repeatable')?'checked':''}></div>`;
     h += `</div>`;
+    h += `<div class="admin-form-section"><h4>命中效果</h4>`;
+    const onHit: any = v('onHitEffects')?.[0] || {};
+    const effType = onHit.type || '';
+    h += `<div class="admin-field"><label>效果类型</label><select id="af-onHitType"><option value="">无</option><option value="life_steal"${effType==='life_steal'?' selected':''}>life_steal — 吸血</option><option value="stamina_drain"${effType==='stamina_drain'?' selected':''}>stamina_drain — 削耐</option></select></div>`;
+    h += `<div class="admin-field" id="af-onHitParams" style="${effType?'':'display:none'}"><label>参数</label><span style="display:flex;gap:4px;align-items:center"><input id="af-onHitPercent" type="number" value="${onHit.params?.percent ?? 0}" style="width:60px"> %<input id="af-onHitAmount" type="number" value="${onHit.params?.amount ?? 0}" style="width:60px"> 固定值</span></div>`;
+    h += `</div>`;
     h += `<div class="admin-form-section"><h4>前置条件</h4>`;
     h += renderPopoverSelector('af-prerequisite','前置词条',v('prerequisite')||[],affixOpts);
     h += renderPopoverSelector('af-poolPrerequisite','池前置',v('poolPrerequisite')||[],affixOpts);
@@ -1100,6 +1106,13 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     bindPopoverSelector('af-prerequisite', affixOpts);
     bindPopoverSelector('af-poolPrerequisite', affixOpts);
 
+    // 命中效果类型切换
+    const onHitTypeSel = document.getElementById('af-onHitType') as HTMLSelectElement;
+    const onHitParamsDiv = document.getElementById('af-onHitParams');
+    onHitTypeSel?.addEventListener('change', () => {
+      if (onHitParamsDiv) onHitParamsDiv.style.display = onHitTypeSel.value ? '' : 'none';
+    });
+
     document.getElementById('af-btn-manage-cats')?.addEventListener('click', (e) => {
       e.preventDefault();
       showCatManager();
@@ -1110,6 +1123,16 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
       if (!id) { showToast('ID 不能为空'); return; }
       const name = (document.getElementById('af-name') as HTMLInputElement).value.trim();
       if (!name) { showToast('名称不能为空'); return; }
+      // 组装命中效果
+      const onHitType = (document.getElementById('af-onHitType') as HTMLSelectElement).value;
+      const onHitEffects = onHitType ? [{
+        type: onHitType,
+        params: {
+          percent: parseFloat((document.getElementById('af-onHitPercent') as HTMLInputElement).value) || 0,
+          amount: parseInt((document.getElementById('af-onHitAmount') as HTMLInputElement).value) || 0,
+        }
+      }] : [];
+
       const affix = {
         id, name,
         category: (document.getElementById('af-category') as HTMLSelectElement).value,
@@ -1120,6 +1143,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         prerequisite: getSelected('af-prerequisite'),
         poolPrerequisite: getSelected('af-poolPrerequisite'),
         effect: (document.getElementById('af-effect') as HTMLInputElement).value.trim(),
+        onHitEffects,
       };
       try {
         if (isNew) { await admin.createAffix(affix); showToast('词条创建成功'); }

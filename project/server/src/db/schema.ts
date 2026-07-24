@@ -56,6 +56,7 @@ export const affixes = sqliteTable('affixes', {
   poolPrerequisite: text('pool_prerequisite').notNull().default('[]'),
   target: text('target').notNull().default('self'),
   effect: text('effect').notNull().default(''),
+  onHitEffects: text('on_hit_effects').notNull().default('[]'),
   createdAt: text('created_at').notNull().default("(datetime('now'))"),
   updatedAt: text('updated_at').notNull().default("(datetime('now'))"),
 });

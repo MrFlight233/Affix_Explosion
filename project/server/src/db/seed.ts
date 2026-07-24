@@ -54,6 +54,7 @@ export function initTables(): void {
       prerequisite TEXT NOT NULL DEFAULT '[]',
       pool_prerequisite TEXT NOT NULL DEFAULT '[]',
       effect      TEXT NOT NULL DEFAULT '',
+      on_hit_effects TEXT NOT NULL DEFAULT '[]',
       created_at  TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -104,6 +105,8 @@ export function initTables(): void {
   migrateStaminaBonusFields(db);
   // ---- 迁移：damage_bonus 字段拆分 ----
   migrateDamageBonus(db);
+  // ---- 迁移：affixes 表新增 on_hit_effects 列 ----
+  migrateAffixOnHitEffects(db);
 
   console.log('[DB] 所有表创建/验证完成');
 }
@@ -205,5 +208,20 @@ function migrateDamageBonus(db: ReturnType<typeof getDB>): void {
     }
   } catch (e) {
     console.warn('[DB] damage_bonus 迁移跳过:', (e as Error).message);
+  }
+}
+
+/** 迁移 affixes 表：新增 on_hit_effects 列（命中效果 JSON 数组） */
+function migrateAffixOnHitEffects(db: ReturnType<typeof getDB>): void {
+  try {
+    const cols = db.prepare("PRAGMA table_info('affixes')").all() as { name: string }[];
+    const colNames = new Set(cols.map(c => c.name));
+
+    if (!colNames.has('on_hit_effects')) {
+      db.exec('ALTER TABLE affixes ADD COLUMN on_hit_effects TEXT NOT NULL DEFAULT \'[]\'');
+      console.log('[DB] affixes 表已迁移：添加 on_hit_effects 列（命中效果）');
+    }
+  } catch (e) {
+    console.warn('[DB] affixes on_hit_effects 迁移跳过:', (e as Error).message);
   }
 }

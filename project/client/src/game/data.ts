@@ -55,11 +55,19 @@ export interface EntityDef {
   hpBonus: number;
 }
 
+/** 命中效果定义 */
+export interface OnHitEffect {
+  type: string;
+  params: Record<string, number>;
+}
+
 export interface AffixDef {
   id: string; name: string; category: string;
   value: number; costValue: number; slotCost: number;
   repeatable: boolean; prerequisite: string[]; poolPrerequisite: string[];
   effect: string;
+  /** 命中效果列表 */
+  onHitEffects?: OnHitEffect[];
 }
 
 export interface CategoryDef {

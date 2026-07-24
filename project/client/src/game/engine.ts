@@ -8,11 +8,14 @@ import {
   getEffectiveEntitySlots, countUsedSlots,
   findInTree, removeFromTreeChildren,
   ENTITY_DEFS, AFFIX_DEFS, getEntityCategory,
-  getEffectiveValue,
+  getEffectiveValue, OnHitEffect,
 } from './data';
 import { data as dataApi, saves as savesApi } from '../api/client';
 
 export type GamePhase = 1 | 2;
+
+/** 6 位小数精度取整 — 用于所有 HP/耐力/浮点属性计算 */
+const round6 = (v: number) => Math.round(v * 1e6) / 1e6;
 
 // ---- 战斗单位快照（v3：统一实体模型，可触发动作独立触发） ----
 
@@ -39,10 +42,24 @@ export interface CombatUnitSnapshot {
     targetOrder: string;
     priorityTarget: number | null;
     targetFaction: string;
+    /** 拥有该武器的实体实例ID — 用于 entityOnHitEffects 查表 */
+    ownerInstanceId: string;
   }[];
 }
 
 // ---- 战斗运行时（内部使用，时间线驱动） ----
+
+/** 命中效果执行的上下文 — 明确区分三类实体 */
+export interface OnHitContext {
+  /** 启动端实体 — 攻击者侧的 HP/耐力池所在 */
+  starter: CombatUnitRuntime;
+  /** 被触发动作实体的 instanceId — 谁的武器命中了 */
+  actionOwnerId: string;
+  /** 被影响实体 — 承受伤害的目标 */
+  target: CombatUnitRuntime;
+  /** 本次造成的正伤害值 */
+  damage: number;
+}
 
 export interface CombatWeaponRuntime {
   name: string;
@@ -54,6 +71,8 @@ export interface CombatWeaponRuntime {
   targetOrder: string;
   priorityTarget: number | null;
   targetFaction: string;
+  /** 拥有该武器的实体实例ID */
+  ownerInstanceId: string;
 }
 
 export interface CombatUnitRuntime {
@@ -118,6 +137,8 @@ export class GameEngine {
   combatPlayerUnits: CombatUnitRuntime[] | null = null;
   combatEnemyUnits: CombatUnitRuntime[] | null = null;
   combatTime: number = 0;
+  /** 实体→命中效果映射表（快照阶段构建，运行时查表） */
+  private entityOnHitEffects: Map<string, OnHitEffect[]> = new Map();
   onCombatEvent?: (event: CombatEvent) => void;
   onCombatEnd?: (win: boolean, goldReward: number) => void;
 
@@ -487,6 +508,45 @@ export class GameEngine {
   }
 
   /** 递归计算战斗快照：遍历嵌套的装备树，聚合所有加成（v5: 支持 ItemInstance.overrides） */
+  /** 遍历实体树，收集每个 isActive 实体的直属 onHitEffects，注册到 Map */
+  private collectEntityOnHitEffects(
+    children: ItemInstance[],
+    map: Map<string, OnHitEffect[]>,
+  ): void {
+    for (const child of children) {
+      if (child.type === 'entity') {
+        const cdef = getEntityDef(child.defId);
+        if (!cdef) continue;
+        const isActive = getEffectiveValue(child, 'isActive') ?? cdef.isActive;
+
+        if (isActive) {
+          // 提取该实体直属 affix 的 onHitEffects
+          const effects: OnHitEffect[] = [];
+          if (child.children) {
+            for (const sub of child.children) {
+              if (sub.type === 'affix') {
+                const adef = getAffixDef(sub.defId);
+                if (adef?.onHitEffects) {
+                  for (const e of adef.onHitEffects) {
+                    effects.push({ type: e.type, params: { ...e.params } });
+                  }
+                }
+              }
+            }
+          }
+          if (effects.length > 0) {
+            map.set(child.instanceId, effects);
+          }
+        }
+
+        // 递归处理嵌套子实体
+        if (child.children && child.children.length > 0) {
+          this.collectEntityOnHitEffects(child.children, map);
+        }
+      }
+    }
+  }
+
   private collectFromChildren(
     children: ItemInstance[],
     growthStack: number,
@@ -526,6 +586,7 @@ export class GameEngine {
             targetOrder: String((getEffectiveValue(child, 'targetOrder') ?? cdef.targetOrder) || '从上往下'),
             priorityTarget: (getEffectiveValue(child, 'priorityTarget') ?? cdef.priorityTarget) as number | null,
             targetFaction: String((getEffectiveValue(child, 'targetFaction') ?? cdef.targetFaction) || '敌人'),
+            ownerInstanceId: child.instanceId,
           });
         } else {
           // isActive=false 实体 → 累加 damageBonus 到被动池
@@ -590,19 +651,67 @@ export class GameEngine {
             targetOrder: String((getEffectiveValue(slot.entity, 'targetOrder') ?? edef.targetOrder) || '从上往下'),
             priorityTarget: (getEffectiveValue(slot.entity, 'priorityTarget') ?? edef.priorityTarget) as number | null,
             targetFaction: String((getEffectiveValue(slot.entity, 'targetFaction') ?? edef.targetFaction) || '敌人'),
+            ownerInstanceId: slot.entity.instanceId,
           });
         }
       }
 
-      // strength 词条加成（仅 starter）
+      // strength 词条加成 + onHitEffects 收集（仅 starter）
       let extraDmg = 0;
       if (isStarter(edef)) {
+        // ★ 构建实体→命中效果映射表
+        const entityOnHitEffects = new Map<string, OnHitEffect[]>();
+        const registerEffects = (instanceId: string, effects: OnHitEffect[]) => {
+          if (effects.length === 0) return;
+          const existing = entityOnHitEffects.get(instanceId) || [];
+          entityOnHitEffects.set(instanceId, [...existing, ...effects]);
+        };
+
+        // 步骤1：遍历子树，收集每个 isActive 实体的自身效果
+        this.collectEntityOnHitEffects(allChildren, entityOnHitEffects);
+        // starter 自身若是 isActive，也收集其直属 affix 效果
+        if (isStarter(edef)) {
+          const starterEffects: OnHitEffect[] = [];
+          for (const c of (slot.entity.children || [])) {
+            if (c.type === 'affix') {
+              const adef = getAffixDef(c.defId);
+              if (adef?.onHitEffects) {
+                for (const e of adef.onHitEffects) {
+                  starterEffects.push({ type: e.type, params: { ...e.params } });
+                }
+              }
+            }
+          }
+          if (starterEffects.length > 0) {
+            registerEffects(slot.entity.instanceId, starterEffects);
+          }
+        }
+
+        // 步骤2：收集 starter 直属 onHitEffects（传播源 — slot.children 中的 affix）
+        const starterOnHitEffects: OnHitEffect[] = [];
         for (const c of slot.children) {
           if (c.type === 'affix') {
             const adef = getAffixDef(c.defId);
             if (adef?.id === 'strength') extraDmg += adef.value;
+            // ★ 收集传播源效果
+            if (adef?.onHitEffects) {
+              for (const e of adef.onHitEffects) {
+                starterOnHitEffects.push({ type: e.type, params: { ...e.params } });
+              }
+            }
           }
         }
+
+        // 步骤3：传播 — 将 starter 效果追加到子树每个 isActive 实体的 map entry
+        if (starterOnHitEffects.length > 0) {
+          for (const [instanceId] of entityOnHitEffects) {
+            registerEffects(instanceId, starterOnHitEffects);
+          }
+        }
+
+        // 步骤4：存储 Map（供 _runBattleCore 使用）
+        this.entityOnHitEffects = entityOnHitEffects;
+
         const netPassive = collected.passiveDamageBonus - extraDmg;
         for (const w of collected.weapons) {
           // 符号感知：正的被动加成只影响正伤害武器，负的只影响负伤害（治疗）武器
@@ -671,7 +780,7 @@ export class GameEngine {
       if (rand() > 0.5) {
         const wt = weaponTemplates[Math.floor(rand() * weaponTemplates.length)];
         const wdmg = Math.floor(wt.damage * mult * (0.8 + rand() * 0.4));
-        weapons.push({ ...wt, damage: wdmg > 0 ? wdmg : wt.damage });
+        weapons.push({ ...wt, damage: wdmg > 0 ? wdmg : wt.damage, ownerInstanceId: `enemy_${i}` });
       } else {
         // 基础攻击（空手）
         weapons.push({
@@ -683,6 +792,7 @@ export class GameEngine {
           targetOrder: t.ao,
           priorityTarget: t.pt,
           targetFaction: '敌人',
+          ownerInstanceId: `enemy_${i}`,
         });
       }
 
@@ -730,6 +840,7 @@ export class GameEngine {
         targetOrder: w.targetOrder,
         priorityTarget: w.priorityTarget,
         targetFaction: w.targetFaction,
+        ownerInstanceId: w.ownerInstanceId,
       })),
     }));
   }
@@ -785,6 +896,68 @@ export class GameEngine {
     return false;
   }
 
+  /** 处理武器命中后的触发效果。
+   *  组装 OnHitContext，通过 entityOnHitEffects Map 查表获取效果列表。 */
+  private resolveOnHitEffects(
+    weapon: CombatWeaponRuntime,
+    starter: CombatUnitRuntime,
+    target: CombatUnitRuntime,
+    damage: number,
+  ): string[] {
+    const labels: string[] = [];
+    if (damage <= 0) return labels; // 仅正伤害触发
+
+    const effects = this.entityOnHitEffects.get(weapon.ownerInstanceId);
+    if (!effects || effects.length === 0) return labels;
+
+    const ctx: OnHitContext = {
+      starter,
+      actionOwnerId: weapon.ownerInstanceId,
+      target,
+      damage,
+    };
+
+    for (const effect of effects) {
+      const label = this.executeOnHitEffect(effect, ctx);
+      if (label) labels.push(label);
+    }
+
+    return labels;
+  }
+
+  /** 执行单个命中效果。返回战斗日志标签或 null。
+   *  扩展点：新增效果类型在此方法内加 case 分支。 */
+  private executeOnHitEffect(
+    effect: OnHitEffect,
+    ctx: OnHitContext,
+  ): string | null {
+    switch (effect.type) {
+
+      // ──── 吸血：回复启动端HP ────
+      case 'life_steal': {
+        const pct = effect.params.percent ?? 0;
+        const amt = effect.params.amount ?? 0;
+        const heal = Math.round(ctx.damage * pct / 100) + amt;
+        if (heal <= 0) return null;
+        ctx.starter.currentHp = round6(Math.min(ctx.starter.currentHp + heal, ctx.starter.totalHp));
+        return `吸血+${heal}`;
+      }
+
+      // ──── 削耐：削减被影响实体的耐力 ────
+      case 'stamina_drain': {
+        const pct = effect.params.percent ?? 0;
+        const amt = effect.params.amount ?? 0;
+        const drain = Math.round(ctx.damage * pct / 100) + amt;
+        if (drain <= 0) return null;
+        ctx.target.currentStamina = round6(Math.max(ctx.target.currentStamina - drain, 0));
+        return `削耐-${drain}`;
+      }
+
+      default:
+        return null;
+    }
+  }
+
   /** 固定时间步长战斗引擎（内部核心，不含状态管理）。
    *  每 100ms 推进一次，恢复和武器冷却均匀递减。
    *  runCombat 和 runSimCombat 共用此引擎，区别仅在于 BD 来源和战后处理。
@@ -798,7 +971,6 @@ export class GameEngine {
   ): Promise<{ win: boolean }> {
     const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
     const TICK_MS = 100; // 固定时间步长
-    const round6 = (v: number) => Math.round(v * 1e6) / 1e6;
 
     this.combatTime = 0;
     const MAX_COMBAT_TIME = 120000; // 2 分钟战斗时间上限
@@ -877,11 +1049,15 @@ export class GameEngine {
         const dmg = damage;
         target.currentHp = round6(Math.min(target.currentHp - dmg, target.totalHp));
 
+        // ★ 命中效果结算
+        const onHitLabels = this.resolveOnHitEffects(weapon, unit, target, dmg);
+
         // 重置倒计时
         weapon.remainingTime = weapon.actionTime;
 
         // 发射事件
         const effects: string[] = [];
+        if (onHitLabels.length > 0) effects.push(...onHitLabels);
         if (Math.abs(dmg) >= target.totalHp * 0.3) effects.push(dmg > 0 ? '重击' : '大回复');
 
         onEvent({

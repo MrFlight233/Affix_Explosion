@@ -124,6 +124,14 @@ export interface EntityDef {
   hpBonus: number;
 }
 
+// ---- 命中效果 ----
+
+/** 命中效果定义 — 武器命中后触发的额外效果 */
+export interface OnHitEffect {
+  type: string;                    // 效果类型ID（如 'life_steal', 'stamina_drain'）
+  params: Record<string, number>;  // 可扩展参数（如 { percent: 10 } 或 { amount: 5 }）
+}
+
 // ---- 词条 ----
 
 export interface AffixDef {
@@ -137,6 +145,8 @@ export interface AffixDef {
   prerequisite: string[];
   poolPrerequisite: string[];
   effect: string;
+  /** 命中效果列表 */
+  onHitEffects?: OnHitEffect[];
 }
 
 // ---- 物品实例（带实例 ID） ----

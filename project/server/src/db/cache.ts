@@ -97,6 +97,7 @@ export function affixRowToDef(row: Record<string, any>): Record<string, any> {
     prerequisite: parseJsonField(row.prerequisite) ?? [],
     poolPrerequisite: parseJsonField(row.pool_prerequisite) ?? [],
     effect: row.effect,
+    onHitEffects: parseJsonField(row.on_hit_effects) ?? [],
   };
 }
 
@@ -112,6 +113,7 @@ export function affixDefToRow(def: Record<string, any>): Record<string, any> {
     prerequisite: serializeJsonField(def.prerequisite),
     pool_prerequisite: serializeJsonField(def.poolPrerequisite),
     effect: def.effect ?? '',
+    on_hit_effects: serializeJsonField(def.onHitEffects),
     updated_at: new Date().toISOString(),
   };
 }
