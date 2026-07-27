@@ -300,22 +300,22 @@ function migrateTargetingV6(db: ReturnType<typeof getDB>): void {
   }
 }
 
-/** 迁移 v7：affixes 表新增 has_passive_bonuses 列 + 回填旧数据（幂等） */
+/** 迁移 v7：affixes 表新增 has_passive_bonuses 列 + 首次回填旧数据（幂等，后续重启不覆盖手动修改） */
 function migrateAffixPassiveBonusesToggleV7(db: ReturnType<typeof getDB>): void {
   try {
     const cols = db.prepare("PRAGMA table_info('affixes')").all() as { name: string }[];
     if (!cols.some(c => c.name === 'has_passive_bonuses')) {
       db.exec('ALTER TABLE affixes ADD COLUMN has_passive_bonuses INTEGER NOT NULL DEFAULT 0');
       console.log('[DB] affixes 表已迁移：添加 has_passive_bonuses 列（v7）');
+      // 回填旧数据：仅首次迁移时执行，后续重启不再覆盖
+      const result = db.prepare(`UPDATE affixes SET has_passive_bonuses = 1
+        WHERE (damage_bonus IS NOT NULL AND damage_bonus != 0)
+           OR (hp_bonus IS NOT NULL AND hp_bonus != 0)
+           OR (stamina_bonus IS NOT NULL AND stamina_bonus != 0)
+           OR (hp_regeneration_bonus IS NOT NULL AND hp_regeneration_bonus != 0)
+           OR (stamina_regeneration_bonus IS NOT NULL AND stamina_regeneration_bonus != 0)`).run();
+      console.log(`[DB] affixes has_passive_bonuses 回填完成：${result.changes} 行（v7）`);
     }
-    // 回填旧数据：有任何非零被动加成 → has_passive_bonuses = 1
-    const result = db.prepare(`UPDATE affixes SET has_passive_bonuses = 1
-      WHERE (damage_bonus IS NOT NULL AND damage_bonus != 0)
-         OR (hp_bonus IS NOT NULL AND hp_bonus != 0)
-         OR (stamina_bonus IS NOT NULL AND stamina_bonus != 0)
-         OR (hp_regeneration_bonus IS NOT NULL AND hp_regeneration_bonus != 0)
-         OR (stamina_regeneration_bonus IS NOT NULL AND stamina_regeneration_bonus != 0)`).run();
-    console.log(`[DB] affixes has_passive_bonuses 回填完成：${result.changes} 行（v7）`);
   } catch (e) {
     console.warn('[DB] v7 has_passive_bonuses 迁移跳过:', (e as Error).message);
   }
