@@ -29,7 +29,8 @@
 | `--sb-selected` | `#d4d4d4` | 选中底（强于 hover） |
 | `--sb-focus-ring` | `rgba(38,38,38,0.28)` | focus / focus-within 环 |
 | `--sb-indicator` | `#404040` | 列表 3px 左指示条 |
-| `--sb-drag-over-bg` | `rgba(64,64,64,0.08)` | 拖拽落点底 |
+| `--sb-drag-over-bg` | `rgba(64,64,64,0.14)` | 拖拽落点底 |
+| `--sb-drag-over-border` | `#404040` | 拖拽落点边框 |
 | `--sb-danger` | `#dc2626` | 危险/错误 |
 | `--sb-success` | `#16a34a` | 成功/HP 健康 |
 | `--sb-warning` | `#ca8a04` | 警告/低状态 |
@@ -117,8 +118,9 @@
 - 折叠用 max-height 动画（性能好、可中断）
 - hover 包 `@media (hover: hover) and (pointer: fine)`
 - 所有交互加 `prefers-reduced-motion` 兜底
-- 拖拽反馈清晰（drag-over 用 `--sb-drag-over-bg` + accent 边框/左边框，强于普通 hover）
+- 拖拽反馈清晰（drag-over 用 `--sb-drag-over-bg` + `--sb-drag-over-border` + 左指示条，强于普通 hover）
 - 列表悬停/选中用 `--sb-hover` / `--sb-selected` + 左指示条，禁止再用 `#f8f8f8` / `#f3f3f3` 级极淡灰
+- Pointer 拖拽：`.sb-drag-ghost` / `.sb-drag-gap` 必须挂在 `#sb-page`（继承 `--sb-*`），CSS 颜色须带硬编码 fallback；排序用 `.sb-drag-gap` 横线，空槽用 `.drag-over`，卸下用 `#sb-pool.remove-target`
 
 ❌ DON'T:
 - 不用 emoji 装饰
@@ -146,7 +148,7 @@
 - 折叠/展开：max-height 过渡 200ms
 - 列表入场：无 stagger（编辑器工具，即时响应优先）
 - 数值变化：无闪烁动画（数据密集场景，动画干扰判断）
-- 拖拽：drag-over 即时高亮（0ms 延迟），dragstart 加 `opacity: 0.5`
+- 拖拽：drag-over / remove-target / `.sb-drag-gap` 即时高亮（0ms 延迟）；源项 `opacity: 0.45`；ghost/gap 挂 `#sb-page`
 - 按钮：active 状态 40ms scale(0.98)
 - 键盘操作：无动画
 

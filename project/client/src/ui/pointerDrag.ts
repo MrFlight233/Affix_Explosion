@@ -54,6 +54,19 @@ let suppressNextClick = false;
 
 const MOVE_THRESHOLD = 6;
 
+/** ghost/gap 挂到 #sb-page 以继承 --sb-*；无页面时退回 body */
+function dragHost(): HTMLElement {
+  return (document.getElementById('sb-page') as HTMLElement | null) || document.body;
+}
+
+/** 清除上一轮落点高亮 */
+function clearDropHighlight(): void {
+  document.querySelectorAll('.sb-empty-slot.drag-over, [data-sort-list].drag-over, .sb-child-area.drag-over').forEach(el => {
+    el.classList.remove('drag-over');
+  });
+  document.getElementById('sb-pool')?.classList.remove('remove-target');
+}
+
 /** 是否正在拖拽 */
 export function isPointerDragging(): boolean {
   return !!(active && active.activated);
@@ -77,16 +90,17 @@ export function beginPointerDrag(
   if (e.button !== 0) return;
   if (active) teardown(true);
 
+  const host = dragHost();
   const ghost = document.createElement('div');
   ghost.className = 'sb-drag-ghost';
   ghost.textContent = session.label;
   ghost.style.display = 'none';
-  document.body.appendChild(ghost);
+  host.appendChild(ghost);
 
   const gap = document.createElement('div');
   gap.className = 'sb-drag-gap';
   gap.style.display = 'none';
-  document.body.appendChild(gap);
+  host.appendChild(gap);
 
   active = {
     session,
@@ -122,6 +136,7 @@ function onPointerMove(e: PointerEvent): void {
   const hit = resolveHit(e.clientX, e.clientY, active.session);
   active.lastHit = hit;
   updateGap(hit);
+  updateDropHighlight(hit, e.clientX, e.clientY);
 }
 
 function activateDrag(e: PointerEvent): void {
@@ -171,6 +186,7 @@ function teardown(cancelled: boolean): void {
   window.removeEventListener('pointercancel', onPointerCancel, true);
   a.session.originEl.classList.remove('sb-drag-pending', 'sb-dragging-source');
   document.body.classList.remove('sb-pointer-dragging');
+  clearDropHighlight();
   a.ghost.remove();
   a.gap.remove();
   if (cancelled) {
@@ -259,6 +275,14 @@ function computeInsertIndex(items: HTMLElement[], clientY: number): number {
   return items.length;
 }
 
+function listSelector(hit: PointerDragHit): string | null {
+  if (hit.listKind == null || hit.side == null) return null;
+  if (hit.listKind === 'top') {
+    return `[data-sort-list="top"][data-side="${hit.side}"]`;
+  }
+  return `[data-sort-list="${hit.listKind}"][data-instance="${hit.parentInstanceId}"][data-side="${hit.side}"]`;
+}
+
 function updateGap(hit: PointerDragHit): void {
   if (!active) return;
   const gap = active.gap;
@@ -273,9 +297,11 @@ function updateGap(hit: PointerDragHit): void {
     return;
   }
 
-  const listSel = hit.listKind === 'top'
-    ? `[data-sort-list="top"][data-side="${hit.side}"]`
-    : `[data-sort-list="${hit.listKind}"][data-instance="${hit.parentInstanceId}"][data-side="${hit.side}"]`;
+  const listSel = listSelector(hit);
+  if (!listSel) {
+    gap.style.display = 'none';
+    return;
+  }
   const list = document.querySelector(listSel) as HTMLElement | null;
   if (!list) {
     gap.style.display = 'none';
@@ -312,4 +338,36 @@ function updateGap(hit: PointerDragHit): void {
   gap.style.display = '';
   gap.style.width = `${width}px`;
   gap.style.transform = `translate(${left}px, ${top - 2}px)`;
+}
+
+/** 空槽 / 排序列表 / 物品池落点高亮 */
+function updateDropHighlight(hit: PointerDragHit, x: number, y: number): void {
+  clearDropHighlight();
+
+  if (hit.action === 'remove') {
+    document.getElementById('sb-pool')?.classList.add('remove-target');
+    return;
+  }
+
+  if (hit.action !== 'mount' && hit.action !== 'reorder') return;
+
+  // 空槽 mount：按指针下元素挂 drag-over
+  if (hit.action === 'mount' && hit.insertIndex == null) {
+    const stack = document.elementsFromPoint(x, y) as HTMLElement[];
+    const under = stack.find(n =>
+      !n.classList.contains('sb-drag-ghost') && !n.classList.contains('sb-drag-gap'),
+    ) || null;
+    const empty = under?.closest('.sb-empty-slot') as HTMLElement | null;
+    if (empty) {
+      empty.classList.add('drag-over');
+      const childArea = empty.closest('.sb-child-area') as HTMLElement | null;
+      childArea?.classList.add('drag-over');
+      return;
+    }
+  }
+
+  const listSel = listSelector(hit);
+  if (!listSel) return;
+  const list = document.querySelector(listSel) as HTMLElement | null;
+  list?.classList.add('drag-over');
 }
