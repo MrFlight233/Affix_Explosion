@@ -48,6 +48,8 @@ export function entityRowToDef(row: Record<string, any>): Record<string, any> {
     staminaBonus: row.stamina_bonus,
     hpRegenerationBonus: row.hp_regeneration_bonus,
     hpBonus: row.hp_bonus,
+    loadBonus: row.load_bonus ?? 0,
+    hasPassiveBonuses: row.has_passive_bonuses === 1,
   };
 }
 
@@ -83,6 +85,8 @@ export function entityDefToRow(def: Record<string, any>): Record<string, any> {
     stamina_bonus: def.staminaBonus ?? 0,
     hp_regeneration_bonus: def.hpRegenerationBonus ?? 0,
     hp_bonus: def.hpBonus ?? 0,
+    load_bonus: def.loadBonus ?? 0,
+    has_passive_bonuses: def.hasPassiveBonuses ? 1 : 0,
     updated_at: new Date().toISOString(),
   };
 }
@@ -92,7 +96,6 @@ export function affixRowToDef(row: Record<string, any>): Record<string, any> {
     id: row.id,
     name: row.name,
     category: row.category,
-    value: row.value,
     costValue: row.cost_value,
     slotCost: row.slot_cost,
     repeatable: row.repeatable === 1,
@@ -107,6 +110,7 @@ export function affixRowToDef(row: Record<string, any>): Record<string, any> {
     staminaBonus: row.stamina_bonus ?? 0,
     hpRegenerationBonus: row.hp_regeneration_bonus ?? 0,
     hpBonus: row.hp_bonus ?? 0,
+    loadBonus: row.load_bonus ?? 0,
   };
 }
 
@@ -115,7 +119,6 @@ export function affixDefToRow(def: Record<string, any>): Record<string, any> {
     id: def.id,
     name: def.name,
     category: def.category ?? '特殊',
-    value: def.value ?? 0,
     cost_value: def.costValue ?? 0,
     slot_cost: def.slotCost ?? 1,
     repeatable: def.repeatable ? 1 : 0,
@@ -130,6 +133,7 @@ export function affixDefToRow(def: Record<string, any>): Record<string, any> {
     stamina_bonus: def.staminaBonus ?? 0,
     hp_regeneration_bonus: def.hpRegenerationBonus ?? 0,
     hp_bonus: def.hpBonus ?? 0,
+    load_bonus: def.loadBonus ?? 0,
     updated_at: new Date().toISOString(),
   };
 }

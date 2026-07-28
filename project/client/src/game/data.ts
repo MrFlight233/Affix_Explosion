@@ -70,6 +70,8 @@ export interface EntityDef {
   targetCondition?: TargetCondition;
 
   // ---- 被动加成（对最外层启动端实体生效） ----
+  /** 是否有被动加成。false → 引擎跳过该实体被动累加。 */
+  hasPassiveBonuses?: boolean;
   /** 被动加成: 耐力恢复/秒 */
   staminaRegenerationBonus: number;
   /** 被动加成: 耐力 */
@@ -78,6 +80,8 @@ export interface EntityDef {
   hpRegenerationBonus: number;
   /** 被动加成: 生命 */
   hpBonus: number;
+  /** 被动加成: 负重上限（聚合到最近启动端 maxLoad） */
+  loadBonus: number;
 }
 
 /** 命中效果定义 */
@@ -88,7 +92,7 @@ export interface OnHitEffect {
 
 export interface AffixDef {
   id: string; name: string; category: string;
-  value: number; costValue: number; slotCost: number;
+  costValue: number; slotCost: number;
   repeatable: boolean; prerequisite: string[]; poolPrerequisite: string[];
   effect: string;
   /** 命中效果列表 */
@@ -103,6 +107,8 @@ export interface AffixDef {
   hpRegenerationBonus: number;
   /** 被动加成: 生命 */
   hpBonus: number;
+  /** 被动加成: 负重上限（聚合到最近启动端 maxLoad） */
+  loadBonus: number;
   /** 全局伤害加成（加至所有武器），独立于 isActive */
   damageBonus: number;
   /** targeting_modifier 分类词条的专属效果（v7 扩展）— 可覆写所有 targeting 字段 */

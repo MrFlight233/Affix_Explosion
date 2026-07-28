@@ -557,11 +557,11 @@ export class GameEngine {
   ): {
     totalStaminaRegenerationBonus: number; totalStaminaBonus: number;
     totalHpBonus: number; totalHpRegenerationBonus: number;
-    totalLoad: number; passiveDamageBonus: number;
+    totalLoad: number; totalLoadBonus: number; passiveDamageBonus: number;
     weapons: CombatUnitSnapshot['activeWeapons'];
   } {
     let totalStaminaRegenerationBonus = 0, totalStaminaBonus = 0, totalHpBonus = 0, totalHpRegenerationBonus = 0;
-    let totalLoad = 0, passiveDamageBonus = 0;
+    let totalLoad = 0, totalLoadBonus = 0, passiveDamageBonus = 0;
     const weapons: CombatUnitSnapshot['activeWeapons'] = [];
 
     for (const child of children) {
@@ -569,12 +569,16 @@ export class GameEngine {
         const cdef = getEntityDef(child.defId);
         if (!cdef) continue;
 
-        // v5: 使用 getEffectiveValue 读取，支持 ItemInstance.overrides
-        totalStaminaRegenerationBonus += Number(getEffectiveValue(child, 'staminaRegenerationBonus') ?? 0);
-        totalStaminaBonus += Number(getEffectiveValue(child, 'staminaBonus') ?? 0);
-        totalHpBonus += Number(getEffectiveValue(child, 'hpBonus') ?? 0);
-        totalHpRegenerationBonus += Number(getEffectiveValue(child, 'hpRegenerationBonus') ?? 0);
+        // 重量始终计入；被动加成仅 hasPassiveBonuses=true 时累加
         totalLoad += Number(getEffectiveValue(child, 'weight') ?? 0);
+        const childHasPB = getEffectiveValue(child, 'hasPassiveBonuses') ?? cdef.hasPassiveBonuses;
+        if (childHasPB) {
+          totalStaminaRegenerationBonus += Number(getEffectiveValue(child, 'staminaRegenerationBonus') ?? 0);
+          totalStaminaBonus += Number(getEffectiveValue(child, 'staminaBonus') ?? 0);
+          totalHpBonus += Number(getEffectiveValue(child, 'hpBonus') ?? 0);
+          totalHpRegenerationBonus += Number(getEffectiveValue(child, 'hpRegenerationBonus') ?? 0);
+          totalLoadBonus += Number(getEffectiveValue(child, 'loadBonus') ?? 0);
+        }
 
         const isActive = getEffectiveValue(child, 'isActive') ?? cdef.isActive;
         if (isActive) {
@@ -595,8 +599,8 @@ export class GameEngine {
             targetCondition: this._mergeTargetCondition(entityTargetingMods, child, cdef),
             ownerInstanceId: child.instanceId,
           });
-        } else {
-          // isActive=false 实体 → 累加 damageBonus 到被动池
+        } else if (childHasPB) {
+          // isActive=false 且有被动 → 累加 damageBonus 到被动池
           passiveDamageBonus += Number(getEffectiveValue(child, 'damageBonus') ?? 0);
         }
         // 递归处理嵌套子项（isActive 和 !isActive 实体都需要：武器上的词条、嵌套实体等）
@@ -607,6 +611,7 @@ export class GameEngine {
           totalHpBonus += nested.totalHpBonus;
           totalHpRegenerationBonus += nested.totalHpRegenerationBonus;
           totalLoad += nested.totalLoad;
+          totalLoadBonus += nested.totalLoadBonus;
           passiveDamageBonus += nested.passiveDamageBonus;
           for (const w of nested.weapons) weapons.push(w);
         }
@@ -620,12 +625,13 @@ export class GameEngine {
             totalStaminaBonus += adef.staminaBonus ?? 0;
             totalHpBonus += adef.hpBonus ?? 0;
             totalHpRegenerationBonus += adef.hpRegenerationBonus ?? 0;
+            totalLoadBonus += adef.loadBonus ?? 0;
             passiveDamageBonus += adef.damageBonus ?? 0;
           }
         }
       }
     }
-    return { totalStaminaRegenerationBonus, totalStaminaBonus, totalHpBonus, totalHpRegenerationBonus, totalLoad, passiveDamageBonus, weapons };
+    return { totalStaminaRegenerationBonus, totalStaminaBonus, totalHpBonus, totalHpRegenerationBonus, totalLoad, totalLoadBonus, passiveDamageBonus, weapons };
   }
 
   /** 从 DeploySlot 构建 CombatUnitSnapshot（v4：递归嵌套）。可传入自定义 slots 用于模拟对战。 */
@@ -648,14 +654,15 @@ export class GameEngine {
       const allChildren = [...(slot.entity.children || []), ...slot.children];
       const collected = isStarter(edef)
         ? this.collectFromChildren(allChildren, growthStack)
-        : { totalStaminaRegenerationBonus: 0, totalStaminaBonus: 0, totalHpBonus: 0, totalHpRegenerationBonus: 0, totalLoad: 0, passiveDamageBonus: 0, weapons: [] };
+        : { totalStaminaRegenerationBonus: 0, totalStaminaBonus: 0, totalHpBonus: 0, totalHpRegenerationBonus: 0, totalLoad: 0, totalLoadBonus: 0, passiveDamageBonus: 0, weapons: [] };
 
-      // ★ 启动端自身的被动加成也对自己生效
-      if (isStarter(edef)) {
+      // ★ 启动端自身的被动加成也对自己生效（受 hasPassiveBonuses 约束）
+      if (isStarter(edef) && edef.hasPassiveBonuses) {
         collected.totalStaminaRegenerationBonus += edef.staminaRegenerationBonus;
         collected.totalStaminaBonus += edef.staminaBonus;
         collected.totalHpBonus += edef.hpBonus;
         collected.totalHpRegenerationBonus += edef.hpRegenerationBonus;
+        collected.totalLoadBonus += edef.loadBonus ?? 0;
         collected.passiveDamageBonus += Number(getEffectiveValue(slot.entity, 'damageBonus') ?? edef.damageBonus ?? 0);
       }
 
@@ -740,7 +747,8 @@ export class GameEngine {
       const maxStamina = edef.maxStamina + collected.totalStaminaBonus;
       const totalStaminaRegen = edef.staminaRegen + collected.totalStaminaRegenerationBonus;
       const totalHpRegen = edef.hpRegen + collected.totalHpRegenerationBonus;
-      const isOverloaded = collected.totalLoad > edef.maxLoad;
+      const effectiveMaxLoad = edef.maxLoad + collected.totalLoadBonus;
+      const isOverloaded = collected.totalLoad > effectiveMaxLoad;
 
       units.push({
         instanceId: slot.entity.instanceId,
@@ -754,7 +762,7 @@ export class GameEngine {
         staminaRegen: edef.staminaRegen,
         totalHpRegeneration: totalHpRegen,
         currentLoad: collected.totalLoad,
-        maxLoad: edef.maxLoad,
+        maxLoad: effectiveMaxLoad,
         isOverloaded,
         activeWeapons: collected.weapons,
       });

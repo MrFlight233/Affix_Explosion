@@ -862,12 +862,18 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     h += `<div class="admin-field"><label>条件过滤</label><select id="ef-tc-filterBy"><option value="">无</option><option value="has_debuff"${tc?.filterBy==='has_debuff'?' selected':''}>有负面状态</option><option value="most_buffs"${tc?.filterBy==='most_buffs'?' selected':''}>Buff最多</option><option value="hp_below_50pct"${tc?.filterBy==='hp_below_50pct'?' selected':''}>HP低于50%</option></select></div>`;
     h += `</div>`;
     h += `</div>`;
+    // 被动加成总开关（与词条对齐）
+    const hasPB = v('hasPassiveBonuses') === true;
     h += `<div class="admin-form-section"><h4>被动加成</h4>`;
+    h += `<div class="admin-field"><label>被动加成模式</label><select id="ef-hasPassiveBonuses"><option value="0"${!hasPB?' selected':''}>无</option><option value="1"${hasPB?' selected':''}>有</option></select></div>`;
+    h += `<div id="ef-passive-fields" style="${hasPB?'':'display:none'}">`;
     h += `<div class="admin-field"><label>伤害加成(正=增伤,负=增强治疗)</label><input id="ef-damageBonus" type="number" value="${v('damageBonus', 0)}" step="any"></div>`;
     h += `<div class="admin-field"><label>生命加成</label><input id="ef-hpBonus" type="number" value="${v('hpBonus', 0)}"></div>`;
     h += `<div class="admin-field"><label>生命恢复加成</label><input id="ef-hpRegenerationBonus" type="number" value="${v('hpRegenerationBonus', 0)}"></div>`;
     h += `<div class="admin-field"><label>耐力加成</label><input id="ef-staminaBonus" type="number" value="${v('staminaBonus', 0)}"></div>`;
     h += `<div class="admin-field"><label>耐力恢复加成</label><input id="ef-staminaRegenerationBonus" type="number" value="${v('staminaRegenerationBonus', 0)}"></div>`;
+    h += `<div class="admin-field"><label>负重加成</label><input id="ef-loadBonus" type="number" value="${v('loadBonus', 0)}"></div>`;
+    h += `</div>`;
     h += `</div>`;
     h += `</div>`;
     return h;
@@ -881,7 +887,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
       // 兼容旧数据：完整内联实体对象 → 提取差异
       const tpl = c?.id ? state.entities.find((e: any) => e.id === c.id) : null;
       const ov: any = {};
-      const fields = ['damage','damageBonus','actionTime','staminaCost','staminaRegenerationBonus','staminaBonus','hpRegenerationBonus','hpBonus','weight','value','isActive','targetType','targetOrder','priorityTarget','targetFaction','targetCondition','name','slotCost','entitySlots','dynamicAffixSlots','hp','maxStamina','staminaRegen','hpRegen','maxLoad','poolPrerequisite'];
+      const fields = ['damage','damageBonus','actionTime','staminaCost','staminaRegenerationBonus','staminaBonus','hpRegenerationBonus','hpBonus','loadBonus','hasPassiveBonuses','weight','value','isActive','targetType','targetOrder','priorityTarget','targetFaction','targetCondition','name','slotCost','entitySlots','dynamicAffixSlots','hp','maxStamina','staminaRegen','hpRegen','maxLoad','poolPrerequisite'];
       for (const f of fields) { if (c[f] !== undefined && (!tpl || c[f] !== tpl[f])) ov[f] = c[f]; }
       const spec: DefaultChildSpec = { defId: c.id || 'unknown' };
       if (Object.keys(ov).length > 0) spec.overrides = ov;
@@ -985,7 +991,6 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     h += `<div class="admin-field"><label>名称</label><input id="af-name" value="${v('name')}"></div>`;
     h += `<div class="admin-field"><label>分类</label><select id="af-category">${allCats.map(c=>`<option value="${c.id}"${sel('category',c.id)}>${c.name}${c.isEntityClass ? ' (实体分类)' : ''}</option>`).join('')}</select><button class="btn adm-manage-link" id="af-btn-manage-cats" type="button">管理</button></div>`;
     h += `<div class="admin-field"><label>效果描述</label><input id="af-effect" value="${v('effect')}"></div>`;
-    h += `<div class="admin-field"><label>数值</label><input id="af-value" type="number" value="${v('value',0)}"></div>`;
     h += `<div class="admin-field"><label>价值</label><input id="af-costValue" type="number" value="${v('costValue',0)}"></div>`;
     h += `<div class="admin-field"><label>槽位消耗</label><input id="af-slotCost" type="number" min="0" value="${v('slotCost',0)}" title="0=不占用动态词条槽位"></div>`;
     h += `<div class="admin-field"><label>可重复</label><input id="af-repeatable" type="checkbox" ${v('repeatable')?'checked':''}></div>`;
@@ -1004,6 +1009,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     h += `<div class="admin-field"><label>生命恢复加成</label><input id="af-hpRegenerationBonus" type="number" value="${v('hpRegenerationBonus', 0)}"></div>`;
     h += `<div class="admin-field"><label>耐力加成</label><input id="af-staminaBonus" type="number" value="${v('staminaBonus', 0)}"></div>`;
     h += `<div class="admin-field"><label>耐力恢复加成</label><input id="af-staminaRegenerationBonus" type="number" value="${v('staminaRegenerationBonus', 0)}"></div>`;
+    h += `<div class="admin-field"><label>负重加成</label><input id="af-loadBonus" type="number" value="${v('loadBonus', 0)}"></div>`;
     h += `</div>`;
     h += `</div>`;
     h += `<div class="admin-form-section"><h4>命中效果</h4>`;
@@ -1104,12 +1110,20 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
       });
     }
 
+    // 被动加成总开关显隐
+    const hasPBsel = document.getElementById('ef-hasPassiveBonuses') as HTMLSelectElement;
+    const passiveFields = document.getElementById('ef-passive-fields');
+    hasPBsel?.addEventListener('change', () => {
+      if (passiveFields) passiveFields.style.display = hasPBsel.value === '1' ? '' : 'none';
+    });
+
     document.getElementById('ef-btn-save')?.addEventListener('click', async () => {
       const id = (document.getElementById('ef-id') as HTMLInputElement).value.trim();
       if (!id) { showToast('ID 不能为空'); return; }
       const name = (document.getElementById('ef-name') as HTMLInputElement).value.trim();
       if (!name) { showToast('名称不能为空'); return; }
 
+      const hasPB = (document.getElementById('ef-hasPassiveBonuses') as HTMLSelectElement).value === '1';
       const entity: any = {
         id, name,
         slotCost: (() => {
@@ -1133,7 +1147,6 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         staminaCost: parseInt((document.getElementById('ef-staminaCost') as HTMLInputElement).value) || 0,
         actionTime: parseInt((document.getElementById('ef-actionTime') as HTMLInputElement).value) || 0,
         damage: parseFloat((document.getElementById('ef-damage') as HTMLInputElement).value) || 0,
-        damageBonus: parseFloat((document.getElementById('ef-damageBonus') as HTMLInputElement).value) || 0,
         targetFaction: (document.getElementById('ef-targetFaction') as HTMLSelectElement).value || null,
         targetType: (document.getElementById('ef-targetType') as HTMLSelectElement).value || null,
         targetOrder: (document.getElementById('ef-targetOrder') as HTMLSelectElement).value || null,
@@ -1146,10 +1159,14 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
             ? { sortBy: sortBy || undefined, filterBy: filterBy || undefined, fallback: 'targetOrder' as const }
             : null;
         })(),
-        staminaRegenerationBonus: parseInt((document.getElementById('ef-staminaRegenerationBonus') as HTMLInputElement).value) || 0,
-        staminaBonus: parseInt((document.getElementById('ef-staminaBonus') as HTMLInputElement).value) || 0,
-        hpRegenerationBonus: parseInt((document.getElementById('ef-hpRegenerationBonus') as HTMLInputElement).value) || 0,
-        hpBonus: parseInt((document.getElementById('ef-hpBonus') as HTMLInputElement).value) || 0,
+        // 被动总开关：关则清零全部被动（含 loadBonus）
+        hasPassiveBonuses: hasPB,
+        damageBonus: hasPB ? (parseFloat((document.getElementById('ef-damageBonus') as HTMLInputElement).value) || 0) : 0,
+        staminaRegenerationBonus: hasPB ? (parseInt((document.getElementById('ef-staminaRegenerationBonus') as HTMLInputElement).value) || 0) : 0,
+        staminaBonus: hasPB ? (parseInt((document.getElementById('ef-staminaBonus') as HTMLInputElement).value) || 0) : 0,
+        hpRegenerationBonus: hasPB ? (parseInt((document.getElementById('ef-hpRegenerationBonus') as HTMLInputElement).value) || 0) : 0,
+        hpBonus: hasPB ? (parseInt((document.getElementById('ef-hpBonus') as HTMLInputElement).value) || 0) : 0,
+        loadBonus: hasPB ? (parseInt((document.getElementById('ef-loadBonus') as HTMLInputElement).value) || 0) : 0,
       };
       if (!entity.defaultChildren || entity.defaultChildren.length === 0) entity.defaultChildren = null;
       if (!entity.preloadedDynamicAffixes || entity.preloadedDynamicAffixes.length === 0) entity.preloadedDynamicAffixes = null;
@@ -1226,10 +1243,10 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         }
       }] : [];
 
+      const hasPB = (document.getElementById('af-hasPassiveBonuses') as HTMLSelectElement).value === '1';
       const affix = {
         id, name,
         category: (document.getElementById('af-category') as HTMLSelectElement).value,
-        value: parseFloat((document.getElementById('af-value') as HTMLInputElement).value) || 0,
         costValue: parseInt((document.getElementById('af-costValue') as HTMLInputElement).value) || 0,
         slotCost: (() => {
           const n = parseInt((document.getElementById('af-slotCost') as HTMLInputElement).value, 10);
@@ -1240,13 +1257,14 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         poolPrerequisite: getSelected('af-poolPrerequisite'),
         effect: (document.getElementById('af-effect') as HTMLInputElement).value.trim(),
         onHitEffects,
-        // v7: passive bonus toggle
-        hasPassiveBonuses: (document.getElementById('af-hasPassiveBonuses') as HTMLSelectElement).value === '1',
-        damageBonus: parseFloat((document.getElementById('af-damageBonus') as HTMLInputElement).value) || 0,
-        staminaRegenerationBonus: parseInt((document.getElementById('af-staminaRegenerationBonus') as HTMLInputElement).value) || 0,
-        staminaBonus: parseInt((document.getElementById('af-staminaBonus') as HTMLInputElement).value) || 0,
-        hpRegenerationBonus: parseInt((document.getElementById('af-hpRegenerationBonus') as HTMLInputElement).value) || 0,
-        hpBonus: parseInt((document.getElementById('af-hpBonus') as HTMLInputElement).value) || 0,
+        // 被动总开关：关则清零全部被动（含 loadBonus）
+        hasPassiveBonuses: hasPB,
+        damageBonus: hasPB ? (parseFloat((document.getElementById('af-damageBonus') as HTMLInputElement).value) || 0) : 0,
+        staminaRegenerationBonus: hasPB ? (parseInt((document.getElementById('af-staminaRegenerationBonus') as HTMLInputElement).value) || 0) : 0,
+        staminaBonus: hasPB ? (parseInt((document.getElementById('af-staminaBonus') as HTMLInputElement).value) || 0) : 0,
+        hpRegenerationBonus: hasPB ? (parseInt((document.getElementById('af-hpRegenerationBonus') as HTMLInputElement).value) || 0) : 0,
+        hpBonus: hasPB ? (parseInt((document.getElementById('af-hpBonus') as HTMLInputElement).value) || 0) : 0,
+        loadBonus: hasPB ? (parseInt((document.getElementById('af-loadBonus') as HTMLInputElement).value) || 0) : 0,
         // v7: expanded targeting modifier with master toggle
         targetingModifier: (() => {
           const enabled = (document.getElementById('af-tm-enabled') as HTMLSelectElement).value === '1';

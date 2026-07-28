@@ -75,6 +75,8 @@ export class EntityRepo {
       staminaBonus: def.staminaBonus ?? 0,
       hpRegenerationBonus: def.hpRegenerationBonus ?? 0,
       hpBonus: def.hpBonus ?? 0,
+      loadBonus: def.loadBonus ?? 0,
+      hasPassiveBonuses: def.hasPassiveBonuses ?? false,
     };
 
     const db = getDB();
@@ -87,7 +89,8 @@ export class EntityRepo {
         hp, max_stamina, stamina_regen, hp_regen, max_load,
         is_active, stamina_cost, action_time, damage, damage_bonus,
         target_type, target_order, priority_target, target_faction, target_condition,
-        stamina_regeneration_bonus, stamina_bonus, hp_regeneration_bonus, hp_bonus, updated_at
+        stamina_regeneration_bonus, stamina_bonus, hp_regeneration_bonus, hp_bonus,
+        load_bonus, has_passive_bonuses, updated_at
       ) VALUES (
         @id, @name, @slot_cost, @entity_slots, @weight, @value,
         @fixed_affixes, @dynamic_affix_slots, @pool_prerequisite,
@@ -95,7 +98,8 @@ export class EntityRepo {
         @hp, @max_stamina, @stamina_regen, @hp_regen, @max_load,
         @is_active, @stamina_cost, @action_time, @damage, @damage_bonus,
         @target_type, @target_order, @priority_target, @target_faction, @target_condition,
-        @stamina_regeneration_bonus, @stamina_bonus, @hp_regeneration_bonus, @hp_bonus, @updated_at
+        @stamina_regeneration_bonus, @stamina_bonus, @hp_regeneration_bonus, @hp_bonus,
+        @load_bonus, @has_passive_bonuses, @updated_at
       )
     `).run(row);
 
@@ -145,7 +149,10 @@ export class EntityRepo {
         is_active=@is_active, stamina_cost=@stamina_cost, action_time=@action_time, damage=@damage, damage_bonus=@damage_bonus,
         target_type=@target_type, target_order=@target_order,
         priority_target=@priority_target, target_faction=@target_faction, target_condition=@target_condition,
-        stamina_regeneration_bonus=@stamina_regeneration_bonus, stamina_bonus=@stamina_bonus, hp_regeneration_bonus=@hp_regeneration_bonus, hp_bonus=@hp_bonus, updated_at=@updated_at
+        stamina_regeneration_bonus=@stamina_regeneration_bonus, stamina_bonus=@stamina_bonus,
+        hp_regeneration_bonus=@hp_regeneration_bonus, hp_bonus=@hp_bonus,
+        load_bonus=@load_bonus, has_passive_bonuses=@has_passive_bonuses,
+        updated_at=@updated_at
       WHERE id=@id
     `).run(row);
 

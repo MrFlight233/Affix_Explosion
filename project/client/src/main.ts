@@ -436,7 +436,6 @@ function showFullItemPool() {
 
       h += '<tr><td colspan="2" style="font-weight:bold;padding-top:4px;border-bottom:1px solid #eee;">效果</td></tr>';
       h += row('效果', affix.effect);
-      h += row('数值', String(affix.value));
 
       h += '<tr><td colspan="2" style="font-weight:bold;padding-top:8px;border-bottom:1px solid #eee;">使用信息</td></tr>';
       h += row('槽位消耗', String(affix.slotCost));

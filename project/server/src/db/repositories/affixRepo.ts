@@ -50,7 +50,6 @@ export class AffixRepo {
       id: def.id,
       name: def.name,
       category: def.category ?? '特殊',
-      value: def.value ?? 0,
       costValue: def.costValue ?? 0,
       slotCost: def.slotCost ?? 0,
       repeatable: def.repeatable ?? false,
@@ -63,6 +62,7 @@ export class AffixRepo {
       staminaBonus: def.staminaBonus ?? 0,
       hpRegenerationBonus: def.hpRegenerationBonus ?? 0,
       hpBonus: def.hpBonus ?? 0,
+      loadBonus: def.loadBonus ?? 0,
       // null = 显式无覆写
       targetingModifier: def.targetingModifier != null ? def.targetingModifier : undefined,
       hasPassiveBonuses: def.hasPassiveBonuses ?? false,
@@ -71,15 +71,15 @@ export class AffixRepo {
     const db = getDB();
     db.prepare(`
       INSERT INTO affixes (
-        id, name, category, value, cost_value, slot_cost,
+        id, name, category, cost_value, slot_cost,
         repeatable, prerequisite, pool_prerequisite, effect, on_hit_effects,
         damage_bonus, stamina_regeneration_bonus, stamina_bonus, hp_regeneration_bonus, hp_bonus,
-        targeting_modifier, has_passive_bonuses, updated_at
+        load_bonus, targeting_modifier, has_passive_bonuses, updated_at
       ) VALUES (
-        @id, @name, @category, @value, @cost_value, @slot_cost,
+        @id, @name, @category, @cost_value, @slot_cost,
         @repeatable, @prerequisite, @pool_prerequisite, @effect, @on_hit_effects,
         @damage_bonus, @stamina_regeneration_bonus, @stamina_bonus, @hp_regeneration_bonus, @hp_bonus,
-        @targeting_modifier, @has_passive_bonuses, @updated_at
+        @load_bonus, @targeting_modifier, @has_passive_bonuses, @updated_at
       )
     `).run(affixDefToRow(filled));
 
@@ -106,13 +106,13 @@ export class AffixRepo {
     const db = getDB();
     db.prepare(`
       UPDATE affixes SET
-        name=@name, category=@category, value=@value, cost_value=@cost_value,
+        name=@name, category=@category, cost_value=@cost_value,
         slot_cost=@slot_cost, repeatable=@repeatable,
         prerequisite=@prerequisite, pool_prerequisite=@pool_prerequisite,
         effect=@effect, on_hit_effects=@on_hit_effects,
         damage_bonus=@damage_bonus, stamina_regeneration_bonus=@stamina_regeneration_bonus,
         stamina_bonus=@stamina_bonus, hp_regeneration_bonus=@hp_regeneration_bonus,
-        hp_bonus=@hp_bonus,
+        hp_bonus=@hp_bonus, load_bonus=@load_bonus,
         targeting_modifier=@targeting_modifier, has_passive_bonuses=@has_passive_bonuses,
         updated_at=@updated_at
       WHERE id=@id

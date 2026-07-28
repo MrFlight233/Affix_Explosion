@@ -10,7 +10,10 @@ import {
   getEntityClassCategoryIds, getCategoryName, getAffixFilterCategories,
   TargetCondition,
 } from '../game/data';
-import { makeDraggable, makeDropZone, DragPayload, setDragPayload, getDragPayload } from './dragDrop';
+import {
+  beginPointerDrag, consumeSuppressNextClick, isPointerDragging,
+  PointerDragSession, PointerDragHit,
+} from './pointerDrag';
 import { data as dataApi } from '../api/client';
 
 // ============================================================
@@ -50,7 +53,7 @@ interface SimBattleState {
 // 主入口
 // ============================================================
 
-document.body.addEventListener("dragover", function(e){e.preventDefault();}); document.body.addEventListener("drop", function(e){var x=document.getElementById("sb-toast");if(x){x.textContent="BODYdrop";x.style.display="block";}}); export async function showSimBattle(onBack: () => void): Promise<void> {
+export async function showSimBattle(onBack: () => void): Promise<void> {
   const app = document.getElementById('app')!;
   const engine = new GameEngine();
 
@@ -81,9 +84,10 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
     toast: null,
   };
 
-  let draggingType: 'entity' | 'affix' | null = null;
   /** 记录每个 cu-cd span 上一次引擎 tick 后的 remainingTime，用于平滑插值 */
   const weaponPrevRemaining = new Map<string, number>();
+  /** BD 面板 pointer 委托是否已绑定 */
+  let stablePointerBound = false;
 
   // ============================================================
   // Zone 渲染系统 — 骨架常驻 + 分区更新
@@ -101,7 +105,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
   }
 
   function createBuildSkeleton() {
-    stableDragBound = false;  // 重置稳定容器绑定标记
+    stablePointerBound = false;
     const poolBtn = state.poolCollapsed ? '▶' : '◀';
     app.innerHTML = `
       <div id="sb-page">
@@ -170,6 +174,7 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
       const bd = await drawFromPool(state.round);
       (btn as HTMLButtonElement).disabled = false;
       if (bd) {
+        ingestSlotsForSim(bd);
         if (side === 'player') state.playerSlots = bd;
         else state.enemySlots = bd;
         // 所有可折叠卡片默认折叠
@@ -317,18 +322,60 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
         return true;
       }
     }
-    // 递归搜索
+    // 递归搜索 entity 树；成功后仍清 slot.children，避免浅拷贝残留
     for (const s of slots) {
-      if (removeFromTree(s.entity, instanceId)) return true;
+      if (removeFromTree(s.entity, instanceId)) {
+        pruneFromSlotChildren(s, instanceId);
+        return true;
+      }
       for (let i = 0; i < s.children.length; i++) {
         if (s.children[i].instanceId === instanceId) {
           s.children.splice(i, 1);
           return true;
         }
-        if (removeFromTree(s.children[i], instanceId)) return true;
+        if (removeFromTree(s.children[i], instanceId)) {
+          pruneFromSlotChildren(s, instanceId);
+          return true;
+        }
       }
     }
     return false;
+  }
+
+  /** 从 slot.children（含子树）按 instanceId 清除，防止与 entity.children 双份残留 */
+  function pruneFromSlotChildren(slot: DeploySlot, instanceId: string): void {
+    for (let i = slot.children.length - 1; i >= 0; i--) {
+      if (slot.children[i].instanceId === instanceId) {
+        slot.children.splice(i, 1);
+        continue;
+      }
+      removeFromTree(slot.children[i], instanceId);
+    }
+  }
+
+  /**
+   * 模拟对战约定：子项只挂 entity.children。
+   * 抽池等主游戏风格 BD：把 slot.children 并入 entity 后清空。
+   */
+  function ingestSlotsForSim(slots: DeploySlot[]): void {
+    for (const slot of slots) {
+      if (!slot.children) slot.children = [];
+      if (slot.children.length === 0) continue;
+      if (!slot.entity.children) slot.entity.children = [];
+      for (const c of slot.children) {
+        if (!findInTree(slot.entity, c.instanceId)) {
+          slot.entity.children.push(c);
+        }
+      }
+      slot.children = [];
+    }
+  }
+
+  /** 开战/预览前：清空 slot.children，避免历史浅拷贝幽灵子实体被引擎再次合并 */
+  function sanitizeSimSlotsBeforeCombat(slots: DeploySlot[]): void {
+    for (const slot of slots) {
+      slot.children = [];
+    }
   }
 
   function removeFromTree(root: ItemInstance, id: string): boolean {
@@ -349,6 +396,24 @@ document.body.addEventListener("dragover", function(e){e.preventDefault();}); do
 // ============================================================
 // Tooltip（紧凑格式）
 // ============================================================
+
+/** 克 → 展示：|g|<1000 用 g，否则 kg（整除用整数，否则最多 3 位去尾零） */
+function formatWeightG(grams: number): string {
+  const n = Number(grams) || 0;
+  const abs = Math.abs(n);
+  if (abs < 1000) return `${n}g`;
+  const kg = n / 1000;
+  const s = Number.isInteger(kg) ? String(kg) : String(parseFloat(kg.toFixed(3)));
+  return `${s}kg`;
+}
+
+/** 负重加成带符号：+2kg / -500g */
+function formatWeightBonusG(grams: number): string {
+  const n = Number(grams) || 0;
+  if (n === 0) return '0g';
+  const body = formatWeightG(Math.abs(n));
+  return n > 0 ? `+${body}` : `-${body}`;
+}
 
 // ── Tooltip ──
 function tipkv(k: string, v: string | number): string {
@@ -398,13 +463,15 @@ function getTypeBadges(def: EntityDef, inst?: ItemInstance | null): string[] {
   return tags;
 }
 
-/** 检查实体是否有被动加成（根据字段值判断，不依赖类型分类） */
+/** 检查实体是否有被动加成（受 hasPassiveBonuses 约束；字段含 loadBonus） */
 function hasPassive(def: EntityDef): boolean {
+  if (def.hasPassiveBonuses === false) return false;
   return ((def.damageBonus || 0) !== 0)
     || (def.hpBonus || 0) !== 0
     || (def.hpRegenerationBonus || 0) !== 0
     || (def.staminaBonus || 0) !== 0
-    || (def.staminaRegenerationBonus || 0) !== 0;
+    || (def.staminaRegenerationBonus || 0) !== 0
+    || (def.loadBonus || 0) !== 0;
 }
 
 /** 将词条/实体ID数组解析为中文名称 */
@@ -442,10 +509,10 @@ function renderTooltipTree(
       const hRegen = combatUnit ? combatUnit.hpRegeneration : (def.hpRegen || 0);
       h += tipkv('生命', hp) + tipkv('耐力', stam);
       h += tipkv('耐力恢复', sRegen + '/s') + tipkv('生命恢复', hRegen + '/s');
-      h += tipkv('负重上限', def.maxLoad);
+      h += tipkv('负重上限', formatWeightG(def.maxLoad));
     }
     h += tipkv('槽位消耗', def.slotCost);
-    if (!isSt) h += tipkv('重量', def.weight + 'g');
+    if (!isSt) h += tipkv('重量', formatWeightG(def.weight));
     h += '</div>';
 
     // 主动动作
@@ -484,6 +551,7 @@ function renderTooltipTree(
       if (def.hpRegenerationBonus) h += tipkv('生命恢复加成', '+' + def.hpRegenerationBonus + '/s');
       if (def.staminaBonus) h += tipkv('耐力加成', '+' + def.staminaBonus);
       if (def.staminaRegenerationBonus) h += tipkv('耐力恢复加成', '+' + def.staminaRegenerationBonus + '/s');
+      if (def.loadBonus) h += tipkv('负重加成', formatWeightBonusG(def.loadBonus));
       h += '</div>';
     }
 
@@ -603,10 +671,10 @@ function showSimTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affix', 
       if (isSt) {
         html += tipkv('生命', def.hp) + tipkv('耐力', def.maxStamina);
         html += tipkv('耐力恢复', def.staminaRegen + '/s') + tipkv('生命恢复', (def.hpRegen || 0) + '/s');
-        html += tipkv('负重上限', def.maxLoad);
+        html += tipkv('负重上限', formatWeightG(def.maxLoad));
       }
       html += tipkv('槽位消耗', def.slotCost);
-      if (!isSt) html += tipkv('重量', def.weight + 'g');
+      if (!isSt) html += tipkv('重量', formatWeightG(def.weight));
       html += '</div>';
 
       // 主动动作
@@ -639,6 +707,7 @@ function showSimTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affix', 
         if (def.hpRegenerationBonus) html += tipkv('生命恢复加成', '+' + def.hpRegenerationBonus + '/s');
         if (def.staminaBonus) html += tipkv('耐力加成', '+' + def.staminaBonus);
         if (def.staminaRegenerationBonus) html += tipkv('耐力恢复加成', '+' + def.staminaRegenerationBonus + '/s');
+        if (def.loadBonus) html += tipkv('负重加成', formatWeightBonusG(def.loadBonus));
         html += '</div>';
       }
 
@@ -717,8 +786,10 @@ function showSimTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affix', 
     h += tipSection('效果描述');
     h += `<div class="sb-tip-effect">${def.effect}</div>`;
     // 被动加成
-    const hasPsv = !!(def.damageBonus) || !!(def.hpBonus) || !!(def.hpRegenerationBonus)
-      || !!(def.staminaBonus) || !!(def.staminaRegenerationBonus);
+    const hasPsv = def.hasPassiveBonuses !== false && (
+      !!(def.damageBonus) || !!(def.hpBonus) || !!(def.hpRegenerationBonus)
+      || !!(def.staminaBonus) || !!(def.staminaRegenerationBonus) || !!(def.loadBonus)
+    );
     if (hasPsv) {
       h += tipSection('被动加成');
       h += '<div class="sb-tip-grid">';
@@ -727,6 +798,7 @@ function showSimTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affix', 
       if (def.hpRegenerationBonus) h += tipkv('生命恢复', `+${def.hpRegenerationBonus}/秒`);
       if (def.staminaBonus) h += tipkv('耐力加成', `+${def.staminaBonus}`);
       if (def.staminaRegenerationBonus) h += tipkv('耐力恢复', `+${def.staminaRegenerationBonus}/秒`);
+      if (def.loadBonus) h += tipkv('负重加成', formatWeightBonusG(def.loadBonus));
       h += '</div>';
     }
     // 基本信息
@@ -851,7 +923,7 @@ function hideSimTooltip() {
       updateZone('sb-player-bd', renderDeployArea('player'));
       updateZone('sb-enemy-bd', renderDeployArea('enemy'));
       // 一次性绑所有 BD 事件（避免双绑）
-      bindDragEvents();
+      bindPointerDragEvents();
       bindTooltipEvents();
       bindCardCollapseEvents();
     }
@@ -975,16 +1047,14 @@ function hideSimTooltip() {
   }
 
   function renderPoolEntityRow(e: EntityDef): string {
-    return `<div class="sb-pool-item" data-defid="${e.id}" data-type="entity"
-      data-source="pool" draggable="true">
+    return `<div class="sb-pool-item" data-defid="${e.id}" data-type="entity" data-source="pool">
       <span class="item-name">${e.name}</span>
       <span class="item-stat">价${e.value}  槽耗${e.slotCost}</span>
     </div>`;
   }
 
   function renderPoolAffixRow(a: AffixDef): string {
-    return `<div class="sb-pool-item" data-defid="${a.id}" data-type="affix"
-      data-source="pool" draggable="true">
+    return `<div class="sb-pool-item" data-defid="${a.id}" data-type="affix" data-source="pool">
       <span class="item-name">${a.name}</span>
       <span class="item-stat">价${Math.abs(a.costValue)}  槽耗${a.slotCost}</span>
     </div>`;
@@ -999,7 +1069,7 @@ function hideSimTooltip() {
       if (d) usedSlots += d.slotCost;
     }
 
-    let h = `<div class="sb-deploy-area" data-side="${side}">`;
+    let h = `<div class="sb-deploy-area" data-sort-list="top" data-accept="entity" data-side="${side}">`;
     h += `<div class="sb-slot-header">${label} BD &nbsp; 第一层 ${usedSlots} / ${state.round} 槽位`;
     h += ` <button class="btn sb-draw-pool-btn" data-side="${side}" style="font-size:11px;padding:2px 8px;margin-left:8px;">从对战池抽取</button>`;
     h += `</div>`;
@@ -1093,7 +1163,7 @@ function hideSimTooltip() {
       return `${edef.name}  伤:${dmg}  ${time}  顺序:${order}${edef.priorityTarget ? ' 优先' + edef.priorityTarget : ''}`;
     } else {
       const cat = getEntityCategory(edef).join(' / ');
-      return `${edef.name}  HP:${edef.hp}  重:${edef.weight}  ${cat}`;
+      return `${edef.name}  HP:${edef.hp}  重:${formatWeightG(edef.weight)}  ${cat}`;
     }
   }
 
@@ -1140,13 +1210,17 @@ function hideSimTooltip() {
 
     const deadClass = (combatUnit && combatUnit.currentHp <= 0) ? ' dead' : '';
     const collapsedClass = cardCollapsed ? ' sb-card-collapsed' : '';
-    let h = `<div class="sb-card${deadClass}${collapsedClass}" style="${ml}" data-depth="${depth}" data-side="${side}" data-mode="${mode}">`;
+    const sortItemAttr = (mode === 'build' && isEntity)
+      ? ` data-sort-item="entity" data-instance="${instanceId}" data-side="${side}"`
+      : '';
+    let h = `<div class="sb-card${deadClass}${collapsedClass}" style="${ml}" data-depth="${depth}" data-side="${side}" data-mode="${mode}"${sortItemAttr}>`;
 
     // ── 卡片标题行（始终渲染名称和关键信息，CSS 控制显隐）──
-    const dragAttr = mode === 'build' ? ` data-instance="${instanceId}" data-side="${side}" draggable="true"` : '';
+    const dragHandleAttr = mode === 'build'
+      ? ` data-drag-handle data-instance="${instanceId}" data-side="${side}" data-kind="${isEntity ? 'entity' : 'affix'}" data-defid="${isEntity ? edef!.id : (def as AffixDef).id}"`
+      : '';
     const collapseLabel = cardCollapsed ? '展开' : '收起';
-    const dropAttr = mode === 'build' ? ` data-dropzone="card" data-instance="${instanceId}" data-side="${side}"` : '';
-    h += `<div class="sb-card-header" data-cardtoggle="${instanceId}" data-defid="${isEntity ? edef!.id : ''}"${dragAttr}${dropAttr} style="cursor:pointer;">`;
+    h += `<div class="sb-card-header" data-cardtoggle="${instanceId}" data-defid="${isEntity ? edef!.id : ''}"${dragHandleAttr} style="cursor:pointer;">`;
     h += `<span class="sb-card-header-name">${isEntity ? edef!.name : (def as AffixDef).name}</span>`;
     h += '<span class="sb-card-header-keyinfo sb-card-keyinfo">';
     h += renderCardKeyInfo(item, mode, combatUnit, sideFirst);
@@ -1171,7 +1245,7 @@ function hideSimTooltip() {
       h += `  生命恢复: ${hRegen}/s`;
       h += '</div>';
       h += '<div class="sb-card-stats">';
-      h += `负重: ${edef!.maxLoad}  槽耗: ${edef!.slotCost}`;
+      h += `负重: ${formatWeightG(edef!.maxLoad)}  槽耗: ${edef!.slotCost}`;
       if (mode === 'build') h += `  价值: ${edef!.value}`;
       h += `<span id="cu-ov-${sideFirst}-${item.instanceId}" style="${combatUnit?.isOverloaded ? '' : 'display:none'}">  超重</span>`;
       h += `<span id="cu-dead-${sideFirst}-${item.instanceId}" style="${combatUnit && combatUnit.currentHp <= 0 ? '' : 'display:none'}">  阵亡</span>`;
@@ -1180,7 +1254,7 @@ function hideSimTooltip() {
       h += '<div class="sb-card-stats">';
       // 非启动端子实体无独立 combatUnit，统一显示 EntityDef HP
       h += `HP: ${edef.hp}  `;
-      h += `槽耗: ${edef.slotCost}  重: ${edef.weight}`;
+      h += `槽耗: ${edef.slotCost}  重: ${formatWeightG(edef.weight)}`;
       if (mode === 'build') h += `  价值: ${edef.value}`;
       h += '</div>';
     }
@@ -1191,7 +1265,8 @@ function hideSimTooltip() {
       if (edef.hpBonus) h += `生命加成: ${edef.hpBonus > 0 ? '+' : ''}${edef.hpBonus}  `;
       if (edef.hpRegenerationBonus) h += `生命恢复: +${edef.hpRegenerationBonus}/s  `;
       if (edef.staminaBonus) h += `耐力加成: +${edef.staminaBonus}  `;
-      if (edef.staminaRegenerationBonus) h += `耐力恢复: +${edef.staminaRegenerationBonus}/s`;
+      if (edef.staminaRegenerationBonus) h += `耐力恢复: +${edef.staminaRegenerationBonus}/s  `;
+      if (edef.loadBonus) h += `负重加成: ${formatWeightBonusG(edef.loadBonus)}`;
       h += '</div>';
     }
     h += '</div>';
@@ -1225,9 +1300,6 @@ function hideSimTooltip() {
     if (hasAffixBlock) {
       h += '<div class="sb-card-block">';
       const affixSlots = edef ? edef.dynamicAffixSlots : 0;
-      if (mode === 'build') {
-        h += `<div data-dropzone="affix" data-instance="${instanceId}" data-side="${side}" style="min-height:4px;">`;
-      }
       h += `<div class="sb-block-title" data-affixblocktoggle="${instanceId}" style="cursor:pointer;">`;
       h += `词条 · ${usedAffixSlots}/${affixSlots} 槽位 <span style="font-weight:400;color:var(--sb-text-muted,inherit);margin-left:2px;">${affixBlockCollapsed ? '展开' : '收起'}</span></div>`;
       h += `<div class="sb-foldable${affixBlockCollapsed ? ' sb-folded' : ''}">`;
@@ -1265,20 +1337,28 @@ function hideSimTooltip() {
         if (dynCollapsed && dynAffixCount > 0) h += ` ${dnames}`;
         h += '</div>';
         if (!dynCollapsed) {
+          if (mode === 'build') {
+            h += `<div data-sort-list="affix" data-accept="affix" data-instance="${instanceId}" data-side="${side}">`;
+          }
           for (const ac of dynAffixList) {
             const ad = getAffixDef(ac.defId);
-            if (ad) h += `<div class="sb-card-stats" style="margin-left:12px;" data-instance="${ac.instanceId}" data-defid="${ac.defId}" data-type="affix" data-side="${side}" data-dropzone="card" draggable="${mode === 'build'}">${ad.name}  槽耗${ad.slotCost}  效果:${ad.effect}  数值:${ad.value}</div>`;
+            if (ad) {
+              const handle = mode === 'build'
+                ? ` data-drag-handle data-sort-item="affix" data-instance="${ac.instanceId}" data-defid="${ac.defId}" data-type="affix" data-kind="affix" data-side="${side}"`
+                : ` data-instance="${ac.instanceId}" data-defid="${ac.defId}" data-type="affix"`;
+              h += `<div class="sb-card-stats" style="margin-left:12px;"${handle}>${ad.name}  槽耗${ad.slotCost}  效果:${ad.effect}</div>`;
+            }
           }
           if (mode === 'build') {
             const remaining = Math.max(0, affixSlots - usedAffixSlots);
             for (let i = 0; i < remaining; i++) {
               h += `<div class="sb-empty-slot" data-dropzone="affix" data-instance="${instanceId}" data-side="${side}" style="margin-left:12px;">空槽位, 拖入词条</div>`;
             }
+            h += '</div>';
           }
         }
       }
       h += '</div>'; // sb-foldable
-      if (mode === 'build') h += '</div>'; // affix drop zone
       h += '</div>';
     }
 
@@ -1295,7 +1375,7 @@ function hideSimTooltip() {
       h += `<div class="sb-card-stats sb-foldable-child-preview" style="${childBlockCollapsed ? '' : 'display:none'}">${entityChildren.map(c => (getEntityDef(c.defId) || { name: c.defId }).name).join(', ')}</div>`;
       h += `<div class="sb-foldable${childBlockCollapsed ? ' sb-folded' : ''}">`;
       if (mode === 'build') {
-        h += `<div class="sb-child-area" data-dropzone="child" data-instance="${instanceId}" data-side="${side}">`;
+        h += `<div class="sb-child-area" data-sort-list="child" data-accept="entity" data-instance="${instanceId}" data-side="${side}">`;
       } else {
         h += '<div class="sb-child-area">';
       }
@@ -1510,594 +1590,350 @@ function hideSimTooltip() {
   }
 
   function bindPoolItemEvents() {
-    // 物品池行拖拽
     document.querySelectorAll('.sb-pool-item').forEach(el => {
       const htmlEl = el as HTMLElement;
       const defId = htmlEl.dataset.defid!;
       const type = htmlEl.dataset.type as 'entity' | 'affix';
-      htmlEl.draggable = true;
-      htmlEl.addEventListener('dragstart', (e) => {
-        const payload: DragPayload = {
-          instanceId: defId,
-          source: 'sim-battle',
-        };
-        setDragPayload(payload);
-        // 在 dataTransfer 中存储额外信息
-        e.dataTransfer!.setData('text/plain', defId);
-        e.dataTransfer!.setData('application/x-defid', defId);
-        e.dataTransfer!.setData('application/x-type', type);
-        e.dataTransfer!.setData('application/x-source', 'pool');
-        draggingType = type;
-        htmlEl.classList.add('dragging');
+      const name = htmlEl.querySelector('.item-name')?.textContent || defId;
+      htmlEl.addEventListener('pointerdown', (e) => {
+        const pe = e as PointerEvent;
+        if (pe.button !== 0) return;
+        beginPointerDrag(pe, {
+          kind: type,
+          source: 'pool',
+          id: defId,
+          defId,
+          label: name,
+          originEl: htmlEl,
+        }, { onCommit: commitPointerDrag });
       });
-      htmlEl.addEventListener('dragend', () => {
-        setDragPayload(null);
-        draggingType = null;
-        htmlEl.classList.remove('dragging');
-        document.querySelectorAll('.drag-over').forEach(d => d.classList.remove('drag-over'));
-        document.getElementById('sb-pool')?.classList.remove('remove-target');
-        clearPlaceholder();
-      });
-
-      // hover tooltip
-      htmlEl.addEventListener('mouseenter', (e) => showSimTooltip(e as MouseEvent, defId, type));
+      htmlEl.addEventListener('mouseenter', (ev) => showSimTooltip(ev as MouseEvent, defId, type));
       htmlEl.addEventListener('mouseleave', hideSimTooltip);
     });
   }
 
   // ============================================================
-  // 拖拽系统 — 模块级共享状态（避免闭包隔离导致的多 handler 竞争）
+  // Pointer 拖拽 — 委托绑定 + 数据提交
   // ============================================================
 
-  let dropPlaceholder: HTMLElement | null = null;
-  let lastHover: { cardEl: HTMLElement; insertBefore: boolean } | null = null;
-  let stableDragBound = false;
-
-  function ensurePlaceholder(): HTMLElement {
-    if (!dropPlaceholder) {
-      dropPlaceholder = document.createElement('div');
-      dropPlaceholder.className = 'sb-drop-placeholder';
-    }
-    return dropPlaceholder;
-  }
-  function clearPlaceholder() {
-    lastHover = null;
-    if (dropPlaceholder) {
-      dropPlaceholder.classList.remove('active');
-      if (dropPlaceholder.parentNode) dropPlaceholder.parentNode.removeChild(dropPlaceholder);
-    }
-  }
-
-  /** 当前 drop 是否仍落在排序占位 / 刚才悬停的卡片上（否则应视为放入新区，勿劫持） */
-  function isDropOnSortTarget(e: DragEvent): boolean {
-    if (!lastHover) return false;
-    const t = e.target as Node | null;
-    if (!t) return false;
-    if (lastHover.cardEl.contains(t)) return true;
-    if (dropPlaceholder && (dropPlaceholder === t || dropPlaceholder.contains(t))) return true;
-    return false;
-  }
-
-  /** 若应走排序则执行并返回 true；否则返回 false 让调用方走放入逻辑 */
-  function trySortDrop(
-    payload: DragPayload, e: DragEvent,
-  ): boolean {
-    if (!isDropOnSortTarget(e) || !lastHover) return false;
-    const hdr = (lastHover.cardEl.matches('[data-dropzone="card"]')
-      ? lastHover.cardEl
-      : lastHover.cardEl.querySelector('[data-dropzone="card"]')) as HTMLElement | null;
-    if (!hdr?.dataset.instance || !hdr.dataset.side) return false;
-    const ib = lastHover.insertBefore;
-    const err = handleDropOnCard(
-      payload, hdr.dataset.side as 'player' | 'enemy', hdr.dataset.instance, e, ib,
-    );
-    if (err) showToast('排序错误:' + err);
-    setDragPayload(null);
-    clearPlaceholder();
-    return true;
-  }
-
-  function bindDragEvents() {
-    // 第一层 drop zones: 整个 BD 面板（稳定容器，只绑一次避免事件累积）
-    if (!stableDragBound) {
-      const bdZones = [
-        { el: document.getElementById('sb-player-bd')!, side: 'player' as const },
-        { el: document.getElementById('sb-enemy-bd')!, side: 'enemy' as const },
-      ];
-      for (const { el, side } of bdZones) {
-        if (!el) continue;
-        bindDropZone(el, 'sim-battle', (payload, _zone, _slotIdx, e) => {
-          if (trySortDrop(payload, e)) return null;
-          return handleDropInDeploy(payload, side, undefined, null, e);
+  function bindPointerDragEvents() {
+    if (!stablePointerBound) {
+      for (const id of ['sb-player-bd', 'sb-enemy-bd'] as const) {
+        const bdEl = document.getElementById(id);
+        if (!bdEl) continue;
+        bdEl.addEventListener('pointerdown', (e) => {
+          const pe = e as PointerEvent;
+          if (pe.button !== 0) return;
+          const handle = (pe.target as HTMLElement).closest('[data-drag-handle]') as HTMLElement | null;
+          if (!handle || !bdEl.contains(handle)) return;
+          // 折叠按钮上不开始拖
+          if ((pe.target as HTMLElement).closest('.sb-card-collapse-btn')) return;
+          const instanceId = handle.dataset.instance!;
+          const kind = (handle.dataset.kind || 'entity') as 'entity' | 'affix';
+          const defId = handle.dataset.defid || '';
+          const side = (handle.dataset.side || (id === 'sb-player-bd' ? 'player' : 'enemy')) as 'player' | 'enemy';
+          const label = handle.querySelector('.sb-card-header-name')?.textContent
+            || handle.textContent?.trim().slice(0, 24)
+            || instanceId;
+          beginPointerDrag(pe, {
+            kind,
+            source: 'bd',
+            id: instanceId,
+            defId,
+            side,
+            label,
+            originEl: handle,
+          }, { onCommit: commitPointerDrag });
         });
       }
-    }
-
-    // 子实体区：仅当仍落在排序目标上才排序，否则放入该父实体
-    document.querySelectorAll('[data-dropzone="child"]').forEach(el => {
-      const htmlEl = el as HTMLElement;
-      const side = htmlEl.dataset.side as 'player' | 'enemy';
-      const parentId = htmlEl.dataset.instance!;
-      bindDropZone(htmlEl, 'sim-battle', (payload, _zone, _slotIdx, e) => {
-        if (trySortDrop(payload, e)) return null;
-        return handleDropInDeploy(payload, side, undefined, parentId, e);
-      });
-    });
-
-    // 卡片标题 drop zones（排序 + 词条挂载）
-    document.querySelectorAll('[data-dropzone="card"]').forEach(el => {
-      const htmlEl = el as HTMLElement;
-      const isAffixRow = htmlEl.dataset.type === 'affix';
-      // 词条行用自身，卡片标题用父级 .sb-card
-      const cardEl = isAffixRow ? htmlEl : (htmlEl.closest('.sb-card') as HTMLElement);
-
-      htmlEl.addEventListener('dragover', (e) => {
-        // 类型过滤：实体↔卡片标题、词条↔词条行
-        if (draggingType && (draggingType === 'affix') !== isAffixRow) return;
-        e.preventDefault();
-        e.dataTransfer!.dropEffect = 'move';
-        const rect = htmlEl.getBoundingClientRect();
-        const insertBefore = e.clientY < rect.top + rect.height / 2;
-        if (lastHover && lastHover.cardEl === cardEl && lastHover.insertBefore === insertBefore) return;
-        lastHover = { cardEl, insertBefore };
-        const ph = ensurePlaceholder();
-        ph.classList.add('active');
-        if (insertBefore) cardEl.parentNode!.insertBefore(ph, cardEl);
-        else cardEl.parentNode!.insertBefore(ph, cardEl.nextSibling);
-      });
-
-      // drop handled by unified BD panel/child zone handlers
-    });
-
-    // 词条区：同子实体区，避免旧排序占位劫持「放入词条槽」
-    document.querySelectorAll('[data-dropzone="affix"]').forEach(el => {
-      const htmlEl = el as HTMLElement;
-      const side = htmlEl.dataset.side as 'player' | 'enemy';
-      const parentId = htmlEl.dataset.instance!;
-      bindDropZone(htmlEl, 'sim-battle', (payload, _zone, _slotIdx, e) => {
-        if (trySortDrop(payload, e)) return null;
-        return handleDropInDeploy(payload, side, undefined, parentId, e);
-      });
-    });
-
-    // 空槽位：明确「放入新槽」意图，清除排序占位，不走 lastHover 排序
-    document.querySelectorAll('.sb-empty-slot').forEach(el => {
-      const htmlEl = el as HTMLElement;
-      const side = htmlEl.dataset.side as 'player' | 'enemy';
-      const parentId = htmlEl.dataset.instance!;
-      htmlEl.addEventListener('dragover', () => {
-        clearPlaceholder();
-      });
-      bindDropZone(htmlEl, 'sim-battle', (payload, _zone, _slotIdx, e) => {
-        clearPlaceholder();
-        return handleDropInDeploy(payload, side, undefined, parentId, e);
-      });
-    });
-
-    // BD 中已有的卡片标题和动态词条行 — draggable
-    document.querySelectorAll('.sb-card-header[draggable], .sb-card-stats[draggable="true"]').forEach(el => {
-      const htmlEl = el as HTMLElement;
-      if (!htmlEl.dataset.instance) return;
-      htmlEl.addEventListener('dragstart', (e) => {
-        const payload: DragPayload = {
-          instanceId: htmlEl.dataset.instance!,
-          source: 'sim-battle',
-        };
-        setDragPayload(payload);
-        e.dataTransfer!.setData('text/plain', htmlEl.dataset.instance!);
-        e.dataTransfer!.setData('application/x-source', 'bd');
-        draggingType = htmlEl.dataset.type === 'affix' ? 'affix' : 'entity';
-        htmlEl.classList.add('dragging');
-      });
-      htmlEl.addEventListener('dragend', () => {
-        setDragPayload(null);
-        htmlEl.classList.remove('dragging');
-        document.querySelectorAll('.drag-over').forEach(d => d.classList.remove('drag-over'));
-        document.getElementById('sb-pool')?.classList.remove('remove-target');
-        clearPlaceholder();
-      });
-    });
-
-    // BD 面板 dragleave / 物品池移除目标 — 稳定容器，只绑一次
-    if (!stableDragBound) {
-      for (const id of ['sb-player-bd', 'sb-enemy-bd']) {
-        const bdEl = document.getElementById(id);
-        if (bdEl) {
-          bdEl.addEventListener('dragleave', (e) => {
-            if (!bdEl.contains(e.relatedTarget as Node)) {
-              clearPlaceholder();
-            }
-          });
-        }
-      }
-
-      const poolEl = document.getElementById('sb-pool')!;
-      poolEl.addEventListener('dragover', (e) => {
-        const payload = getDragPayload();
-        if (payload && payload.source === 'sim-battle') {
-          e.preventDefault();
-          poolEl.classList.add('remove-target');
-        }
-      });
-      poolEl.addEventListener('dragleave', (e) => {
-        if (!poolEl.contains(e.relatedTarget as Node)) {
-          poolEl.classList.remove('remove-target');
-        }
-      });
-      poolEl.addEventListener('drop', (e) => {
-        e.preventDefault();
-        poolEl.classList.remove('remove-target');
-        const instanceId = e.dataTransfer!.getData('text/plain');
-        if (!instanceId) return;
-        let removed = removeFromSlots(state.playerSlots, instanceId);
-        if (!removed) removed = removeFromSlots(state.enemySlots, instanceId);
-        if (removed) {
-          setDragPayload(null);
-          renderZones();
-        }
-      });
-
-      stableDragBound = true;
+      stablePointerBound = true;
     }
   }
 
-  function bindDropZone(
-    el: HTMLElement, zone: string,
-    onDrop: (payload: DragPayload, zone: string, slotIdx: number | undefined, e: DragEvent) => string | null,
-  ) {
-    el.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      e.dataTransfer!.dropEffect = 'move';
-      el.classList.add('drag-over');
-    });
-    el.addEventListener('dragleave', (e) => {
-      if (!el.contains(e.relatedTarget as Node)) {
-        el.classList.remove('drag-over');
-      }
-    });
-    el.addEventListener('drop', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      el.classList.remove('drag-over');
-      const payload = getDragPayload();
-      if (!payload) {
-        clearPlaceholder();
-        return;
-      }
-      const err = onDrop(payload, zone, undefined, e);
-      if (err) showToast(err);
-      setDragPayload(null);
-      clearPlaceholder();
-    });
-  }
-
-  /** 非卡片标题区域的 drop — 找最近实体处理 */
-  function handleSmartDrop(payload: DragPayload, side: 'player' | 'enemy', e: DragEvent): string | null {
-    const slots = getSlots(side);
-    const isBD = !!findItemInSlots(slots, payload.instanceId);
-    if (isBD) {
-      const item = findItemInSlots(slots, payload.instanceId)!;
-      const def = getEntityDef(item.defId);
-      if (def) {
-        // 检查第一层槽位容量
-        let usedSlots = 0;
-        for (const s of slots) {
-          const d = getEntityDef(s.entity.defId);
-          if (d) usedSlots += d.slotCost;
-        }
-        // 如果已经在第一层则不重复计算
-        const alreadyTop = slots.some(s => s.entity.instanceId === payload.instanceId);
-        if (!alreadyTop && usedSlots + def.slotCost > state.round) {
-          return `第一层槽位不足(剩${state.round - usedSlots},需${def.slotCost})`;
-        }
-        removeFromSlots(slots, payload.instanceId);
-        // 保留实体的 children（从嵌套位置移出时保持子树完整）
-        const existingChildren = item.children || [];
-        slots.push({ entity: item, children: [...existingChildren] });
-        renderZones();
-        return null;
+  function extractItemFromSlots(slots: DeploySlot[], instanceId: string): ItemInstance | null {
+    for (let i = 0; i < slots.length; i++) {
+      if (slots[i].entity.instanceId === instanceId) {
+        const item = slots[i].entity;
+        slots.splice(i, 1);
+        return item;
       }
     }
-    const bdEl = document.getElementById(side === 'player' ? 'sb-player-bd' : 'sb-enemy-bd');
-    let bestInst: string | null = null;
-    if (bdEl) {
-      const cards = bdEl.querySelectorAll('[data-dropzone="card"]');
-      let bestD = Infinity;
-      cards.forEach(c => {
-        const r = (c as HTMLElement).getBoundingClientRect();
-        const d = Math.abs(e.clientY - (r.top + r.height / 2));
-        if (d < bestD && d < 60) { bestD = d; bestInst = (c as HTMLElement).dataset.instance!; }
-      });
-    }
-    if (bestInst) return handleDropInDeploy(payload, side, undefined, bestInst, e);
-    return handleDropInDeploy(payload, side, undefined, null, e);
-  }
-
-  /** 拖放到卡片标题上的处理：排序或词条挂载。insertBefore=true 插到目标前，false 插到后 */
-  function handleDropOnCard(
-    payload: DragPayload, side: 'player' | 'enemy',
-    targetInstId: string, e: DragEvent, insertBefore: boolean,
-  ): string | null {
-    const dt = e.dataTransfer!;
-    const slots = getSlots(side);
-
-    // 判断来源：instanceId 在树中 → BD 内部移动；否则 → 从物品池拖入
-    const isBD = !!findItemInSlots(slots, payload.instanceId);
-    const type = (dt.getData('application/x-type') as 'entity' | 'affix') || 'entity';
-
-    if (isBD) {
-      const instId = payload.instanceId;
-      const draggedItem = findItemInSlots(slots, instId);
-      if (!draggedItem) return '找不到物品';
-      if (draggedItem.instanceId === targetInstId) return null;
-      const tgtItem = findItemInSlots(slots, targetInstId);
-      if (!tgtItem) {  return '目标不存在'; }
-
-      // 词条拖到实体上 → 加入实体 children
-      if (draggedItem.type === 'affix' && tgtItem.type !== 'affix') {
-        const tgtDef = getEntityDef(tgtItem.defId);
-        const dragAffDef = getAffixDef(draggedItem.defId);
-        if (!tgtDef || !dragAffDef) return '词条或实体定义不存在';
-        // 若已在目标下，仅属排序场景，此处不处理
-        const alreadyChild = (tgtItem.children || []).some(c => c.instanceId === instId);
-        if (!alreadyChild) {
-          const usedAffix = countUsedAffixSlots(tgtItem);
-          if (usedAffix + dragAffDef.slotCost > tgtDef.dynamicAffixSlots) {
-            return `词条槽位不足(剩${tgtDef.dynamicAffixSlots - usedAffix},需${dragAffDef.slotCost})`;
-          }
-        }
-        removeFromSlots(slots, instId);
-        if (!tgtItem.children) tgtItem.children = [];
-        tgtItem.children.push(draggedItem);
-        renderZones(); return null;
-      }
-      // 词条排序
-      if (draggedItem.type === 'affix' && tgtItem.type === 'affix') {
-        
-        const pc = findParentChildren(slots, targetInstId);
-        if (!pc) return '找不到父级';
-        let ti = pc.findIndex(c => c.instanceId === targetInstId);
-        if (ti < 0) return '目标位置丢失';
-        const di = pc.findIndex(c => c.instanceId === instId);
-        if (di >= 0 && di < ti) ti--;
-        removeFromSlots(slots, instId);
-        pc.splice(insertBefore ? ti : ti + 1, 0, draggedItem);
-        renderZones(); return null;
-      }
-
-      // 启动端排序
-      const draggedDef = getEntityDef(draggedItem.defId);
-      const targetDef = getEntityDef(tgtItem.defId);
-      if (draggedDef && targetDef && isStarter(draggedDef) && isStarter(targetDef)) {
-        removeFromSlots(slots, instId);
-        let tsi = -1;
-        for (let i = 0; i < slots.length; i++) { if (slots[i].entity.instanceId === targetInstId) { tsi = i; break; } }
-        if (tsi < 0) return '目标位置丢失';
-        let dsi = -1;
-        for (let i = 0; i < slots.length; i++) { if (slots[i].entity.instanceId === instId) { dsi = i; break; } }
-        if (dsi >= 0 && dsi < tsi) tsi--;
-        slots.splice(insertBefore ? tsi : tsi + 1, 0, { entity: draggedItem, children: [] });
-        renderZones(); return null;
-      }
-
-      // 普通子实体排序
-      let parentChildren = findParentChildren(slots, targetInstId);
-      let targetIsParent = false;
-      if (!parentChildren) {
-        if (!tgtItem.children) tgtItem.children = [];
-        parentChildren = tgtItem.children;
-        targetIsParent = true;
-      }
-      if (!parentChildren) return '找不到父级';
-      let targetIdx: number;
-      if (targetIsParent) {
-        targetIdx = insertBefore ? 0 : parentChildren.length;
-      } else {
-        targetIdx = parentChildren.findIndex(c => c.instanceId === targetInstId);
-        if (targetIdx < 0) return '目标位置丢失';
-        const di = parentChildren.findIndex(c => c.instanceId === instId);
-        if (di >= 0 && di < targetIdx) targetIdx--;
-      }
-      removeFromSlots(slots, instId);
-      parentChildren.splice(insertBefore ? targetIdx : targetIdx + 1, 0, draggedItem);
-      renderZones(); return null;
-    }
-
-    // 从物品池拖入
-    const defId = dt.getData('application/x-defid') || payload.instanceId;
-    if (type === 'affix') {
-      let targetItem = findItemInSlots(slots, targetInstId);
-      if (!targetItem) return '目标不存在';
-      // 目标是词条时，向上找父实体
-      if (targetItem.type === 'affix') {
-        for (const s of slots) {
-          const found = findInTree(s.entity, targetInstId);
-          if (found) { targetItem = s.entity; break; }
-        }
-        if (!targetItem || targetItem.type === 'affix') return '找不到父实体';
-      }
-      const parentDef = getEntityDef(targetItem.defId);
-      if (!parentDef) return '未知实体';
-      const adef = getAffixDef(defId);
-      if (!adef) return '未知词条';
-      const usedAffix = countUsedAffixSlots(targetItem);
-      if (usedAffix + adef.slotCost > parentDef.dynamicAffixSlots) {
-        return `词条槽位不足(剩${parentDef.dynamicAffixSlots - usedAffix},需${adef.slotCost})`;
-      }
-      const newItem = engine.createItem(defId, type);
-      state.collapsedCards.add(newItem.instanceId);
-      if (!targetItem.children) targetItem.children = [];
-      targetItem.children.push(newItem);
-      renderZones();
-      return null;
-    }
-
-    // targetInstId 可能是子实体，池物品应放入其父实体
-    let parentId = targetInstId;
-    const tgt = findItemInSlots(getSlots(side), targetInstId);
-    if (tgt && tgt.type === 'entity' && !isStarter(getEntityDef(tgt.defId)!)) {
-      const pc = findParentChildren(getSlots(side), targetInstId);
-      if (pc) {
-        for (const s of getSlots(side)) {
-          if (s.entity.children === pc) { parentId = s.entity.instanceId; break; }
-        }
-      }
-    }
-    return handleDropInDeploy(payload, side, undefined, parentId, e);
-  }
-
-  /** 找到 item 在 slot 树中的父级 children 数组 */
-  function findParentChildren(slots: DeploySlot[], childInstId: string): ItemInstance[] | null {
     for (const s of slots) {
-      if (s.entity.instanceId === childInstId) return null;
-      // 搜索 slot 的 children
+      const fromEntity = extractFromTree(s.entity, instanceId);
+      if (fromEntity) {
+        pruneFromSlotChildren(s, instanceId);
+        return fromEntity;
+      }
       for (let i = 0; i < s.children.length; i++) {
-        if (s.children[i].instanceId === childInstId) return s.children;
-        const result = findParentInTree(s.children[i], childInstId);
-        if (result) return result;
+        if (s.children[i].instanceId === instanceId) {
+          const item = s.children[i];
+          s.children.splice(i, 1);
+          return item;
+        }
+        const nested = extractFromTree(s.children[i], instanceId);
+        if (nested) {
+          pruneFromSlotChildren(s, instanceId);
+          return nested;
+        }
       }
-      // 也搜索 entity 自身的 children（模板默认子实体）
-      const r = findParentInTree(s.entity, childInstId);
-      if (r) return r;
     }
     return null;
   }
 
-  function findParentInTree(parent: ItemInstance, childInstId: string): ItemInstance[] | null {
-    if (!parent.children) return null;
-    for (const c of parent.children) {
-      if (c.instanceId === childInstId) return parent.children!;
-      const result = findParentInTree(c, childInstId);
-      if (result) return result;
+  function extractFromTree(root: ItemInstance, id: string): ItemInstance | null {
+    if (!root.children) return null;
+    for (let i = 0; i < root.children.length; i++) {
+      if (root.children[i].instanceId === id) {
+        const item = root.children[i];
+        root.children.splice(i, 1);
+        return item;
+      }
+      const nested = extractFromTree(root.children[i], id);
+      if (nested) return nested;
     }
     return null;
   }
 
-  function handleDropInDeploy(
-    payload: DragPayload,
-    side: 'player' | 'enemy',
-    slotIdx: number | undefined,
-    parentInstanceId: string | null,
-    e: DragEvent,
+  function findParentOf(slots: DeploySlot[], childId: string): ItemInstance | null {
+    for (const s of slots) {
+      if ((s.entity.children || []).some(c => c.instanceId === childId)) return s.entity;
+      const p = findParentInItem(s.entity, childId);
+      if (p) return p;
+    }
+    return null;
+  }
+
+  function findParentInItem(parent: ItemInstance, childId: string): ItemInstance | null {
+    for (const c of parent.children || []) {
+      if (c.instanceId === childId) return parent;
+      const p = findParentInItem(c, childId);
+      if (p) return p;
+    }
+    return null;
+  }
+
+  function adjustInsertIndex(fromIdx: number, toIdx: number): number {
+    if (fromIdx < 0) return toIdx;
+    return fromIdx < toIdx ? toIdx - 1 : toIdx;
+  }
+
+  function reorderTopLevel(slots: DeploySlot[], instanceId: string, toIdx: number): string | null {
+    const fromIdx = slots.findIndex(s => s.entity.instanceId === instanceId);
+    if (fromIdx < 0) return '找不到第一层实体';
+    const [slot] = slots.splice(fromIdx, 1);
+    const idx = adjustInsertIndex(fromIdx, toIdx);
+    slots.splice(Math.max(0, Math.min(idx, slots.length)), 0, slot);
+    return null;
+  }
+
+  function reorderSiblingChildren(
+    parent: ItemInstance, instanceId: string, kind: 'entity' | 'affix', toIdx: number,
   ): string | null {
-    const dt = e.dataTransfer!;
-    const defId = dt.getData('application/x-defid') || payload.instanceId;
-    const type = (dt.getData('application/x-type') as 'entity' | 'affix') || 'entity';
-    const source = dt.getData('application/x-source') || 'bd';
+    if (!parent.children) return '无子项';
+    const siblings = parent.children.filter(c => c.type === kind);
+    const fromIdx = siblings.findIndex(c => c.instanceId === instanceId);
+    if (fromIdx < 0) return '找不到同级物品';
+    const item = siblings[fromIdx];
+    // 在完整 children 中按类型次序重排：先抽出再插入到「同类型序列」的目标位置
+    parent.children = parent.children.filter(c => c.instanceId !== instanceId);
+    const idx = adjustInsertIndex(fromIdx, toIdx);
+    // 映射到完整数组插入点：第 idx 个同类型项之前；若越界则插到最后一个同类型之后
+    let insertAt = parent.children.length;
+    let seen = 0;
+    for (let i = 0; i < parent.children.length; i++) {
+      if (parent.children[i].type !== kind) continue;
+      if (seen === idx) { insertAt = i; break; }
+      seen++;
+    }
+    if (seen < idx) insertAt = parent.children.length;
+    parent.children.splice(insertAt, 0, item);
+    return null;
+  }
 
-    // 如果是 BD 内部移动
-    if (source === 'bd' || !defId) {
-      const instId = payload.instanceId;
-      // 找到物品所属的 side
-      let fromSide: 'player' | 'enemy' | null = null;
-      let item: ItemInstance | null = null;
-      for (const s of state.playerSlots) {
-        item = findInTree(s.entity, instId);
-        if (item) { fromSide = 'player'; break; }
-        for (const c of s.children) {
-          item = findInTree(c, instId);
-          if (item) { fromSide = 'player'; break; }
-        }
-        if (item) break;
+  function insertByTypeIndex(
+    parent: ItemInstance, item: ItemInstance, kind: 'entity' | 'affix', toIdx: number | undefined,
+  ) {
+    if (!parent.children) parent.children = [];
+    if (toIdx == null) {
+      parent.children.push(item);
+      return;
+    }
+    let insertAt = parent.children.length;
+    let seen = 0;
+    for (let i = 0; i < parent.children.length; i++) {
+      if (parent.children[i].type !== kind) continue;
+      if (seen === toIdx) { insertAt = i; break; }
+      seen++;
+    }
+    parent.children.splice(insertAt, 0, item);
+  }
+
+  function commitPointerDrag(session: PointerDragSession, hit: PointerDragHit): string | null {
+    if (hit.action === 'invalid') return null;
+
+    // ── 卸到物品池 ──
+    if (hit.action === 'remove') {
+      if (session.source !== 'bd') return null;
+      let removed = removeFromSlots(state.playerSlots, session.id);
+      if (!removed) removed = removeFromSlots(state.enemySlots, session.id);
+      if (removed) renderZones();
+      return null;
+    }
+
+    if (!hit.side) return '无效目标';
+    const slots = getSlots(hit.side);
+
+    // ── 同列表重排 ──
+    if (hit.action === 'reorder') {
+      if (session.source !== 'bd') return null;
+      const toIdx = hit.insertIndex ?? 0;
+      if (hit.listKind === 'top') {
+        const err = reorderTopLevel(slots, session.id, toIdx);
+        if (err) return err;
+        renderZones();
+        return null;
       }
-      if (!item) {
-        for (const s of state.enemySlots) {
-          item = findInTree(s.entity, instId);
-          if (item) { fromSide = 'enemy'; break; }
-          for (const c of s.children) {
-            item = findInTree(c, instId);
-            if (item) { fromSide = 'enemy'; break; }
-          }
-          if (item) break;
-        }
+      if (!hit.parentInstanceId) return '缺少父实体';
+      const parent = findItemInSlots(slots, hit.parentInstanceId);
+      if (!parent) return '父实体不存在';
+      // 若当前不在该父下（跨列表被标成 reorder 的边界），走 mount
+      const under = (parent.children || []).some(c => c.instanceId === session.id);
+      if (!under) {
+        // fallthrough to mount via re-label
+      } else {
+        const err = reorderSiblingChildren(parent, session.id, session.kind, toIdx);
+        if (err) return err;
+        renderZones();
+        return null;
       }
-      if (!item || !fromSide) return '找不到物品';
+    }
 
-      // 跨侧不允许
-      if (fromSide !== side) return '不能跨侧移动';
+    // ── 挂载（含跨列表移动、从池创建）──
+    if (hit.action === 'mount' || hit.action === 'reorder') {
+      const parentId = hit.listKind === 'top' ? null : (hit.parentInstanceId ?? null);
+      const toIdx = hit.insertIndex;
 
-      // 同侧移动/重排
-      const def = getEntityDef(item.defId);
-      // 词条类物品跳过实体检查
-      if (item.type === 'affix') {
-        removeFromSlots(getSlots(fromSide), instId);
-        if (parentInstanceId != null) {
-          const parent = findItemInSlots(getSlots(side), parentInstanceId);
-          if (parent) {
-            if (!parent.children) parent.children = [];
-            parent.children.push(item);
+      if (session.kind === 'affix') {
+        if (parentId == null) return '词条需要放入实体';
+        const parent = findItemInSlots(slots, parentId);
+        if (!parent) return '父实体不存在';
+        const parentDef = getEntityDef(parent.defId);
+        if (!parentDef) return '未知实体';
+        const adef = getAffixDef(session.defId || session.id);
+        if (!adef) return '未知词条';
+
+        let item: ItemInstance;
+        if (session.source === 'pool') {
+          const used = countUsedAffixSlots(parent);
+          if (used + adef.slotCost > parentDef.dynamicAffixSlots) {
+            return `词条槽位不足(剩${parentDef.dynamicAffixSlots - used},需${adef.slotCost})`;
           }
+          item = engine.createItem(session.defId, 'affix');
+        } else {
+          // 跨父移动：先检查容量（不含自身若已在该父下）
+          const already = (parent.children || []).some(c => c.instanceId === session.id);
+          if (!already) {
+            const used = countUsedAffixSlots(parent);
+            if (used + adef.slotCost > parentDef.dynamicAffixSlots) {
+              return `词条槽位不足(剩${parentDef.dynamicAffixSlots - used},需${adef.slotCost})`;
+            }
+          }
+          const extracted = extractItemFromSlots(state.playerSlots, session.id)
+            || extractItemFromSlots(state.enemySlots, session.id);
+          if (!extracted) return '找不到词条';
+          item = extracted;
+        }
+        if (!parent.children) parent.children = [];
+        if (toIdx == null) parent.children.push(item);
+        else {
+          // 插入到同类型序列位置
+          let insertAt = parent.children.length;
+          let seen = 0;
+          for (let i = 0; i < parent.children.length; i++) {
+            if (parent.children[i].type !== 'affix') continue;
+            if (seen === toIdx) { insertAt = i; break; }
+            seen++;
+          }
+          parent.children.splice(insertAt, 0, item);
         }
         renderZones();
         return null;
       }
-      if (!def) return '未知物品';
 
-      // 同父重排跳过容量检查
-      let sameParent = false;
-      if (parentInstanceId != null) {
-        const p = findItemInSlots(getSlots(side), parentInstanceId);
-        if (p && p.children) sameParent = p.children.some(c => c.instanceId === instId);
-      }
-      if (!sameParent) {
-        const err = canPlaceInSlot(getSlots(side), state.round, slotIdx, parentInstanceId, def);
+      // entity
+      if (session.source === 'pool') {
+        const poolDef = getEntityDef(session.defId);
+        if (!poolDef) return '未知实体';
+        const err = canPlaceInSlot(slots, state.round, undefined, parentId, poolDef);
         if (err) return err;
+        const newItem = engine.createItem(session.defId, 'entity');
+        state.collapsedCards.add(newItem.instanceId);
+        for (const c of newItem.children || []) {
+          if (c.type === 'entity') state.collapsedCards.add(c.instanceId);
+        }
+        if (parentId == null) {
+          // 子项只留在 entity.children；勿浅拷贝到 slot.children（否则卸下后开战仍合并残留）
+          const slot: DeploySlot = { entity: newItem, children: [] };
+          if (toIdx == null || toIdx >= slots.length) slots.push(slot);
+          else slots.splice(toIdx, 0, slot);
+        } else {
+          const parent = findItemInSlots(slots, parentId);
+          if (!parent) return '父实体不存在';
+          insertByTypeIndex(parent, newItem, 'entity', toIdx);
+        }
+        renderZones();
+        return null;
       }
 
-      // 从原位移除
-      removeFromSlots(getSlots(fromSide), instId);
+      // BD 实体移动
+      const fromPlayer = !!findItemInSlots(state.playerSlots, session.id);
+      const fromEnemy = !!findItemInSlots(state.enemySlots, session.id);
+      const fromSide: 'player' | 'enemy' | null = fromPlayer ? 'player' : fromEnemy ? 'enemy' : null;
+      if (!fromSide) return '找不到物品';
+      if (fromSide !== hit.side) return '不能跨侧移动';
 
-      // 放入新位置
-      if (parentInstanceId == null) {
-        // 所有实体都可放入第一层（非 starter = 木桩）
-        const existingChildren = item.children || [];
-        getSlots(side).push({ entity: item, children: [...existingChildren] });
+      const existing = findItemInSlots(getSlots(fromSide), session.id)!;
+      const def = getEntityDef(existing.defId);
+      if (!def) return '未知实体';
+
+      if (parentId == null && slots.some(s => s.entity.instanceId === session.id)) {
+        const err = reorderTopLevel(slots, session.id, toIdx ?? slots.length);
+        if (err) return err;
+        renderZones();
+        return null;
+      }
+
+      const curParent = findParentOf(getSlots(fromSide), session.id);
+      if (parentId && curParent && curParent.instanceId === parentId) {
+        const err = reorderSiblingChildren(curParent, session.id, 'entity', toIdx ?? 0);
+        if (err) return err;
+        renderZones();
+        return null;
+      }
+
+      const placeErr = canPlaceInSlot(slots, state.round, undefined, parentId, def);
+      if (placeErr) return placeErr;
+
+      const moved = extractItemFromSlots(getSlots(fromSide), session.id);
+      if (!moved) return '找不到实体';
+
+      if (parentId == null) {
+        const slot: DeploySlot = { entity: moved, children: [] };
+        if (toIdx == null || toIdx >= slots.length) slots.push(slot);
+        else slots.splice(toIdx, 0, slot);
       } else {
-        // 放入父实体的 children
-        const parent = findItemInSlots(getSlots(side), parentInstanceId);
-        if (!parent) return '父实体不存在';
-        if (!parent.children) parent.children = [];
-        parent.children.push(item);
+        const parent = findItemInSlots(slots, parentId);
+        if (!parent) {
+          getSlots(fromSide).push({ entity: moved, children: [] });
+          renderZones();
+          return '父实体不存在';
+        }
+        insertByTypeIndex(parent, moved, 'entity', toIdx);
       }
       renderZones();
       return null;
     }
 
-    // 从物品池拖入：创建新实例
-    const def = type === 'entity' ? getEntityDef(defId) : getAffixDef(defId);
-    if (!def) return '未知物品';
-
-    if (type === 'entity') {
-      const edef = def as EntityDef;
-      const err = canPlaceInSlot(getSlots(side), state.round, slotIdx, parentInstanceId, edef);
-      if (err) return err;
-
-      const newItem = engine.createItem(defId, type);
-      state.collapsedCards.add(newItem.instanceId);
-      // 默认子实体也折叠
-      for (const c of (newItem.children || [])) {
-        if (c.type === 'entity') state.collapsedCards.add(c.instanceId);
-      }
-      if (parentInstanceId == null) {
-        // 所有实体都可放入第一层（非 starter = 木桩）
-        getSlots(side).push({ entity: newItem, children: [] });
-      } else {
-        const parent = findItemInSlots(getSlots(side), parentInstanceId);
-        if (!parent) return '父实体不存在';
-        if (!parent.children) parent.children = [];
-        parent.children.push(newItem);
-      }
-    } else {
-      // 词条：放入父实体的 children
-      if (parentInstanceId == null) return '词条需要放入实体槽位';
-      const parent = findItemInSlots(getSlots(side), parentInstanceId);
-      if (!parent) return '父实体不存在';
-      const newItem = engine.createItem(defId, type);
-      if (!parent.children) parent.children = [];
-      parent.children.push(newItem);
-    }
-
-    renderZones();
     return null;
   }
 
@@ -2119,6 +1955,11 @@ function hideSimTooltip() {
       const htmlEl = el as HTMLElement;
       const instanceId = htmlEl.dataset.cardtoggle!;
       htmlEl.addEventListener('click', (e) => {
+        if (consumeSuppressNextClick() || isPointerDragging()) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
         e.stopPropagation();
         const card = htmlEl.closest('.sb-card') as HTMLElement;
         if (!card) return;
@@ -2222,6 +2063,11 @@ function hideSimTooltip() {
     const cardToggle = card.querySelector('[data-cardtoggle]') as HTMLElement;
     if (cardToggle) {
       cardToggle.addEventListener('click', (e) => {
+        if (consumeSuppressNextClick() || isPointerDragging()) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
         e.stopPropagation();
         const instId = cardToggle.dataset.cardtoggle!;
         const collapsing = !state.collapsedCards.has(instId);
@@ -2341,6 +2187,10 @@ function hideSimTooltip() {
     const existing = document.getElementById('sb-combat-preview-overlay');
     if (existing) existing.remove();
 
+    // 以 entity.children 为准，清掉 slot.children 幽灵残留后再算快照
+    sanitizeSimSlotsBeforeCombat(state.playerSlots);
+    sanitizeSimSlotsBeforeCombat(state.enemySlots);
+
     // 计算双方快照
     const playerSnaps = engine.calculateCombatSnapshots(state.playerSlots).snapshots;
     const enemySnaps = engine.calculateCombatSnapshots(state.enemySlots).snapshots;
@@ -2410,6 +2260,10 @@ function hideSimTooltip() {
   }
 
   async function _doStartSimBattle() {
+    // 再次确保无 slot.children 幽灵（预览阶段已清过；此处兜底）
+    sanitizeSimSlotsBeforeCombat(state.playerSlots);
+    sanitizeSimSlotsBeforeCombat(state.enemySlots);
+
     // 上传双方 BD 到对战池（静默，失败不影响战斗）
     try {
       const r1 = await dataApi.uploadBD(state.round, state.playerSlots);

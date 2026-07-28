@@ -40,6 +40,8 @@ export function initTables(): void {
       stamina_bonus INTEGER NOT NULL DEFAULT 0,
       hp_regeneration_bonus INTEGER NOT NULL DEFAULT 0,
       hp_bonus    INTEGER NOT NULL DEFAULT 0,
+      load_bonus  INTEGER NOT NULL DEFAULT 0,
+      has_passive_bonuses INTEGER NOT NULL DEFAULT 0,
       created_at  TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -48,7 +50,6 @@ export function initTables(): void {
       id          TEXT PRIMARY KEY,
       name        TEXT NOT NULL,
       category    TEXT NOT NULL DEFAULT '特殊',
-      value       INTEGER NOT NULL DEFAULT 0,
       cost_value  INTEGER NOT NULL DEFAULT 0,
       slot_cost   INTEGER NOT NULL DEFAULT 1,
       repeatable  INTEGER NOT NULL DEFAULT 0,
@@ -56,6 +57,12 @@ export function initTables(): void {
       pool_prerequisite TEXT NOT NULL DEFAULT '[]',
       effect      TEXT NOT NULL DEFAULT '',
       on_hit_effects TEXT NOT NULL DEFAULT '[]',
+      damage_bonus INTEGER NOT NULL DEFAULT 0,
+      stamina_regeneration_bonus INTEGER NOT NULL DEFAULT 0,
+      stamina_bonus INTEGER NOT NULL DEFAULT 0,
+      hp_regeneration_bonus INTEGER NOT NULL DEFAULT 0,
+      hp_bonus INTEGER NOT NULL DEFAULT 0,
+      load_bonus INTEGER NOT NULL DEFAULT 0,
       targeting_modifier TEXT,
       has_passive_bonuses INTEGER NOT NULL DEFAULT 0,
       created_at  TEXT NOT NULL DEFAULT (datetime('now')),
@@ -116,6 +123,8 @@ export function initTables(): void {
   migrateTargetingV6(db);
   // ---- 迁移：v7 被动加成总开关（has_passive_bonuses） ----
   migrateAffixPassiveBonusesToggleV7(db);
+  // ---- 迁移：v8 实体被动总开关 + 负重加成 ----
+  migrateLoadBonusAndEntityPassiveToggleV8(db);
 
   console.log('[DB] 所有表创建/验证完成');
 }
@@ -268,6 +277,8 @@ function migrateAffixPassiveBonuses(db: ReturnType<typeof getDB>): void {
     ];
 
     for (const m of mappings) {
+      // value 列在 v9 可能已删除；仅当列仍存在时做历史回填
+      if (!colNames.has('value')) break;
       const row = db.prepare('SELECT value FROM affixes WHERE id = ?').get(m.id) as any;
       if (row && row.value !== 0) {
         db.prepare(`UPDATE affixes SET ${m.col} = ? WHERE id = ? AND ${m.col} = 0`).run(m.val, m.id);
@@ -318,5 +329,42 @@ function migrateAffixPassiveBonusesToggleV7(db: ReturnType<typeof getDB>): void 
     }
   } catch (e) {
     console.warn('[DB] v7 has_passive_bonuses 迁移跳过:', (e as Error).message);
+  }
+}
+
+/** 迁移 v8：entities/affixes 负重加成 + entities 被动总开关（幂等；实体开关仅缺列时回填） */
+function migrateLoadBonusAndEntityPassiveToggleV8(db: ReturnType<typeof getDB>): void {
+  try {
+    const entityCols = db.prepare("PRAGMA table_info('entities')").all() as { name: string }[];
+    const entityColNames = new Set(entityCols.map(c => c.name));
+    let entityPassiveColAdded = false;
+
+    if (!entityColNames.has('load_bonus')) {
+      db.exec('ALTER TABLE entities ADD COLUMN load_bonus INTEGER NOT NULL DEFAULT 0');
+      console.log('[DB] entities 表已迁移：添加 load_bonus 列（v8）');
+    }
+    if (!entityColNames.has('has_passive_bonuses')) {
+      db.exec('ALTER TABLE entities ADD COLUMN has_passive_bonuses INTEGER NOT NULL DEFAULT 0');
+      entityPassiveColAdded = true;
+      console.log('[DB] entities 表已迁移：添加 has_passive_bonuses 列（v8）');
+    }
+    if (entityPassiveColAdded) {
+      const result = db.prepare(`UPDATE entities SET has_passive_bonuses = 1
+        WHERE (damage_bonus IS NOT NULL AND damage_bonus != 0)
+           OR (hp_bonus IS NOT NULL AND hp_bonus != 0)
+           OR (stamina_bonus IS NOT NULL AND stamina_bonus != 0)
+           OR (hp_regeneration_bonus IS NOT NULL AND hp_regeneration_bonus != 0)
+           OR (stamina_regeneration_bonus IS NOT NULL AND stamina_regeneration_bonus != 0)
+           OR (load_bonus IS NOT NULL AND load_bonus != 0)`).run();
+      console.log(`[DB] entities has_passive_bonuses 回填完成：${result.changes} 行（v8）`);
+    }
+
+    const affixCols = db.prepare("PRAGMA table_info('affixes')").all() as { name: string }[];
+    if (!affixCols.some(c => c.name === 'load_bonus')) {
+      db.exec('ALTER TABLE affixes ADD COLUMN load_bonus INTEGER NOT NULL DEFAULT 0');
+      console.log('[DB] affixes 表已迁移：添加 load_bonus 列（v8）');
+    }
+  } catch (e) {
+    console.warn('[DB] v8 load_bonus/has_passive_bonuses 迁移跳过:', (e as Error).message);
   }
 }

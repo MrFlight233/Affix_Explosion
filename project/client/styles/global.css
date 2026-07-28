@@ -1237,23 +1237,35 @@ body {
   background: rgba(82,82,82,0.04);
 }
 
-/* ── BD 面板拖拽反馈 ── */
-#sb-player-bd.drag-over, #sb-enemy-bd.drag-over {
-  background: rgba(82,82,82,0.02);
+/* ── Pointer 拖拽 ghost / gap ── */
+.sb-drag-ghost {
+  position: fixed; left: 0; top: 0; z-index: 10000;
+  pointer-events: none;
+  padding: 6px 10px; font-size: 13px;
+  background: var(--sb-surface); color: var(--sb-text);
+  border: 1px solid var(--sb-accent); border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+  opacity: 0.92; white-space: nowrap;
+  will-change: transform;
 }
+.sb-drag-gap {
+  position: fixed; left: 0; top: 0; z-index: 9999;
+  pointer-events: none; height: 3px;
+  background: var(--sb-accent); border-radius: 2px;
+  will-change: transform;
+}
+.sb-dragging-source { opacity: 0.45; }
+body.sb-pointer-dragging { cursor: grabbing; user-select: none; }
+body.sb-pointer-dragging .sb-pool-item,
+body.sb-pointer-dragging [data-drag-handle] { cursor: grabbing; }
+.sb-pool-item, [data-drag-handle] { touch-action: none; }
 
-/* ── 拖放占位符 ── */
+/* 旧 HTML5 占位（保留类名以免残留样式报错，已不再插入 DOM） */
 .sb-drop-placeholder {
-  height: 0; margin: 0 4px;
-  background: rgba(82,82,82,0.04);
-  border: 1px dashed var(--sb-accent); border-radius: 4px;
-  transition: height 150ms var(--sb-ease-out);
-  overflow: hidden; pointer-events: none;
+  display: none;
 }
-.sb-drop-placeholder.active { height: 32px; }
 
-/* ── 拖拽状态 ── */
-.dragging { opacity: 0.5; }
+/* ── BD 面板拖拽反馈 ── */
 
 /* ============================================================
    战斗视图
