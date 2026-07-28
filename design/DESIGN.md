@@ -253,3 +253,32 @@ Ctrl+K 快速聚焦搜索，全程键盘可达。高效高频操作优先。
 - Toast 入场：200ms opacity + translateY
 - focus-visible：2px 重音色环 + offset 1px
 - reduced-motion：全部过渡归零
+
+---
+
+## 附录：全物品池只读页
+
+> 选定方向：仿制作物品管理页（只读）  
+> 编译日期：2026-07-28  
+> 样机：`design-previews/2026-07-28-全物品池UI重构/index.html`
+
+### 定位
+
+启动页「全物品池」：浏览全部实体/词条模板，**无写操作**。视觉与交互色继承 `#adm-page`（`#ip-page` 镜像同一套 token）。
+
+### 布局
+
+- 顶栏：返回 · 标题 · 下划线 Tab（实体 / 词条）
+- 左栏 300px：类型/分类 Chip → Ctrl+K 搜索 → 列表（hover/selected + 左指示条）
+- 右栏：只读表单分区，字段顺序与显隐对齐 `buildEntityForm` / `buildAffixForm`
+
+### 详情约定
+
+- 固定词条 / 池前置 / 预装动态词条 / 前置词条：**一词条一行**（名称 · 类别 · 效果）
+- 固定词条区、预装动态词条区、默认子实体列表：**可折叠**（默认展开）
+- `dynamicAffixSlots === 0` 时隐藏预装动态词条列表；`entitySlots === 0` 时隐藏子实体列表并显示「无槽位」
+- `isActive` / `hasPassiveBonuses` / 命中效果类型 / targeting 覆写模式：同 adm 条件显隐
+
+### 明确不做
+
+- 无新增、保存、删除、导入导出、分类管理、Popover 编辑

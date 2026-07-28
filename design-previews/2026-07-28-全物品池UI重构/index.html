@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>全物品池 · 设计样机（仿制作物品）</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  font-size: 13px; line-height: 1.5; color: #262626;
+  background: #e8e8e8; -webkit-font-smoothing: antialiased;
+}
+
+.banner {
+  text-align: center; padding: 10px 16px; font-size: 12px; color: #737373;
+  background: #fafafa; border-bottom: 1px solid #e5e5e5;
+}
+.banner strong { color: #262626; }
+
+.stage-wrap {
+  max-width: 1180px; margin: 16px auto 32px; padding: 0 12px;
+}
+.stage-label {
+  font-size: 12px; color: #737373; margin-bottom: 8px;
+}
+
+/* ── 页面样机（#ip-page）── */
+#ip-page {
+  --bg: #fafafa; --surface: #fff; --border: #e5e5e5; --border-hover: #d4d4d4;
+  --text: #262626; --text-secondary: #737373; --text-muted: #a3a3a3;
+  --accent: #525252; --subtle: #ececec; --hover: #e8e8e8; --selected: #d4d4d4;
+  --indicator: #404040; --ease: cubic-bezier(0.23, 1, 0.32, 1);
+  height: min(720px, 82vh);
+  display: flex; flex-direction: column;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+}
+
+#ip-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 16px; background: var(--surface);
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+#ip-header .btn {
+  font-size: 12px; padding: 5px 12px; border: 1px solid var(--border);
+  border-radius: 5px; background: var(--surface); cursor: default;
+}
+#ip-header h2 { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+#ip-tabs { display: flex; gap: 20px; margin-left: 8px; }
+.ip-tab {
+  font-size: 13px; padding: 6px 0; border: none; background: transparent;
+  color: var(--text-secondary); font-weight: 500; cursor: pointer;
+  border-bottom: 2px solid transparent; font-family: inherit;
+}
+.ip-tab.active { color: var(--text); font-weight: 600; border-bottom-color: var(--text); }
+
+#ip-body { display: flex; flex: 1; overflow: hidden; }
+
+#ip-left {
+  width: 300px; flex-shrink: 0; border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; background: var(--bg); overflow: hidden;
+}
+#ip-cat-filter {
+  padding: 8px 10px; border-bottom: 1px solid var(--border);
+  display: flex; flex-wrap: wrap; gap: 4px;
+}
+.ip-chip {
+  font-size: 11px; padding: 3px 10px; border: 1px solid var(--border);
+  border-radius: 4px; background: var(--surface); color: var(--text-secondary);
+  cursor: pointer; font-family: inherit;
+}
+.ip-chip.active {
+  background: var(--subtle); color: var(--text); font-weight: 600;
+  border-color: var(--accent);
+}
+#ip-search-wrap { padding: 10px; border-bottom: 1px solid var(--border); }
+.ip-search-cmd {
+  display: flex; align-items: center; gap: 6px;
+  border: 1px solid var(--border); border-radius: 5px;
+  background: var(--surface); overflow: hidden;
+}
+.ip-search-cmd input {
+  flex: 1; border: none; outline: none; padding: 7px 10px;
+  font-size: 12px; font-family: inherit; background: transparent;
+}
+.ip-search-cmd kbd {
+  font-size: 10px; color: var(--text-muted); background: #f0f0f0;
+  padding: 1px 6px; border-radius: 3px; margin-right: 8px;
+  font-family: "SF Mono", "Cascadia Code", monospace;
+}
+#ip-list { flex: 1; overflow-y: auto; }
+.ip-list-item {
+  display: flex; align-items: center; padding: 6px 10px; gap: 8px;
+  border-bottom: 1px solid #f0f0f0; cursor: pointer;
+  box-shadow: inset 3px 0 0 transparent;
+}
+.ip-list-item:hover { background: var(--hover); box-shadow: inset 3px 0 0 var(--indicator); }
+.ip-list-item.selected {
+  background: var(--selected); font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--indicator);
+}
+.ip-list-item .name { flex: 1; font-weight: 500; min-width: 0; }
+.ip-list-item .meta { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.ip-list-item .price { font-size: 11px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
+#ip-right {
+  flex: 1; overflow-y: auto; padding: 20px 24px; background: var(--bg);
+}
+#ip-right h3 {
+  font-size: 15px; font-weight: 600; margin: 0 0 16px;
+  letter-spacing: -0.01em;
+}
+.ip-section {
+  margin-bottom: 16px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--surface); max-width: 720px;
+}
+.ip-section-h {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.03em;
+  text-transform: uppercase; margin: 0; padding: 8px 14px;
+  background: #fafafa; color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  border-radius: 5px 5px 0 0;
+  display: flex; align-items: center; gap: 8px;
+}
+.ip-section-h .sub {
+  font-weight: 400; text-transform: none; letter-spacing: 0;
+  font-size: 11px; color: var(--text-muted);
+}
+.ip-section-h .count {
+  margin-left: auto; font-weight: 500; text-transform: none;
+  letter-spacing: 0; font-size: 10px; color: var(--text-secondary);
+}
+.ip-field {
+  display: flex; align-items: center; padding: 6px 14px;
+  border-top: 1px solid #f5f5f5;
+}
+.ip-field:first-of-type { border-top: none; }
+.ip-field label {
+  width: 100px; flex-shrink: 0; font-size: 12px;
+  color: var(--text-secondary); font-weight: 500;
+}
+.ip-field .val {
+  flex: 1; font-size: 13px; color: var(--text);
+  padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px;
+  background: #fafafa;
+}
+
+/* 一词条一行 */
+.ip-ref-row {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 7px 14px; border-top: 1px solid #f5f5f5;
+  font-size: 12px; line-height: 1.45;
+}
+.ip-ref-row .ref-name { font-weight: 600; color: var(--text); min-width: 72px; }
+.ip-ref-row .ref-cat { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.ip-ref-row .ref-effect { flex: 1; color: var(--text-secondary); min-width: 0; }
+
+/* 折叠块 */
+.ip-fold-h {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 14px; border-top: 1px solid #f5f5f5;
+  cursor: pointer; user-select: none; font-size: 12px; font-weight: 600;
+  color: var(--text); background: #fcfcfc;
+}
+.ip-fold-h:hover { background: var(--hover); }
+.ip-fold-h .fold-label {
+  font-weight: 400; color: var(--text-muted); font-size: 11px; margin-left: auto;
+}
+.ip-fold-body { overflow: hidden; }
+.ip-fold-body.folded { display: none; }
+.ip-hint {
+  font-size: 11px; color: var(--text-muted); padding: 4px 14px 6px;
+}
+
+.notes {
+  max-width: 1180px; margin: 0 auto 40px; padding: 0 12px;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+}
+@media (max-width: 800px) { .notes { grid-template-columns: 1fr; } }
+.note {
+  background: #fff; border: 1px solid #e5e5e5; border-radius: 6px;
+  padding: 12px 14px; font-size: 12px; line-height: 1.7; color: #555;
+}
+.note h4 { font-size: 13px; color: #262626; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<div class="banner">
+  <strong>设计方向样机</strong> — 全物品池只读页，视觉与分区对齐「制作物品」· 非最终 App ·
+  可点左侧列表切换选中，可点「固定词条 / 预装动态词条 / 默认子实体」折叠标题
+</div>
+
+<div class="stage-wrap">
+  <div class="stage-label">桌面样机 · 实体 Tab · 选中「剑士」</div>
+
+  <div id="ip-page">
+    <div id="ip-header">
+      <button class="btn" type="button">← 返回</button>
+      <h2>全物品池</h2>
+      <div id="ip-tabs">
+        <button type="button" class="ip-tab active">实体</button>
+        <button type="button" class="ip-tab">词条</button>
+      </div>
+    </div>
+    <div id="ip-body">
+      <div id="ip-left">
+        <div id="ip-cat-filter">
+          <button type="button" class="ip-chip active">全部实体</button>
+          <button type="button" class="ip-chip">启动端</button>
+          <button type="button" class="ip-chip">可触发</button>
+          <button type="button" class="ip-chip">被动加成</button>
+          <button type="button" class="ip-chip">武器</button>
+          <button type="button" class="ip-chip">防具</button>
+        </div>
+        <div id="ip-search-wrap">
+          <div class="ip-search-cmd">
+            <input type="text" placeholder="搜索 ID 或名称…" readonly>
+            <kbd>Ctrl+K</kbd>
+          </div>
+        </div>
+        <div id="ip-list">
+          <div class="ip-list-item">
+            <span class="name">人类</span>
+            <span class="meta">启动端</span>
+            <span class="price">价 0</span>
+          </div>
+          <div class="ip-list-item selected">
+            <span class="name">剑士</span>
+            <span class="meta">可触发 · 武器</span>
+            <span class="price">价 450</span>
+          </div>
+          <div class="ip-list-item">
+            <span class="name">木盾</span>
+            <span class="meta">被动 · 防具</span>
+            <span class="price">价 80</span>
+          </div>
+          <div class="ip-list-item">
+            <span class="name">拳头</span>
+            <span class="meta">可触发 · 武器</span>
+            <span class="price">价 0</span>
+          </div>
+          <div class="ip-list-item">
+            <span class="name">哥布林</span>
+            <span class="meta">启动端</span>
+            <span class="price">价 120</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="ip-right">
+        <h3>查看实体：剑士</h3>
+
+        <!-- 基本信息 -->
+        <div class="ip-section">
+          <div class="ip-section-h">基本信息</div>
+          <div class="ip-field"><label>ID</label><div class="val">swordsman</div></div>
+          <div class="ip-field"><label>名称</label><div class="val">剑士</div></div>
+          <div class="ip-field"><label>占用槽位</label><div class="val">1</div></div>
+          <div class="ip-field"><label>重量</label><div class="val">12</div></div>
+          <div class="ip-field"><label>价值</label><div class="val">450</div></div>
+        </div>
+
+        <!-- 词条关联 -->
+        <div class="ip-section">
+          <div class="ip-section-h">词条关联</div>
+
+          <div class="ip-fold-h" data-fold="fix">
+            固定词条 <span class="sub">（2）</span>
+            <span class="fold-label">收起</span>
+          </div>
+          <div class="ip-fold-body" data-fold-body="fix">
+            <div class="ip-ref-row">
+              <span class="ref-name">锋利</span>
+              <span class="ref-cat">属性</span>
+              <span class="ref-effect">伤害 +5</span>
+            </div>
+            <div class="ip-ref-row">
+              <span class="ref-name">迅捷</span>
+              <span class="ref-cat">属性</span>
+              <span class="ref-effect">触发耗时 -100ms</span>
+            </div>
+          </div>
+
+          <div class="ip-field"><label>池前置</label><div class="val">—</div></div>
+          <div class="ip-field"><label>动态词条槽位</label><div class="val">2</div></div>
+
+          <div class="ip-fold-h" data-fold="dyn">
+            预装动态词条
+            <span class="sub">已用 1 / 2</span>
+            <span class="fold-label">收起</span>
+          </div>
+          <div class="ip-fold-body" data-fold-body="dyn">
+            <div class="ip-ref-row">
+              <span class="ref-name">暴击</span>
+              <span class="ref-cat">战斗</span>
+              <span class="ref-effect">槽耗 1 · 暴击率提升</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 默认子实体 -->
+        <div class="ip-section">
+          <div class="ip-section-h">
+            默认子实体
+            <span class="count">已用 1 / 2 槽位</span>
+          </div>
+          <div class="ip-field"><label>实体槽位</label><div class="val">2</div></div>
+          <div class="ip-fold-h" data-fold="child">
+            子实体列表 <span class="sub">（1）</span>
+            <span class="fold-label">收起</span>
+          </div>
+          <div class="ip-fold-body" data-fold-body="child">
+            <div class="ip-ref-row">
+              <span class="ref-name">拳头</span>
+              <span class="ref-cat">可触发 · 武器</span>
+              <span class="ref-effect">槽耗 1 · 价 0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 战斗属性 -->
+        <div class="ip-section">
+          <div class="ip-section-h">战斗属性</div>
+          <div class="ip-field"><label>HP</label><div class="val">280</div></div>
+          <div class="ip-field"><label>耐力上限</label><div class="val">120</div></div>
+          <div class="ip-field"><label>耐力恢复/秒</label><div class="val">8</div></div>
+          <div class="ip-field"><label>HP恢复/秒</label><div class="val">0</div></div>
+          <div class="ip-field"><label>负重上限</label><div class="val">80</div></div>
+        </div>
+
+        <!-- 可触发动作 -->
+        <div class="ip-section">
+          <div class="ip-section-h">可触发动作</div>
+          <div class="ip-field"><label>可触发动作</label><div class="val">有</div></div>
+          <div class="ip-field"><label>耐力消耗</label><div class="val">15</div></div>
+          <div class="ip-field"><label>触发耗时(ms)</label><div class="val">1200</div></div>
+          <div class="ip-field"><label>伤害</label><div class="val">18</div></div>
+          <div class="ip-field"><label>针对目标</label><div class="val">敌人</div></div>
+          <div class="ip-field"><label>针对类型</label><div class="val">近战</div></div>
+          <div class="ip-field"><label>针对顺序</label><div class="val">从上往下</div></div>
+        </div>
+
+        <!-- 被动加成 -->
+        <div class="ip-section">
+          <div class="ip-section-h">被动加成</div>
+          <div class="ip-field"><label>被动加成模式</label><div class="val">无</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="notes">
+  <div class="note">
+    <h4>与制作物品对齐</h4>
+    顶栏下划线 Tab、左栏 300px（Chip + Ctrl+K 搜索 + 列表选中左条）、右栏 <code>admin-form-section</code> 分区顺序：基本信息 → 词条关联 → 默认子实体 → 战斗属性 → 可触发动作 → 被动加成。
+  </div>
+  <div class="note">
+    <h4>本次交互约定</h4>
+    固定词条 / 预装动态词条 / 子实体：标题可折叠；展开后一词条（或一子实体）独占一行。只读，无保存/删除/导入。词条 Tab 同理镜像词条表单分区。
+  </div>
+</div>
+
+<script>
+document.querySelectorAll('.ip-fold-h').forEach(h => {
+  h.addEventListener('click', () => {
+    const key = h.getAttribute('data-fold');
+    const body = document.querySelector('[data-fold-body="' + key + '"]');
+    if (!body) return;
+    const folded = body.classList.toggle('folded');
+    const label = h.querySelector('.fold-label');
+    if (label) label.textContent = folded ? '展开' : '收起';
+  });
+});
+document.querySelectorAll('.ip-list-item').forEach(item => {
+  item.addEventListener('click', () => {
+    document.querySelectorAll('.ip-list-item').forEach(i => i.classList.remove('selected'));
+    item.classList.add('selected');
+  });
+});
+document.querySelectorAll('.ip-chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    chip.parentElement.querySelectorAll('.ip-chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+  });
+});
+</script>
+</body>
+</html>

@@ -1602,3 +1602,233 @@ body.sb-pointer-dragging [data-drag-handle] { cursor: grabbing; }
 #hud-playback { display: inline-flex; align-items: center; gap: 4px; }
 
 /* 旧 #sb-combat-preview* 已并入 #combat-preview（共用模块），保留空注释便于检索 */
+
+/* ============================================================
+   全物品池只读页 #ip-page（镜像 #adm-page token）
+   ============================================================ */
+
+#ip-page {
+  --ip-bg: #fafafa;
+  --ip-surface: #fff;
+  --ip-border: #e5e5e5;
+  --ip-border-hover: #d4d4d4;
+  --ip-text: #262626;
+  --ip-text-secondary: #737373;
+  --ip-text-muted: #a3a3a3;
+  --ip-accent: #525252;
+  --ip-accent-subtle: #ececec;
+  --ip-hover: #e8e8e8;
+  --ip-selected: #d4d4d4;
+  --ip-focus-ring: rgba(38, 38, 38, 0.28);
+  --ip-indicator: #404040;
+  --ip-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+
+  display: flex; flex-direction: column; height: 100vh;
+  background: var(--ip-bg); color: var(--ip-text);
+  font-size: 13px; line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+#ip-header {
+  display: flex; align-items: center; padding: 8px 16px;
+  border-bottom: 1px solid var(--ip-border); background: var(--ip-surface);
+  gap: 12px; flex-shrink: 0;
+}
+#ip-header h2 {
+  font-size: 14px; font-weight: 600; letter-spacing: -0.01em;
+  margin: 0; color: var(--ip-text); white-space: nowrap;
+}
+#ip-header .btn {
+  font-size: 12px; padding: 5px 12px;
+  border: 1px solid var(--ip-border); border-radius: 5px;
+  background: var(--ip-surface); color: var(--ip-text);
+  cursor: pointer; line-height: 1.35; font-family: inherit;
+  transition: background 120ms var(--ip-ease-out), border-color 120ms var(--ip-ease-out);
+}
+#ip-header .btn:hover { background: var(--ip-hover); border-color: var(--ip-border-hover); }
+#ip-header .btn:active { transform: scale(0.98); }
+#ip-header .btn:focus-visible {
+  outline: 2px solid var(--ip-indicator); outline-offset: 1px;
+}
+
+#ip-tabs { display: flex; gap: 20px; align-items: center; margin-left: 8px; }
+.ip-tab {
+  font-size: 13px; padding: 6px 0;
+  border: none; border-bottom: 2px solid transparent;
+  background: transparent; color: var(--ip-text-secondary);
+  cursor: pointer; font-family: inherit; font-weight: 500;
+  transition: color 120ms var(--ip-ease-out), border-color 120ms var(--ip-ease-out);
+  white-space: nowrap; border-radius: 0;
+}
+.ip-tab:hover { color: var(--ip-text); }
+.ip-tab.active {
+  color: var(--ip-text); font-weight: 600;
+  border-bottom-color: var(--ip-text);
+}
+.ip-tab:focus-visible {
+  outline: 2px solid var(--ip-indicator); outline-offset: 1px;
+}
+
+#ip-body { display: flex; flex: 1; overflow: hidden; }
+
+#ip-left {
+  width: 300px; border-right: 1px solid var(--ip-border);
+  display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0;
+  background: var(--ip-bg);
+}
+
+#ip-cat-filter {
+  padding: 8px 10px; border-bottom: 1px solid var(--ip-border);
+  display: flex; flex-wrap: wrap; gap: 4px;
+}
+.ip-chip {
+  font-size: 11px; padding: 3px 10px;
+  border: 1px solid var(--ip-border); border-radius: 4px;
+  background: var(--ip-surface); color: var(--ip-text-secondary);
+  cursor: pointer; white-space: nowrap; line-height: 1.4;
+  font-family: inherit;
+  transition: background 120ms var(--ip-ease-out), border-color 120ms var(--ip-ease-out), color 120ms var(--ip-ease-out);
+}
+.ip-chip:hover { background: var(--ip-hover); color: var(--ip-text); }
+.ip-chip.active {
+  background: var(--ip-accent-subtle); color: var(--ip-text);
+  font-weight: 600; border-color: var(--ip-accent);
+}
+.ip-chip:focus-visible {
+  outline: 2px solid var(--ip-indicator); outline-offset: 1px;
+}
+
+#ip-search-wrap { padding: 10px; border-bottom: 1px solid var(--ip-border); }
+.ip-search-cmd {
+  display: flex; align-items: center; gap: 6px;
+  border: 1px solid var(--ip-border); border-radius: 5px;
+  background: var(--ip-surface); overflow: hidden;
+  transition: border-color 150ms var(--ip-ease-out), box-shadow 150ms var(--ip-ease-out);
+}
+.ip-search-cmd:focus-within {
+  border-color: var(--ip-accent);
+  box-shadow: 0 0 0 2px var(--ip-focus-ring);
+}
+#ip-search {
+  flex: 1; border: none; outline: none; padding: 7px 10px;
+  font-size: 12px; font-family: inherit; color: var(--ip-text);
+  background: transparent;
+}
+#ip-search::placeholder { color: var(--ip-text-muted); }
+.ip-search-cmd-k {
+  font-size: 10px; color: var(--ip-text-muted); background: #f0f0f0;
+  padding: 1px 6px; border-radius: 3px; margin-right: 8px; flex-shrink: 0;
+  font-family: "SF Mono", "Cascadia Code", monospace;
+  user-select: none;
+}
+
+#ip-list { flex: 1; overflow-y: auto; }
+.ip-list-item {
+  display: flex; align-items: center; padding: 6px 10px; gap: 8px;
+  border-bottom: 1px solid #f0f0f0; cursor: pointer;
+  font-size: 13px; line-height: 1.45;
+  box-shadow: inset 3px 0 0 transparent;
+  transition: background 100ms var(--ip-ease-out), box-shadow 100ms var(--ip-ease-out);
+}
+.ip-list-item:hover {
+  background: var(--ip-hover);
+  box-shadow: inset 3px 0 0 var(--ip-indicator);
+}
+.ip-list-item.selected {
+  background: var(--ip-selected); font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--ip-indicator);
+}
+.ip-list-item:focus-visible {
+  outline: 2px solid var(--ip-indicator); outline-offset: -2px;
+}
+.ip-list-item .name { flex: 1; min-width: 0; font-weight: 500; }
+.ip-list-item .meta { font-size: 11px; color: var(--ip-text-muted); white-space: nowrap; }
+.ip-list-item .price {
+  font-size: 11px; color: var(--ip-text-secondary);
+  white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+
+#ip-right {
+  flex: 1; overflow-y: auto; padding: 20px 24px;
+  background: var(--ip-bg);
+  transition: opacity 120ms var(--ip-ease-out);
+}
+#ip-right h3 {
+  font-size: 15px; font-weight: 600; margin: 0 0 16px;
+  color: var(--ip-text); letter-spacing: -0.01em;
+}
+.ip-empty-hint {
+  color: var(--ip-text-muted); padding: 40px 0; text-align: center; font-size: 13px;
+}
+
+.ip-section {
+  margin-bottom: 16px; border: 1px solid var(--ip-border);
+  border-radius: 6px; background: var(--ip-surface); max-width: 720px;
+}
+.ip-section-h {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.03em;
+  text-transform: uppercase; margin: 0; padding: 8px 14px;
+  background: #fafafa; color: var(--ip-text-muted);
+  border-bottom: 1px solid var(--ip-border);
+  border-radius: 5px 5px 0 0;
+  display: flex; align-items: center; gap: 8px;
+}
+.ip-section-h .count {
+  margin-left: auto; font-weight: 500; text-transform: none;
+  letter-spacing: 0; font-size: 10px; color: var(--ip-text-secondary);
+}
+.ip-section-h .sub,
+.ip-fold-h .sub {
+  font-weight: 400; text-transform: none; letter-spacing: 0;
+  font-size: 11px; color: var(--ip-text-muted);
+}
+
+.ip-field {
+  display: flex; align-items: center; padding: 6px 14px;
+  border-top: 1px solid #f5f5f5;
+}
+.ip-field:first-of-type { border-top: none; }
+.ip-field label {
+  width: 100px; flex-shrink: 0; font-size: 12px;
+  color: var(--ip-text-secondary); font-weight: 500;
+}
+.ip-field .val {
+  flex: 1; font-size: 13px; color: var(--ip-text);
+  padding: 5px 8px; border: 1px solid var(--ip-border); border-radius: 4px;
+  background: #fafafa; min-width: 0; word-break: break-word;
+}
+
+.ip-ref-row {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 7px 14px; border-top: 1px solid #f5f5f5;
+  font-size: 12px; line-height: 1.45;
+}
+.ip-ref-row .ref-name { font-weight: 600; color: var(--ip-text); min-width: 72px; }
+.ip-ref-row .ref-cat { font-size: 11px; color: var(--ip-text-muted); white-space: nowrap; }
+.ip-ref-row .ref-effect { flex: 1; color: var(--ip-text-secondary); min-width: 0; }
+
+.ip-fold-h {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 14px; border-top: 1px solid #f5f5f5;
+  cursor: pointer; user-select: none; font-size: 12px; font-weight: 600;
+  color: var(--ip-text); background: #fcfcfc;
+  transition: background 100ms var(--ip-ease-out);
+}
+.ip-fold-h:hover { background: var(--ip-hover); }
+.ip-fold-h:focus-visible {
+  outline: 2px solid var(--ip-indicator); outline-offset: -2px;
+}
+.ip-fold-h .fold-label {
+  font-weight: 400; color: var(--ip-text-muted); font-size: 11px; margin-left: auto;
+}
+.ip-fold-body { overflow: hidden; }
+.ip-fold-body.folded { display: none; }
+.ip-hint {
+  font-size: 11px; color: var(--ip-text-muted); padding: 4px 14px 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #ip-page *, #ip-page *::before, #ip-page *::after {
+    transition: none !important;
+  }
+}

@@ -1,0 +1,691 @@
+// ============================================================
+// 全物品池只读页（仿制作物品 #adm-page）
+// ============================================================
+
+import {
+  ENTITY_DEFS,
+  AFFIX_DEFS,
+  isStarter,
+  getEntityDef,
+  getAffixDef,
+  getEntityCategory,
+  getEntityCategoryFilters,
+  getCategoryName,
+  getAffixFilterCategories,
+  type EntityDef,
+  type AffixDef,
+  type DefaultChildSpec,
+} from '../game/data';
+
+type TabType = 'entities' | 'affixes';
+type EntityTypeFilter = 'all-entity' | 'starter' | 'active' | 'passive';
+
+interface TabSession {
+  searchQuery: string;
+  selectedId: string | null;
+  entityTypeFilter: EntityTypeFilter;
+  entityCatFilter: string;
+  affixCatFilter: string;
+}
+
+const SORT_BY_LABEL: Record<string, string> = {
+  hp_asc: 'HP最低优先',
+  hp_desc: 'HP最高优先',
+  stamina_asc: '耐力最低优先',
+  random: '随机',
+};
+
+const FILTER_BY_LABEL: Record<string, string> = {
+  has_debuff: '有负面状态',
+  most_buffs: 'Buff最多',
+  hp_below_50pct: 'HP低于50%',
+};
+
+const ON_HIT_LABEL: Record<string, string> = {
+  life_steal: 'life_steal — 吸血',
+  stamina_drain: 'stamina_drain — 削耐',
+};
+
+function esc(s: unknown): string {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function disp(v: unknown, empty = '—'): string {
+  if (v === null || v === undefined || v === '') return empty;
+  return String(v);
+}
+
+function getChildDefId(spec: string | DefaultChildSpec): string {
+  return typeof spec === 'string' ? spec : spec?.defId || 'unknown';
+}
+
+function sumEntitySlotCosts(defIds: string[]): number {
+  return defIds.reduce((sum, id) => {
+    const e = getEntityDef(id);
+    const n = e ? Number(e.slotCost) : 0;
+    return sum + (Number.isFinite(n) && n > 0 ? n : 0);
+  }, 0);
+}
+
+function sumAffixSlotCosts(defIds: string[]): number {
+  return defIds.reduce((sum, id) => {
+    const a = getAffixDef(id);
+    const n = a ? Number(a.slotCost) : 0;
+    return sum + (Number.isFinite(n) && n > 0 ? n : 0);
+  }, 0);
+}
+
+function entityTypeLabel(e: EntityDef): string {
+  const parts: string[] = [];
+  if (isStarter(e)) parts.push('启动端');
+  if (e.isActive) parts.push('可触发');
+  if (!isStarter(e) && !e.isActive) parts.push('被动');
+  return parts.join(' · ') || '—';
+}
+
+/** 导出：启动页「全物品池」 */
+export function showFullItemPool(onBack: () => void): void {
+  const app = document.getElementById('app')!;
+
+  let tab: TabType = 'entities';
+  const sessions: Record<TabType, TabSession> = {
+    entities: {
+      searchQuery: '',
+      selectedId: null,
+      entityTypeFilter: 'all-entity',
+      entityCatFilter: 'all',
+      affixCatFilter: 'all',
+    },
+    affixes: {
+      searchQuery: '',
+      selectedId: null,
+      entityTypeFilter: 'all-entity',
+      entityCatFilter: 'all',
+      affixCatFilter: 'all',
+    },
+  };
+
+  /** 折叠记忆：`${itemId}:${foldKey}` → true=折叠 */
+  const foldState = new Map<string, boolean>();
+
+  function sess(): TabSession {
+    return sessions[tab];
+  }
+
+  function foldKey(itemId: string, section: string): string {
+    return `${itemId}:${section}`;
+  }
+
+  function isFolded(itemId: string, section: string): boolean {
+    return foldState.get(foldKey(itemId, section)) === true;
+  }
+
+  function field(label: string, value: unknown): string {
+    return `<div class="ip-field"><label>${esc(label)}</label><div class="val">${esc(disp(value))}</div></div>`;
+  }
+
+  function section(title: string, body: string, count?: string): string {
+    const countHtml = count
+      ? `<span class="count">${esc(count)}</span>`
+      : '';
+    return `<div class="ip-section"><div class="ip-section-h">${esc(title)}${countHtml}</div>${body}</div>`;
+  }
+
+  function affixRefRow(id: string, effectExtra?: string): string {
+    const a = getAffixDef(id);
+    const name = a?.name || id;
+    const cat = a ? getCategoryName(a.category) : '';
+    const effect = effectExtra ?? (a?.effect || '—');
+    return `<div class="ip-ref-row">
+      <span class="ref-name">${esc(name)}</span>
+      <span class="ref-cat">${esc(cat)}</span>
+      <span class="ref-effect">${esc(effect)}</span>
+    </div>`;
+  }
+
+  function foldBlock(
+    itemId: string,
+    sectionKey: string,
+    title: string,
+    sub: string,
+    bodyHtml: string,
+  ): string {
+    const folded = isFolded(itemId, sectionKey);
+    return `
+      <div class="ip-fold-h" data-fold="${esc(sectionKey)}" role="button" tabindex="0">
+        ${esc(title)}${sub ? ` <span class="sub">${sub}</span>` : ''}
+        <span class="fold-label">${folded ? '展开' : '收起'}</span>
+      </div>
+      <div class="ip-fold-body${folded ? ' folded' : ''}" data-fold-body="${esc(sectionKey)}">
+        ${bodyHtml || '<div class="ip-hint">无</div>'}
+      </div>`;
+  }
+
+  function affixRowsOrEmpty(ids: string[]): string {
+    if (!ids.length) return '<div class="ip-hint">无</div>';
+    return ids.map(id => affixRefRow(id)).join('');
+  }
+
+  function buildEntityDetail(e: EntityDef): string {
+    const dynSlots = Number(e.dynamicAffixSlots) || 0;
+    const preloaded = e.preloadedDynamicAffixes || [];
+    const dynUsed = sumAffixSlotCosts(preloaded);
+    const entitySlots = Number(e.entitySlots) || 0;
+    const children = e.defaultChildren || [];
+    const childIds = children.map(getChildDefId);
+    const childUsed = sumEntitySlotCosts(childIds);
+    const poolPrereq = e.poolPrerequisite || [];
+    const fixed = e.fixedAffixes || [];
+
+    let h = `<h3>查看实体：${esc(e.name)}</h3>`;
+
+    // 基本信息
+    h += section('基本信息', [
+      field('ID', e.id),
+      field('名称', e.name),
+      field('占用槽位', e.slotCost),
+      field('重量', e.weight),
+      field('价值', e.value),
+    ].join(''));
+
+    // 词条关联
+    {
+      let body = '';
+      body += foldBlock(
+        e.id,
+        'fixed',
+        '固定词条',
+        `（${fixed.length}）`,
+        affixRowsOrEmpty(fixed),
+      );
+
+      if (poolPrereq.length === 0) {
+        body += field('池前置', '—');
+      } else {
+        body += `<div class="ip-fold-h" style="cursor:default;background:#fcfcfc;">池前置 <span class="sub">（${poolPrereq.length}）</span></div>`;
+        body += poolPrereq.map(id => affixRefRow(id)).join('');
+      }
+
+      body += field('动态词条槽位', dynSlots);
+
+      if (dynSlots > 0) {
+        body += foldBlock(
+          e.id,
+          'dyn',
+          '预装动态词条',
+          `已用 ${dynUsed} / ${dynSlots}`,
+          preloaded.length
+            ? preloaded.map(id => {
+                const a = getAffixDef(id);
+                const slot = a ? `槽耗 ${a.slotCost}` : '';
+                const eff = a?.effect || '';
+                const extra = [slot, eff].filter(Boolean).join(' · ') || '—';
+                return affixRefRow(id, extra);
+              }).join('')
+            : '<div class="ip-hint">无</div>',
+        );
+      }
+
+      h += section('词条关联', body);
+    }
+
+    // 默认子实体
+    {
+      let body = field('实体槽位', entitySlots);
+      if (entitySlots > 0) {
+        const rows = children.length
+          ? children.map(spec => {
+              const defId = getChildDefId(spec);
+              const cd = getEntityDef(defId);
+              const ov = typeof spec === 'object' && spec?.overrides
+                ? Object.keys(spec.overrides).length
+                : 0;
+              const name = (cd?.name || defId) + (ov > 0 ? ' (定制)' : '');
+              const cat = cd
+                ? [entityTypeLabel(cd), getEntityCategory(cd).join(' / ')].filter(Boolean).join(' · ')
+                : '';
+              const effect = cd
+                ? `槽耗 ${cd.slotCost} · 价 ${cd.value}${ov > 0 ? ` · 覆写${ov}字段` : ''}`
+                : '—';
+              return `<div class="ip-ref-row">
+                <span class="ref-name">${esc(name)}</span>
+                <span class="ref-cat">${esc(cat)}</span>
+                <span class="ref-effect">${esc(effect)}</span>
+              </div>`;
+            }).join('')
+          : '<div class="ip-hint">无</div>';
+        body += foldBlock(
+          e.id,
+          'child',
+          '子实体列表',
+          `（${children.length}）`,
+          rows,
+        );
+      } else {
+        body += '<div class="ip-hint">无槽位</div>';
+      }
+      h += section(
+        '默认子实体',
+        body,
+        entitySlots > 0 ? `已用 ${childUsed} / ${entitySlots} 槽位` : undefined,
+      );
+    }
+
+    // 战斗属性
+    h += section('战斗属性', [
+      field('HP', e.hp),
+      field('耐力上限', e.maxStamina),
+      field('耐力恢复/秒', e.staminaRegen),
+      field('HP恢复/秒', e.hpRegen),
+      field('负重上限', e.maxLoad),
+    ].join(''));
+
+    // 可触发动作
+    {
+      let body = field('可触发动作', e.isActive ? '有' : '无');
+      if (e.isActive) {
+        const tc = e.targetCondition;
+        body += [
+          field('耐力消耗', e.staminaCost),
+          field('触发耗时(ms)', e.actionTime),
+          field('伤害(负值=恢复)', e.damage),
+          field('针对目标', e.targetFaction),
+          field('针对类型', e.targetType),
+          field('针对顺序', e.targetOrder),
+          field('优先目标', e.priorityTarget == null ? '无' : e.priorityTarget),
+          field('条件排序', tc?.sortBy ? (SORT_BY_LABEL[tc.sortBy] || tc.sortBy) : '无'),
+          field('条件过滤', tc?.filterBy ? (FILTER_BY_LABEL[tc.filterBy] || tc.filterBy) : '无'),
+        ].join('');
+      }
+      h += section('可触发动作', body);
+    }
+
+    // 被动加成
+    {
+      const hasPB = e.hasPassiveBonuses === true;
+      let body = field('被动加成模式', hasPB ? '有' : '无');
+      if (hasPB) {
+        body += [
+          field('伤害加成(正=增伤,负=增强治疗)', e.damageBonus),
+          field('生命加成', e.hpBonus),
+          field('生命恢复加成', e.hpRegenerationBonus),
+          field('耐力加成', e.staminaBonus),
+          field('耐力恢复加成', e.staminaRegenerationBonus),
+          field('负重加成', e.loadBonus),
+        ].join('');
+      }
+      h += section('被动加成', body);
+    }
+
+    return h;
+  }
+
+  function buildAffixDetail(a: AffixDef): string {
+    let h = `<h3>查看词条：${esc(a.name)}</h3>`;
+
+    h += section('基本信息', [
+      field('ID', a.id),
+      field('名称', a.name),
+      field('分类', getCategoryName(a.category)),
+      field('效果描述', a.effect),
+      field('价值', a.costValue),
+      field('槽位消耗', a.slotCost),
+      field('可重复', a.repeatable ? '是' : '否'),
+    ].join(''));
+
+    // 前置条件
+    {
+      const prereq = a.prerequisite || [];
+      const pool = a.poolPrerequisite || [];
+      let body = '';
+      if (prereq.length === 0) {
+        body += field('前置词条', '—');
+      } else {
+        body += `<div class="ip-fold-h" style="cursor:default;background:#fcfcfc;">前置词条 <span class="sub">（${prereq.length}）</span></div>`;
+        body += prereq.map(id => affixRefRow(id)).join('');
+      }
+      if (pool.length === 0) {
+        body += field('池前置', '—');
+      } else {
+        body += `<div class="ip-fold-h" style="cursor:default;background:#fcfcfc;">池前置 <span class="sub">（${pool.length}）</span></div>`;
+        body += pool.map(id => affixRefRow(id)).join('');
+      }
+      h += section('前置条件', body);
+    }
+
+    // 被动加成
+    {
+      const hasPB = a.hasPassiveBonuses === true;
+      let body = field('被动加成模式', hasPB ? '有' : '无');
+      if (hasPB) {
+        body += [
+          field('伤害加成(正=增伤,负=增强治疗)', a.damageBonus),
+          field('生命加成', a.hpBonus),
+          field('生命恢复加成', a.hpRegenerationBonus),
+          field('耐力加成', a.staminaBonus),
+          field('耐力恢复加成', a.staminaRegenerationBonus),
+          field('负重加成', a.loadBonus),
+        ].join('');
+      }
+      h += section('被动加成', body);
+    }
+
+    // 命中效果
+    {
+      const onHit = a.onHitEffects?.[0];
+      const effType = onHit?.type || '';
+      let body = field('效果类型', effType ? (ON_HIT_LABEL[effType] || effType) : '无');
+      if (effType) {
+        const pct = onHit?.params?.percent ?? 0;
+        const amt = onHit?.params?.amount ?? 0;
+        body += field('参数', `${pct}% / 固定值 ${amt}`);
+      }
+      h += section('命中效果', body);
+    }
+
+    // Targeting 覆写
+    {
+      const tm = a.targetingModifier;
+      const tmEnabled = !!(
+        tm && (
+          tm.targetFaction !== undefined ||
+          tm.targetOrder !== undefined ||
+          tm.priorityTarget !== undefined ||
+          tm.sortBy !== undefined ||
+          tm.filterBy !== undefined
+        )
+      );
+      let body = field('覆写模式', tmEnabled ? '修改' : '不修改');
+      if (tmEnabled && tm) {
+        const pt =
+          tm.priorityTarget === null ? '无（清除优先位）'
+            : tm.priorityTarget === undefined ? '不修改'
+              : String(tm.priorityTarget);
+        const sort =
+          tm.sortBy === null ? '无（清除排序）'
+            : tm.sortBy === undefined ? '不修改'
+              : (SORT_BY_LABEL[tm.sortBy] || tm.sortBy);
+        const filter =
+          tm.filterBy === null ? '无（清除过滤）'
+            : tm.filterBy === undefined ? '不修改'
+              : (FILTER_BY_LABEL[tm.filterBy] || tm.filterBy);
+        body += [
+          field('针对目标', tm.targetFaction ?? '不修改'),
+          field('针对顺序', tm.targetOrder ?? '不修改'),
+          field('优先目标', pt),
+          field('条件排序', sort),
+          field('条件过滤', filter),
+        ].join('');
+      }
+      h += section('Targeting 覆写（targeting_modifier）', body);
+    }
+
+    return h;
+  }
+
+  function getFilteredEntities(): EntityDef[] {
+    const s = sess();
+    let list = ENTITY_DEFS.slice();
+    if (s.entityTypeFilter === 'starter') list = list.filter(e => isStarter(e));
+    else if (s.entityTypeFilter === 'active') list = list.filter(e => !isStarter(e) && e.isActive);
+    else if (s.entityTypeFilter === 'passive') list = list.filter(e => !isStarter(e) && !e.isActive);
+    if (s.entityCatFilter !== 'all') {
+      list = list.filter(e => getEntityCategory(e).includes(s.entityCatFilter));
+    }
+    const q = s.searchQuery.trim().toLowerCase();
+    if (q) {
+      list = list.filter(e =>
+        e.id.toLowerCase().includes(q) || e.name.toLowerCase().includes(q),
+      );
+    }
+    return list;
+  }
+
+  function getFilteredAffixes(): AffixDef[] {
+    const s = sess();
+    let list = AFFIX_DEFS.slice();
+    if (s.affixCatFilter !== 'all') {
+      list = list.filter(a => a.category === s.affixCatFilter);
+    }
+    const q = s.searchQuery.trim().toLowerCase();
+    if (q) {
+      list = list.filter(a =>
+        a.id.toLowerCase().includes(q) ||
+        a.name.toLowerCase().includes(q) ||
+        (a.effect || '').toLowerCase().includes(q),
+      );
+    }
+    return list;
+  }
+
+  function renderChips(): void {
+    const el = document.getElementById('ip-cat-filter');
+    if (!el) return;
+    const s = sess();
+    let html = '';
+    if (tab === 'entities') {
+      const typeChips: { v: EntityTypeFilter; label: string }[] = [
+        { v: 'all-entity', label: '全部实体' },
+        { v: 'starter', label: '启动端' },
+        { v: 'active', label: '可触发' },
+        { v: 'passive', label: '被动加成' },
+      ];
+      for (const c of typeChips) {
+        html += `<button type="button" class="ip-chip${s.entityTypeFilter === c.v ? ' active' : ''}" data-etype="${c.v}">${c.label}</button>`;
+      }
+      for (const cat of getEntityCategoryFilters()) {
+        if (cat === 'all') continue;
+        html += `<button type="button" class="ip-chip${s.entityCatFilter === cat ? ' active' : ''}" data-ecat="${esc(cat)}">${esc(cat)}</button>`;
+      }
+    } else {
+      html += `<button type="button" class="ip-chip${s.affixCatFilter === 'all' ? ' active' : ''}" data-acat="all">全部类别</button>`;
+      for (const c of getAffixFilterCategories()) {
+        html += `<button type="button" class="ip-chip${s.affixCatFilter === c.id ? ' active' : ''}" data-acat="${esc(c.id)}">${esc(c.name)}</button>`;
+      }
+    }
+    el.innerHTML = html;
+  }
+
+  function renderList(): void {
+    const listEl = document.getElementById('ip-list');
+    if (!listEl) return;
+    const s = sess();
+    let html = '';
+    if (tab === 'entities') {
+      for (const e of getFilteredEntities()) {
+        const meta = [entityTypeLabel(e), getEntityCategory(e).join(' / ')].filter(Boolean).join(' · ');
+        html += `<div class="ip-list-item${s.selectedId === e.id ? ' selected' : ''}" data-id="${esc(e.id)}" role="button" tabindex="0">
+          <span class="name">${esc(e.name)}</span>
+          <span class="meta">${esc(meta)}</span>
+          <span class="price">价 ${e.value}</span>
+        </div>`;
+      }
+    } else {
+      for (const a of getFilteredAffixes()) {
+        html += `<div class="ip-list-item${s.selectedId === a.id ? ' selected' : ''}" data-id="${esc(a.id)}" role="button" tabindex="0">
+          <span class="name">${esc(a.name)}</span>
+          <span class="meta">${esc(getCategoryName(a.category))}</span>
+          <span class="price">价 ${Math.abs(a.costValue)}</span>
+        </div>`;
+      }
+    }
+    if (!html) {
+      html = '<div class="ip-empty-hint">无匹配项</div>';
+    }
+    listEl.innerHTML = html;
+  }
+
+  function renderDetail(): void {
+    const right = document.getElementById('ip-right');
+    if (!right) return;
+    const id = sess().selectedId;
+    if (!id) {
+      right.innerHTML = '<p class="ip-empty-hint">← 点击左侧物品查看详情</p>';
+      return;
+    }
+    if (tab === 'entities') {
+      const e = getEntityDef(id);
+      right.innerHTML = e
+        ? buildEntityDetail(e)
+        : '<p class="ip-empty-hint">实体不存在</p>';
+    } else {
+      const a = getAffixDef(id);
+      right.innerHTML = a
+        ? buildAffixDetail(a)
+        : '<p class="ip-empty-hint">词条不存在</p>';
+    }
+    bindFoldEvents();
+  }
+
+  function bindFoldEvents(): void {
+    const id = sess().selectedId;
+    if (!id) return;
+    document.querySelectorAll('#ip-right .ip-fold-h[data-fold]').forEach(el => {
+      const h = el as HTMLElement;
+      if (!h.dataset.fold || h.style.cursor === 'default') return;
+      const toggle = () => {
+        const key = h.dataset.fold!;
+        const body = document.querySelector(`#ip-right [data-fold-body="${key}"]`) as HTMLElement | null;
+        if (!body) return;
+        const next = !body.classList.contains('folded');
+        body.classList.toggle('folded', next);
+        foldState.set(foldKey(id, key), next);
+        const label = h.querySelector('.fold-label');
+        if (label) label.textContent = next ? '展开' : '收起';
+      };
+      h.addEventListener('click', toggle);
+      h.addEventListener('keydown', (ev) => {
+        if ((ev as KeyboardEvent).key === 'Enter' || (ev as KeyboardEvent).key === ' ') {
+          ev.preventDefault();
+          toggle();
+        }
+      });
+    });
+  }
+
+  function updateTabs(): void {
+    document.querySelectorAll('.ip-tab').forEach(btn => {
+      const b = btn as HTMLElement;
+      b.classList.toggle('active', b.dataset.tab === tab);
+    });
+  }
+
+  function renderAll(): void {
+    updateTabs();
+    renderChips();
+    const search = document.getElementById('ip-search') as HTMLInputElement | null;
+    if (search && search.value !== sess().searchQuery) search.value = sess().searchQuery;
+    renderList();
+    renderDetail();
+  }
+
+  function switchTab(newTab: TabType): void {
+    if (tab === newTab) return;
+    tab = newTab;
+    const right = document.getElementById('ip-right');
+    if (right) {
+      right.style.opacity = '0.6';
+      setTimeout(() => { right.style.opacity = '1'; }, 120);
+    }
+    renderAll();
+  }
+
+  app.innerHTML = `
+    <div id="ip-page">
+      <div id="ip-header">
+        <button type="button" class="btn" id="ip-btn-back">← 返回</button>
+        <h2>全物品池</h2>
+        <div id="ip-tabs">
+          <button type="button" class="ip-tab active" data-tab="entities">实体</button>
+          <button type="button" class="ip-tab" data-tab="affixes">词条</button>
+        </div>
+      </div>
+      <div id="ip-body">
+        <div id="ip-left">
+          <div id="ip-cat-filter"></div>
+          <div id="ip-search-wrap">
+            <div class="ip-search-cmd">
+              <input type="text" id="ip-search" placeholder="搜索 ID 或名称…" autocomplete="off">
+              <kbd class="ip-search-cmd-k">Ctrl+K</kbd>
+            </div>
+          </div>
+          <div id="ip-list"></div>
+        </div>
+        <div id="ip-right">
+          <p class="ip-empty-hint">← 点击左侧物品查看详情</p>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('ip-btn-back')!.addEventListener('click', onBack);
+
+  document.querySelectorAll('.ip-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const t = (btn as HTMLElement).dataset.tab as TabType;
+      if (t) switchTab(t);
+    });
+  });
+
+  document.getElementById('ip-cat-filter')!.addEventListener('click', (e) => {
+    const chip = (e.target as HTMLElement).closest('.ip-chip') as HTMLElement | null;
+    if (!chip) return;
+    const s = sess();
+    if (chip.dataset.etype) {
+      s.entityTypeFilter = chip.dataset.etype as EntityTypeFilter;
+      s.selectedId = null;
+    } else if (chip.dataset.ecat) {
+      // 分类 Chip 与类型 Chip 可叠加；再次点击同一分类取消
+      s.entityCatFilter = s.entityCatFilter === chip.dataset.ecat ? 'all' : chip.dataset.ecat;
+      s.selectedId = null;
+    } else if (chip.dataset.acat) {
+      s.affixCatFilter = chip.dataset.acat;
+      s.selectedId = null;
+    }
+    renderAll();
+  });
+
+  const searchInput = document.getElementById('ip-search') as HTMLInputElement;
+  searchInput.addEventListener('input', () => {
+    sess().searchQuery = searchInput.value;
+    renderList();
+  });
+
+  document.addEventListener('keydown', onKeyDown);
+  function onKeyDown(ev: KeyboardEvent) {
+    if (!document.getElementById('ip-page')) {
+      document.removeEventListener('keydown', onKeyDown);
+      return;
+    }
+    if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'k') {
+      ev.preventDefault();
+      searchInput.focus();
+      searchInput.select();
+    }
+  }
+
+  document.getElementById('ip-list')!.addEventListener('click', (e) => {
+    const item = (e.target as HTMLElement).closest('.ip-list-item') as HTMLElement | null;
+    if (!item?.dataset.id) return;
+    sess().selectedId = item.dataset.id;
+    renderList();
+    renderDetail();
+  });
+
+  document.getElementById('ip-list')!.addEventListener('keydown', (e) => {
+    const ev = e as KeyboardEvent;
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    const item = (ev.target as HTMLElement).closest('.ip-list-item') as HTMLElement | null;
+    if (!item?.dataset.id) return;
+    ev.preventDefault();
+    sess().selectedId = item.dataset.id;
+    renderList();
+    renderDetail();
+  });
+
+  renderAll();
+}
