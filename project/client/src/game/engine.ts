@@ -11,102 +11,19 @@ import {
   getEffectiveValue, OnHitEffect, TargetCondition, TargetingModifier,
 } from './data';
 import { data as dataApi, saves as savesApi } from '../api/client';
+import {
+  runBattleWithOptionalWorker,
+  buildCombatRuntime,
+  type CombatUnitSnapshot, type CombatUnitRuntime, type CombatEvent,
+  type PlaybackSpeed,
+} from './battle';
+
+export type {
+  CombatUnitSnapshot, CombatUnitRuntime, CombatEvent,
+  CombatWeaponRuntime, OnHitContext, PlaybackSpeed,
+} from './battle';
 
 export type GamePhase = 1 | 2;
-
-/** 6 位小数精度取整 — 用于所有 HP/耐力/浮点属性计算 */
-const round6 = (v: number) => Math.round(v * 1e6) / 1e6;
-
-// ---- 战斗单位快照（v3：统一实体模型，可触发动作独立触发） ----
-
-export interface CombatUnitSnapshot {
-  instanceId: string;   // 唯一实例 ID（来自 ItemInstance）
-  entityId: string;
-  entityName: string;
-  totalHp: number;
-  currentHp: number;
-  totalStaminaRegen: number;
-  maxStamina: number;
-  currentStamina: number;
-  staminaRegen: number;
-  totalHpRegeneration: number;
-  currentLoad: number;
-  maxLoad: number;
-  isOverloaded: boolean;
-  activeWeapons: {
-    name: string;
-    actionTime: number;
-    damage: number;
-    staminaCost: number;
-    targetType: string;
-    targetOrder: string;
-    priorityTarget: number | null;
-    targetFaction: string;
-    /** 条件 Targeting 配置（v6 新增） */
-    targetCondition?: import('../data').TargetCondition;
-    /** 拥有该武器的实体实例ID — 用于 entityOnHitEffects 查表 */
-    ownerInstanceId: string;
-  }[];
-}
-
-// ---- 战斗运行时（内部使用，时间线驱动） ----
-
-/** 命中效果执行的上下文 — 明确区分三类实体 */
-export interface OnHitContext {
-  /** 启动端实体 — 攻击者侧的 HP/耐力池所在 */
-  starter: CombatUnitRuntime;
-  /** 被触发动作实体的 instanceId — 谁的武器命中了 */
-  actionOwnerId: string;
-  /** 被影响实体 — 承受伤害的目标 */
-  target: CombatUnitRuntime;
-  /** 本次造成的正伤害值 */
-  damage: number;
-}
-
-export interface CombatWeaponRuntime {
-  name: string;
-  actionTime: number;
-  remainingTime: number;  // ms 倒计时
-  damage: number;
-  staminaCost: number;
-  targetType: string;
-  targetOrder: string;
-  priorityTarget: number | null;
-  targetFaction: string;
-  /** 条件 Targeting 配置（v6 新增）— 存在时优先级高于 priorityTarget/targetOrder */
-  targetCondition?: import('../data').TargetCondition;
-  /** 拥有该武器的实体实例ID */
-  ownerInstanceId: string;
-}
-
-export interface CombatUnitRuntime {
-  instanceId: string;   // 唯一实例 ID
-  entityId: string;
-  entityName: string;
-  totalHp: number;
-  currentHp: number;
-  maxStamina: number;
-  currentStamina: number;
-  staminaRegen: number;
-  hpRegeneration: number;
-  isOverloaded: boolean;
-  weapons: CombatWeaponRuntime[];
-}
-
-// ---- 战斗事件 ----
-
-export interface CombatEvent {
-  time: number;
-  actorName: string;
-  weaponName: string;
-  targetName: string;
-  damage: number;
-  targetHpAfter: number;
-  targetMaxHp: number;
-  effects: string[];
-  /** targeting 规则标签（v6 新增）— 用于战斗日志标注选目标策略 */
-  targetingLabel?: string;
-}
 
 // ---- 游戏状态 ----
 
@@ -143,6 +60,8 @@ export class GameEngine {
   combatPlayerUnits: CombatUnitRuntime[] | null = null;
   combatEnemyUnits: CombatUnitRuntime[] | null = null;
   combatTime: number = 0;
+  /** Playback 倍速（1/2/4/max）；仅影响播放墙钟，不影响演算结果 */
+  combatSpeed: PlaybackSpeed = 1;
   onCombatEvent?: (event: CombatEvent) => void;
   onCombatEnd?: (win: boolean, goldReward: number) => void;
 
@@ -842,31 +761,7 @@ export class GameEngine {
 
   /** 从 CombatUnitSnapshot 转换为运行时结构 */
   private buildCombatRuntime(units: CombatUnitSnapshot[]): CombatUnitRuntime[] {
-    return units.map(u => ({
-      instanceId: u.instanceId,
-      entityId: u.entityId,
-      entityName: u.entityName,
-      totalHp: u.totalHp,
-      currentHp: u.currentHp,
-      maxStamina: u.maxStamina,
-      currentStamina: u.currentStamina,
-      staminaRegen: u.totalStaminaRegen, // 使用包含装备加成的总耐力恢复
-      hpRegeneration: u.totalHpRegeneration,
-      isOverloaded: u.isOverloaded,
-      weapons: u.activeWeapons.map(w => ({
-        name: w.name,
-        actionTime: w.actionTime,
-        remainingTime: w.actionTime, // 初始倒计时 = actionTime
-        damage: w.damage,
-        staminaCost: w.staminaCost,
-        targetType: w.targetType,
-        targetOrder: w.targetOrder,
-        priorityTarget: w.priorityTarget,
-        targetFaction: w.targetFaction,
-        targetCondition: w.targetCondition,
-        ownerInstanceId: w.ownerInstanceId,
-      })),
-    }));
+    return buildCombatRuntime(units);
   }
 
   /** 合并单个 targeting 字段（v7）：词条 modifiers（从前到后依次覆写）> entity override > entityDef */
@@ -928,108 +823,6 @@ export class GameEngine {
     return mods;
   }
 
-  /** 根据 targetFaction + targetCondition + 位置兜底 选择目标（v6 重写：条件优先）
-   *
-   *  优先级：targetCondition（sortBy/filterBy） > priorityTarget > targetOrder
-   *  targetFaction 可由词条 targeting_modifier 覆写（v7）。
-   */
-  private selectTarget(
-    weapon: CombatWeaponRuntime,
-    playerUnits: CombatUnitRuntime[],
-    enemyUnits: CombatUnitRuntime[],
-    isPlayer: boolean,
-  ): CombatUnitRuntime | null {
-    const faction = weapon.targetFaction || '敌人';
-
-    // 1. 按 targetFaction 确定候选池
-    let candidates: CombatUnitRuntime[];
-    if (faction === '友方') {
-      candidates = isPlayer ? playerUnits : enemyUnits;
-    } else if (faction === '所有') {
-      const opposing = isPlayer ? enemyUnits : playerUnits;
-      const friendly = isPlayer ? playerUnits : enemyUnits;
-      candidates = [...opposing, ...friendly];
-    } else {
-      candidates = isPlayer ? enemyUnits : playerUnits;
-    }
-
-    // 2. 存活过滤
-    let alive = candidates.filter(c => c.currentHp > 0);
-    if (alive.length === 0) return null;
-
-    // 3. 条件 Targeting 优先（v6 新增）
-    //    ★ 关键设计：条件优先于位置。挂载 targeting 词条后 priorityTarget 降级为兜底
-    const tc = weapon.targetCondition;
-    if (tc) {
-      let pool = alive;
-      // 3a. filterBy 过滤 — 过滤后池为空则保留原池
-      if (tc.filterBy) {
-        const filtered = pool.filter(c => this._matchesFilter(c, tc.filterBy!));
-        if (filtered.length > 0) pool = filtered;
-      }
-      // 3b. sortBy 排序
-      if (tc.sortBy && pool.length > 1) {
-        pool = this._sortCandidates(pool, tc.sortBy);
-      }
-      return pool[0];
-    }
-
-    // 4. 位置兜底：priorityTarget（1-based index）
-    const preferIdx = weapon.priorityTarget;
-    if (preferIdx !== null) {
-      const idx = preferIdx - 1;
-      if (idx >= 0 && idx < candidates.length && candidates[idx].currentHp > 0) {
-        return candidates[idx];
-      }
-    }
-
-    // 5. 最终兜底：targetOrder 搜索（修复：从下往上取最后一位而非 for-return 首元素）
-    if (weapon.targetOrder === '从下往上') {
-      return alive[alive.length - 1];
-    }
-    return alive[0];
-  }
-
-  /** 检查候选单位是否满足过滤条件（v6 新增） */
-  private _matchesFilter(unit: CombatUnitRuntime, filter: string): boolean {
-    switch (filter) {
-      case 'hp_below_50pct':
-        return unit.currentHp < unit.totalHp * 0.5;
-      case 'has_debuff':
-        // 预留：检测单位是否有负面状态
-        return (unit as any)._activeDebuffs?.length > 0;
-      case 'most_buffs':
-        // 预留：检测单位是否有正面 buff
-        return (unit as any)._activeBuffs?.length > 0;
-      default:
-        return true;
-    }
-  }
-
-  /** 按指定方式排序候选池（v6 新增）— 不改变原数组 */
-  private _sortCandidates(alive: CombatUnitRuntime[], sortBy: string): CombatUnitRuntime[] {
-    const sorted = [...alive];
-    switch (sortBy) {
-      case 'hp_asc':
-        sorted.sort((a, b) => a.currentHp - b.currentHp);
-        break;
-      case 'hp_desc':
-        sorted.sort((a, b) => b.currentHp - a.currentHp);
-        break;
-      case 'stamina_asc':
-        sorted.sort((a, b) => a.currentStamina - b.currentStamina);
-        break;
-      case 'random':
-        // Fisher-Yates shuffle
-        for (let i = sorted.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [sorted[i], sorted[j]] = [sorted[j], sorted[i]];
-        }
-        break;
-    }
-    return sorted;
-  }
-
   /** 递归检查实体树中是否有 growth 词条 */
   private hasGrowthAffix(children: ItemInstance[]): boolean {
     for (const c of children) {
@@ -1039,74 +832,8 @@ export class GameEngine {
     return false;
   }
 
-  /** 处理武器命中后的触发效果。
-   *  组装 OnHitContext，通过 entityOnHitEffects Map 查表获取效果列表。 */
-  private resolveOnHitEffects(
-    weapon: CombatWeaponRuntime,
-    starter: CombatUnitRuntime,
-    target: CombatUnitRuntime,
-    damage: number,
-    onHitEffects: Map<string, OnHitEffect[]>,
-  ): string[] {
-    const labels: string[] = [];
-    if (damage <= 0) return labels; // 仅正伤害触发
-
-    const effects = onHitEffects.get(weapon.ownerInstanceId);
-    if (!effects || effects.length === 0) return labels;
-
-    const ctx: OnHitContext = {
-      starter,
-      actionOwnerId: weapon.ownerInstanceId,
-      target,
-      damage,
-    };
-
-    for (const effect of effects) {
-      const label = this.executeOnHitEffect(effect, ctx);
-      if (label) labels.push(label);
-    }
-
-    return labels;
-  }
-
-  /** 执行单个命中效果。返回战斗日志标签或 null。
-   *  扩展点：新增效果类型在此方法内加 case 分支。 */
-  private executeOnHitEffect(
-    effect: OnHitEffect,
-    ctx: OnHitContext,
-  ): string | null {
-    switch (effect.type) {
-
-      // ──── 吸血：回复启动端HP ────
-      case 'life_steal': {
-        const pct = effect.params.percent ?? 0;
-        const amt = effect.params.amount ?? 0;
-        const heal = Math.round(ctx.damage * pct / 100) + amt;
-        if (heal <= 0) return null;
-        ctx.starter.currentHp = round6(Math.min(ctx.starter.currentHp + heal, ctx.starter.totalHp));
-        return `吸血+${heal}`;
-      }
-
-      // ──── 削耐：削减被影响实体的耐力 ────
-      case 'stamina_drain': {
-        const pct = effect.params.percent ?? 0;
-        const amt = effect.params.amount ?? 0;
-        const drain = Math.round(ctx.damage * pct / 100) + amt;
-        if (drain <= 0) return null;
-        ctx.target.currentStamina = round6(Math.max(ctx.target.currentStamina - drain, 0));
-        return `削耐-${drain}`;
-      }
-
-      default:
-        return null;
-    }
-  }
-
-  /** 固定时间步长战斗引擎（内部核心，不含状态管理）。
-   *  每 100ms 推进一次，恢复和武器冷却均匀递减。
-   *  runCombat 和 runSimCombat 共用此引擎，区别仅在于 BD 来源和战后处理。
-   *  isCancelled 回调用于战斗中途退出时立即中断引擎。 */
-  private async _runBattleCore(
+  /** 通过 BattleSimulator + Playback（max 时可选 Worker）驱动战斗 */
+  private async _playWithSimulator(
     playerUnits: CombatUnitRuntime[],
     enemyUnits: CombatUnitRuntime[],
     playerOnHitEffects: Map<string, OnHitEffect[]>,
@@ -1114,270 +841,160 @@ export class GameEngine {
     onEvent: (evt: CombatEvent) => void,
     isPaused?: () => boolean,
     isCancelled?: () => boolean,
+    speed?: PlaybackSpeed | (() => PlaybackSpeed),
   ): Promise<{ win: boolean }> {
-    const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
-    const TICK_MS = 100; // 固定时间步长
-
     this.combatTime = 0;
-    const MAX_COMBAT_TIME = 120000; // 2 分钟战斗时间上限
-    const PENALTY_START_MS = 60000; // 60秒后开始软狂暴
-    let lastPenaltySecond = 0;
+    this.combatPlayerUnits = playerUnits;
+    this.combatEnemyUnits = enemyUnits;
 
-    while (
-      playerUnits.some(u => u.currentHp > 0) &&
-      enemyUnits.some(e => e.currentHp > 0) &&
-      this.combatTime < MAX_COMBAT_TIME
-    ) {
-      // 取消检查
-      if (isCancelled?.()) break;
-
-      // 暂停检查
-      while (isPaused?.()) {
-        await delay(50);
-      }
-
-      await delay(TICK_MS);
-
-      this.combatTime += TICK_MS;
-
-      // 构建存活单位的武器列表
-      const allWeapons: { unit: CombatUnitRuntime; weapon: CombatWeaponRuntime; isPlayer: boolean }[] = [];
-      for (const u of playerUnits) {
-        if (u.currentHp <= 0) continue;
-        for (const w of u.weapons) {
-          allWeapons.push({ unit: u, weapon: w, isPlayer: true });
-        }
-      }
-      for (const e of enemyUnits) {
-        if (e.currentHp <= 0) continue;
-        for (const w of e.weapons) {
-          allWeapons.push({ unit: e, weapon: w, isPlayer: false });
-        }
-      }
-
-      // 推进时间 + 耐力恢复 + 生命恢复
-      for (const u of playerUnits) {
-        if (u.currentHp <= 0) continue;
-        u.currentStamina = round6(Math.min(u.currentStamina + u.staminaRegen * TICK_MS / 1000, u.maxStamina));
-        u.currentHp = round6(Math.min(u.currentHp + u.hpRegeneration * TICK_MS / 1000, u.totalHp));
-        for (const w of u.weapons) w.remainingTime -= TICK_MS;
-      }
-      for (const e of enemyUnits) {
-        if (e.currentHp <= 0) continue;
-        e.currentStamina = round6(Math.min(e.currentStamina + e.staminaRegen * TICK_MS / 1000, e.maxStamina));
-        e.currentHp = round6(Math.min(e.currentHp + e.hpRegeneration * TICK_MS / 1000, e.totalHp));
-        for (const w of e.weapons) w.remainingTime -= TICK_MS;
-      }
-
-      // 触发 remainingTime <= 0 的武器
-      for (const { unit, weapon, isPlayer } of allWeapons) {
-        if (unit.currentHp <= 0) continue;
-        if (weapon.remainingTime > 0) continue;
-
-        const overloadPenalty = unit.isOverloaded ? 1.5 : 1.0;
-        const effectiveCost = weapon.staminaCost * overloadPenalty;
-        const damage = weapon.damage; // 可为负值=恢复HP，无最小值限制
-
-        if (unit.currentStamina < effectiveCost) {
-          // 耐力不足，下个 tick 再试
-          weapon.remainingTime = 0;
-          continue;
-        }
-
-        // 消耗耐力
-        unit.currentStamina = round6(unit.currentStamina - effectiveCost);
-
-        // 选择目标（根据 targetFaction 决定从哪方选）
-        const target = this.selectTarget(weapon, playerUnits, enemyUnits, isPlayer);
-        if (!target) continue;
-
-        // 计算伤害（dmg 可为负值=恢复HP）
-        const dmg = damage;
-        target.currentHp = round6(Math.min(target.currentHp - dmg, target.totalHp));
-
-        // ★ 命中效果结算（根据阵营选择正确的 Map）
-        const hitMap = isPlayer ? playerOnHitEffects : enemyOnHitEffects;
-        const onHitLabels = this.resolveOnHitEffects(weapon, unit, target, dmg, hitMap);
-
-        // 重置倒计时
-        weapon.remainingTime = weapon.actionTime;
-
-        // 生成 targeting 标签（方案4）
-        const tc = weapon.targetCondition;
-        let targetingLabel = '';
-        if (tc?.sortBy === 'hp_asc') targetingLabel = 'HP最低优先';
-        else if (tc?.sortBy === 'hp_desc') targetingLabel = 'HP最高优先';
-        else if (tc?.sortBy === 'stamina_asc') targetingLabel = '耐力最低优先';
-        else if (tc?.sortBy === 'random') targetingLabel = '随机';
-        else if (weapon.priorityTarget !== null) targetingLabel = `前排优先${weapon.priorityTarget}`;
-        else if (weapon.targetOrder === '从下往上') targetingLabel = '从后往前';
-        else targetingLabel = '从上往下';
-
-        // v7: 非默认阵营时追加标注
-        if (weapon.targetFaction === '友方') targetingLabel += ' → 友方';
-        else if (weapon.targetFaction === '所有') targetingLabel += ' → 所有';
-
-        // 发射事件（仅附带命中效果等真实标签；不做「重击/大回复」装饰判定）
-        const effects: string[] = [];
-        if (onHitLabels.length > 0) effects.push(...onHitLabels);
-
-        onEvent({
-          time: Math.round(this.combatTime),
-          actorName: unit.entityName,
-          weaponName: weapon.name,
-          targetName: target.entityName,
-          damage: dmg,
-          targetHpAfter: Math.min(Math.max(target.currentHp, 0), target.totalHp),
-          targetMaxHp: target.totalHp,
-          effects,
-          targetingLabel,
-        });
-
-        // 击杀事件
-        if (target.currentHp <= 0) {
-          onEvent({
-            time: Math.round(this.combatTime),
-            actorName: '',
-            weaponName: '',
-            targetName: target.entityName,
-            damage: 0,
-            targetHpAfter: 0,
-            targetMaxHp: target.totalHp,
-            effects: ['击杀'],
-          });
-        }
-      }
-
-      // ── 60秒超时惩罚（软狂暴）──
-      if (this.combatTime > PENALTY_START_MS) {
-        const overtimeSeconds = Math.floor((this.combatTime - PENALTY_START_MS) / 1000);
-        if (overtimeSeconds > lastPenaltySecond) {
-          lastPenaltySecond = overtimeSeconds;
-          const penaltyDamage = overtimeSeconds * 10;
-
-          const applyPenalty = (units: CombatUnitRuntime[]) => {
-            for (const u of units) {
-              if (u.currentHp <= 0) continue;
-              u.currentHp = round6(Math.max(u.currentHp - penaltyDamage, 0));
-              if (u.currentHp <= 0) {
-                onEvent({
-                  time: Math.round(this.combatTime), actorName: '', weaponName: '',
-                  targetName: u.entityName, damage: penaltyDamage,
-                  targetHpAfter: 0, targetMaxHp: u.totalHp, effects: ['击杀'],
-                });
-              }
-            }
-          };
-          applyPenalty(playerUnits);
-          applyPenalty(enemyUnits);
-
-          onEvent({
-            time: Math.round(this.combatTime), actorName: '', weaponName: '',
-            targetName: '超时惩罚', damage: penaltyDamage,
-            targetHpAfter: 0, targetMaxHp: 0,
-            effects: [`${overtimeSeconds}秒`],
-          });
-        }
-      }
-
-      // 更新战斗状态供 UI 轮询
-      this.combatPlayerUnits = playerUnits;
-      this.combatEnemyUnits = enemyUnits;
-    }
-
-    // 胜负判定：双方同灭/120秒上限/敌方全灭 → 玩家胜
-    const playerAlive = playerUnits.some(u => u.currentHp > 0);
-    const enemyAlive = enemyUnits.some(e => e.currentHp > 0);
-    const win = this.combatTime >= MAX_COMBAT_TIME || playerAlive || !enemyAlive;
-    return { win };
+    return runBattleWithOptionalWorker({
+      playerUnits,
+      enemyUnits,
+      playerOnHitEffects,
+      enemyOnHitEffects,
+      onEvent,
+      speed: speed ?? (() => this.combatSpeed),
+      onTick: (combatTime, player, enemy) => {
+        this.combatTime = combatTime;
+        this.combatPlayerUnits = player;
+        this.combatEnemyUnits = enemy;
+      },
+      isPaused,
+      isCancelled,
+    });
   }
 
-  /** 正式战斗：上传 BD → 抽取对手 → 运行引擎 → 结算奖励。
-   *  BD 来源：engine.state.deploySlots。对手来源：在线对战池。 */
-  async runCombat(
-    onEvent: (evt: CombatEvent) => void,
-    onEnd: (win: boolean, gold: number) => void,
-  ) {
-    const { snapshots, onHitEffects: playerOnHitEffects } = this.calculateCombatSnapshots();
-
-    // 1. 上传 BD 到对战池（静默，失败不影响战斗）
-    try {
-      const r = await dataApi.uploadBD(this.state.round, this.state.deploySlots);
-      console.log('[runCombat] 上传 BD 成功', { round: this.state.round, id: r.id, slots: this.state.deploySlots.length });
-    } catch (e) { console.error('[runCombat] 上传 BD 失败', e); }
-
-    // 2. 从对战池抽取对手
-    let enemySnaps: CombatUnitSnapshot[] | null = null;
-    let enemyOnHitEffects: Map<string, OnHitEffect[]> = new Map();
-    try {
-      const { opponent } = await dataApi.getBattlePool(this.state.round);
-      if (opponent && opponent.bd_json && Array.isArray(opponent.bd_json)) {
-        console.log('[runCombat] 抽取对手成功', { round: this.state.round, slots: opponent.bd_json.length, opponent: opponent.username });
-        const enemyResult = this.calculateCombatSnapshots(opponent.bd_json as DeploySlot[]);
-        enemySnaps = enemyResult.snapshots;
-        enemyOnHitEffects = enemyResult.onHitEffects;
-      } else {
-        console.log('[runCombat] 池空，自动获胜', { round: this.state.round });
+  /** 应用胜利结算：金币 + growth 叠层 */
+  private applyCombatVictoryRewards(): number {
+    const goldReward = 10 + this.state.round * 5 + this.state.deploySlots.length * 2;
+    for (const slot of this.state.deploySlots) {
+      const hasGrowth = this.hasGrowthAffix(slot.children) ||
+        (slot.entity.children && this.hasGrowthAffix(slot.entity.children));
+      if (hasGrowth) {
+        const cur = this.state.growthStacks[slot.entity.instanceId] || 0;
+        if (cur < 10) this.state.growthStacks[slot.entity.instanceId] = cur + 1;
       }
-    } catch (e) { console.error('[runCombat] 抽取对手失败', e); }
+    }
+    this.state.gold += goldReward;
+    this.notify();
+    return goldReward;
+  }
 
-    // 3. 无对手 → 自动获胜
-    if (!enemySnaps || enemySnaps.length === 0) {
-      const goldReward = 10 + this.state.round * 5 + this.state.deploySlots.length * 2;
-      for (const slot of this.state.deploySlots) {
-        const hasGrowth = this.hasGrowthAffix(slot.children) ||
-          (slot.entity.children && this.hasGrowthAffix(slot.entity.children));
-        if (hasGrowth) {
-          const cur = this.state.growthStacks[slot.entity.instanceId] || 0;
-          if (cur < 10) this.state.growthStacks[slot.entity.instanceId] = cur + 1;
-        }
-      }
-      this.state.gold += goldReward;
-      this.notify();
-      onEnd(true, goldReward);
-      return { win: true, enemies: [], goldReward };
+  /**
+   * 正式战准备：上传己方 BD + 从对战池抽取敌方。
+   * 不改变 phase/金币；供预览后再开战。
+   */
+  async prepareOfficialBattle(): Promise<{
+    playerSlots: DeploySlot[];
+    enemySlots: DeploySlot[] | null;
+    autoWin: boolean;
+    opponentName?: string;
+  }> {
+    const playerSlots = this.state.deploySlots;
+
+    try {
+      const r = await dataApi.uploadBD(this.state.round, playerSlots);
+      console.log('[prepareOfficialBattle] 上传 BD 成功', { round: this.state.round, id: r.id, slots: playerSlots.length });
+    } catch (e) {
+      console.error('[prepareOfficialBattle] 上传 BD 失败', e);
     }
 
-    // 4. 正常战斗
+    try {
+      const { opponent } = await dataApi.getBattlePool(this.state.round);
+      if (opponent && opponent.bd_json && Array.isArray(opponent.bd_json) && opponent.bd_json.length > 0) {
+        console.log('[prepareOfficialBattle] 抽取对手成功', {
+          round: this.state.round,
+          slots: opponent.bd_json.length,
+          opponent: opponent.username,
+        });
+        return {
+          playerSlots,
+          enemySlots: opponent.bd_json as DeploySlot[],
+          autoWin: false,
+          opponentName: opponent.username,
+        };
+      }
+      console.log('[prepareOfficialBattle] 池空', { round: this.state.round });
+    } catch (e) {
+      console.error('[prepareOfficialBattle] 抽取对手失败', e);
+    }
+
+    return { playerSlots, enemySlots: null, autoWin: true };
+  }
+
+  /** 空池自动获胜结算（预览确认后调用） */
+  settleOfficialAutoWin(onEnd: (win: boolean, gold: number) => void): { win: true; goldReward: number } {
+    const goldReward = this.applyCombatVictoryRewards();
+    onEnd(true, goldReward);
+    return { win: true, goldReward };
+  }
+
+  /**
+   * 用已解析的双方 BD 开战（不再抽池）。
+   * 正式战预览确认后、或兼容 runCombat 内部使用。
+   */
+  async runCombatWithSides(
+    playerSlots: DeploySlot[],
+    enemySlots: DeploySlot[],
+    onEvent: (evt: CombatEvent) => void,
+    onEnd: (win: boolean, gold: number) => void,
+    isPaused?: () => boolean,
+    isCancelled?: () => boolean,
+    speed?: PlaybackSpeed | (() => PlaybackSpeed),
+  ) {
+    const { snapshots, onHitEffects: playerOnHitEffects } = this.calculateCombatSnapshots(playerSlots);
+    const { snapshots: enemySnaps, onHitEffects: enemyOnHitEffects } = this.calculateCombatSnapshots(enemySlots);
+
     const playerUnits = this.buildCombatRuntime(snapshots);
     const enemyUnits = this.buildCombatRuntime(enemySnaps);
 
     this.combatPlayerUnits = playerUnits;
     this.combatEnemyUnits = enemyUnits;
 
-    // 初始回调
     onEvent({
       time: 0, actorName: '', weaponName: '',
       targetName: '战斗开始', damage: 0,
       targetHpAfter: 0, targetMaxHp: 0, effects: [],
     });
 
-    await new Promise(r => setTimeout(r, 300)); // 让 UI 先渲染
+    await new Promise(r => setTimeout(r, 300));
 
     try {
-      const result = await this._runBattleCore(playerUnits, enemyUnits, playerOnHitEffects, enemyOnHitEffects, onEvent);
+      const result = await this._playWithSimulator(
+        playerUnits, enemyUnits, playerOnHitEffects, enemyOnHitEffects, onEvent,
+        isPaused, isCancelled, speed ?? (() => this.combatSpeed),
+      );
 
-      const goldReward = result.win ? (10 + this.state.round * 5 + this.state.deploySlots.length * 2) : 0;
-
+      let goldReward = 0;
       if (result.win) {
-        for (const slot of this.state.deploySlots) {
-          const hasGrowth = this.hasGrowthAffix(slot.children) ||
-            (slot.entity.children && this.hasGrowthAffix(slot.entity.children));
-          if (hasGrowth) {
-            const cur = this.state.growthStacks[slot.entity.instanceId] || 0;
-            if (cur < 10) this.state.growthStacks[slot.entity.instanceId] = cur + 1;
-          }
-        }
-        this.state.gold += goldReward;
+        goldReward = this.applyCombatVictoryRewards();
+      } else {
+        this.notify();
       }
 
-      this.notify();
       onEnd(result.win, goldReward);
       return { win: result.win, enemies: enemyUnits, goldReward };
     } finally {
       this.combatPlayerUnits = null;
       this.combatEnemyUnits = null;
     }
+  }
+
+  /** 正式战斗兼容入口：prepare + 自动胜或 runCombatWithSides（无预览时使用） */
+  async runCombat(
+    onEvent: (evt: CombatEvent) => void,
+    onEnd: (win: boolean, gold: number) => void,
+    isPaused?: () => boolean,
+    isCancelled?: () => boolean,
+    speed?: PlaybackSpeed | (() => PlaybackSpeed),
+  ) {
+    const prep = await this.prepareOfficialBattle();
+    if (prep.autoWin || !prep.enemySlots) {
+      return this.settleOfficialAutoWin(onEnd);
+    }
+    return this.runCombatWithSides(
+      prep.playerSlots, prep.enemySlots, onEvent, onEnd, isPaused, isCancelled, speed,
+    );
   }
 
   /** 模拟对战：接收外部双方 BD → 运行引擎 → 通知结果。
@@ -1389,6 +1006,7 @@ export class GameEngine {
     onEnd: (win: boolean) => void,
     isPaused?: () => boolean,
     isCancelled?: () => boolean,
+    speed?: PlaybackSpeed | (() => PlaybackSpeed),
   ) {
     const { snapshots: playerSnaps, onHitEffects: playerOnHit } = this.calculateCombatSnapshots(playerSlots);
     const { snapshots: enemySnaps, onHitEffects: enemyOnHit } = this.calculateCombatSnapshots(enemySlots);
@@ -1399,7 +1017,6 @@ export class GameEngine {
     this.combatPlayerUnits = playerUnits;
     this.combatEnemyUnits = enemyUnits;
 
-    // 初始回调
     onEvent({
       time: 0, actorName: '', weaponName: '',
       targetName: '战斗开始', damage: 0,
@@ -1409,7 +1026,10 @@ export class GameEngine {
     await new Promise(r => setTimeout(r, 300));
 
     try {
-      const result = await this._runBattleCore(playerUnits, enemyUnits, playerOnHit, enemyOnHit, onEvent, isPaused, isCancelled);
+      const result = await this._playWithSimulator(
+        playerUnits, enemyUnits, playerOnHit, enemyOnHit, onEvent,
+        isPaused, isCancelled, speed ?? (() => this.combatSpeed),
+      );
       onEnd(result.win);
     } finally {
       this.combatPlayerUnits = null;

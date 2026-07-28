@@ -4,6 +4,8 @@
 
 import { admin } from '../api/client';
 import { reloadData, getEntityCategory, getEntityCategoryFilters, getCategoryName, getAffixFilterCategories, CATEGORIES, CategoryDef, DefaultChildSpec } from '../game/data';
+import { mountAdminList, type AdminListBridge } from './admin/mountAdminList';
+import type { AdminListItem } from './admin/AdminListPanel';
 
 type TabType = 'entities' | 'affixes';
 
@@ -45,6 +47,37 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     entities: { searchQuery: '', selectedId: null, selectedIds: new Set(), isCreating: false },
     affixes: { searchQuery: '', selectedId: null, selectedIds: new Set(), isCreating: false },
   };
+
+  let listBridge: AdminListBridge | null = null;
+
+  function ensureListBridge() {
+    const listEl = document.getElementById('adm-list');
+    if (!listEl || listBridge) return;
+    listBridge = mountAdminList(listEl, {
+      onSelect: (id) => {
+        state.selectedId = id;
+        state.isCreating = false;
+        resetChildState();
+        // 列表选中用 signal 更新，表单仍走 renderForm
+        listBridge?.setSelectedId(id);
+        renderForm();
+        updateSelectAllState();
+      },
+      onToggleCheck: (id, checked) => {
+        if (checked) state.selectedIds.add(id);
+        else state.selectedIds.delete(id);
+        listBridge?.setSelectedIds(state.selectedIds);
+        updateSelectAllState();
+        const items = getFilteredItems();
+        const exportSelBtn = document.getElementById('adm-btn-export-sel') as HTMLButtonElement;
+        if (exportSelBtn) {
+          const selCount = items.filter(i => state.selectedIds.has(i.id)).length;
+          exportSelBtn.disabled = selCount === 0;
+          exportSelBtn.textContent = selCount > 0 ? `导出选中 (${selCount})` : '导出选中';
+        }
+      },
+    });
+  }
 
   /** 切换 Tab：保存当前状态 → 切换 → 恢复目标 Tab 状态 + 120ms 内容过渡 */
   function switchTab(newTab: TabType) {
@@ -295,7 +328,13 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
   }
 
   // ---- top-level events ----
-  document.getElementById('adm-btn-back')!.addEventListener('click', onBack);
+  document.getElementById('adm-btn-back')!.addEventListener('click', () => {
+    listBridge?.dispose();
+    listBridge = null;
+    document.removeEventListener('keydown', onAdminKeydown);
+    document.removeEventListener('click', onAdminDocClick);
+    onBack();
+  });
   document.getElementById('adm-btn-clear-all')!.addEventListener('click', async () => {
     const label = state.tab === 'entities' ? '实体' : '词条';
     if (!confirm(`确定要删除全部${label}吗？此操作不可撤销！`)) return;
@@ -458,12 +497,20 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
 
   document.getElementById('adm-tab-entities')!.addEventListener('click', () => switchTab('entities'));
   document.getElementById('adm-tab-affixes')!.addEventListener('click', () => switchTab('affixes'));
+  let searchTimer: ReturnType<typeof setTimeout> | null = null;
   document.getElementById('adm-search')!.addEventListener('input', (e) => {
-    state.searchQuery = (e.target as HTMLInputElement).value.toLowerCase();
-    state.selectedId = null; state.selectedIds = new Set(); state.isCreating = false; resetChildState(); render();
+    const val = (e.target as HTMLInputElement).value.toLowerCase();
+    if (searchTimer) clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      state.searchQuery = val;
+      state.selectedId = null; state.selectedIds = new Set(); state.isCreating = false; resetChildState();
+      renderCatFilter();
+      renderList();
+      renderForm();
+    }, 150);
   });
   // Ctrl+K 聚焦搜索框
-  document.addEventListener('keydown', (e) => {
+  const onAdminKeydown = (e: KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
       e.preventDefault();
       document.getElementById('adm-search')?.focus();
@@ -474,7 +521,8 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         catMgr.classList.remove('open');
       }
     }
-  });
+  };
+  document.addEventListener('keydown', onAdminKeydown);
   document.getElementById('adm-btn-add')!.addEventListener('click', () => {
     state.isCreating = true; state.selectedId = null; state.selectedIds = new Set(); resetChildState(); render();
   });
@@ -548,43 +596,27 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
   }
 
   function renderList() {
-    const listEl = document.getElementById('adm-list')!;
+    ensureListBridge();
     const items = getFilteredItems();
-    let html = '';
-    for (const item of items) {
-      const selClass = state.selectedId === item.id ? ' selected' : '';
-      const checked = state.selectedIds.has(item.id) ? ' checked' : '';
+    const listItems: AdminListItem[] = items.map((item: any) => {
       if (state.tab === 'entities') {
-        const cat = getEntityCategory(item).join(' / ');
-        html += `<div class="adm-list-item${selClass}" data-id="${item.id}"><input type="checkbox" class="adm-list-check" data-id="${item.id}"${checked}><span class="adm-list-name">${item.name}</span><span class="adm-list-cat">${cat}</span><span class="adm-list-price">价${item.value}</span></div>`;
-      } else {
-        html += `<div class="adm-list-item${selClass}" data-id="${item.id}"><input type="checkbox" class="adm-list-check" data-id="${item.id}"${checked}><span class="adm-list-name">${item.name}</span><span class="adm-list-cat">${getCategoryName(item.category)}</span><span class="adm-list-price">${item.costValue >= 0 ? '价' + item.costValue : '-' + Math.abs(item.costValue)}</span></div>`;
+        return {
+          id: item.id,
+          name: item.name,
+          catLabel: getEntityCategory(item).join(' / '),
+          priceLabel: `价${item.value}`,
+        };
       }
-    }
-    listEl.innerHTML = html;
-    // 复选框事件（阻止冒泡，不触发选中编辑）
-    listEl.querySelectorAll('.adm-list-check').forEach(cb => {
-      cb.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const id = (e.target as HTMLElement).dataset.id!;
-        if ((e.target as HTMLInputElement).checked) {
-          state.selectedIds.add(id);
-        } else {
-          state.selectedIds.delete(id);
-        }
-        updateSelectAllState();
-        // 更新导出按钮
-        const exportSelBtn = document.getElementById('adm-btn-export-sel') as HTMLButtonElement;
-        if (exportSelBtn) {
-          const selCount = items.filter(i => state.selectedIds.has(i.id)).length;
-          exportSelBtn.disabled = selCount === 0;
-          exportSelBtn.textContent = selCount > 0 ? `导出选中 (${selCount})` : '导出选中';
-        }
-      });
+      return {
+        id: item.id,
+        name: item.name,
+        catLabel: getCategoryName(item.category),
+        priceLabel: item.costValue >= 0 ? `价${item.costValue}` : `-${Math.abs(item.costValue)}`,
+      };
     });
-    listEl.querySelectorAll('.adm-list-item').forEach(el => {
-      el.addEventListener('click', () => { state.selectedId = (el as HTMLElement).dataset.id!; state.isCreating = false; resetChildState(); render(); });
-    });
+    listBridge?.setItems(listItems);
+    listBridge?.setSelectedId(state.selectedId);
+    listBridge?.setSelectedIds(state.selectedIds);
     updateSelectAllState();
   }
 
@@ -624,7 +656,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
   }
 
   // 全局点击关闭 popover
-  document.addEventListener('click', (e) => {
+  const onAdminDocClick = (e: MouseEvent) => {
     if (_openPopoverId) {
       const target = e.target as HTMLElement;
       const panel = document.getElementById(_openPopoverId + '-panel');
@@ -633,7 +665,8 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         closePopover(_openPopoverId);
       }
     }
-  });
+  };
+  document.addEventListener('click', onAdminDocClick);
 
   function renderPopoverSelector(fieldId: string, label: string, selected: string[], options: { id: string; name: string; cat?: string; }[], slotText?: string, popoverOpts?: { allowDuplicates?: boolean }): string {
     const selJson = JSON.stringify(selected).replace(/"/g, '&quot;');

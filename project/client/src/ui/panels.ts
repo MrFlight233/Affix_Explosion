@@ -2,13 +2,15 @@
 // 界面渲染 — 含完整战斗阶段界面
 // ============================================================
 
-import { GameEngine, CombatEvent, CombatUnitSnapshot, CombatUnitRuntime } from '../game/engine';
+import { GameEngine, CombatEvent, CombatUnitSnapshot, CombatUnitRuntime, PlaybackSpeed } from '../game/engine';
 import {
-  EntityDef, ItemInstance,
+  EntityDef, ItemInstance, DeploySlot,
   getEntityDef, getAffixDef, isStarter, hasEntitySlots, getEffectiveEntitySlots, getEntityCategory,
 } from '../game/data';
 import { makeDraggable, makeDropZone, DragPayload } from './dragDrop';
 import { showTooltip, hideTooltip } from './tooltip';
+import { showCombatPreview } from './combatPreview';
+import { renderPlaybackControlsHtml } from './playbackControls';
 
 export class UIManager {
   engine: GameEngine;
@@ -27,6 +29,10 @@ export class UIManager {
   combatUpdateTimer: any = null;
   lastTickWallTime: number = 0;
   weaponPrevRemaining: Map<string, number> = new Map();
+  /** 预览确认后缓存的敌方 BD（避免二次抽池） */
+  pendingEnemySlots: DeploySlot[] | null = null;
+  pendingAutoWin = false;
+  combatPaused = false;
 
   constructor(engine: GameEngine) {
     this.engine = engine;
@@ -91,7 +97,12 @@ export class UIManager {
     let rightHtml = '';
     if (this.combatFinished) {
       rightHtml = '<button id="btn-continue-combat">继续</button>';
-    } else if (g.phase !== 2) {
+    } else if (g.phase === 2) {
+      rightHtml = `<span id="hud-playback">${renderPlaybackControlsHtml({
+        speed: this.engine.combatSpeed,
+        paused: this.combatPaused,
+      }, 'hud-btn-pause')}</span>`;
+    } else {
       rightHtml = [
         canSave ? '<button id="btn-save">存档</button>' : '',
         `<button id="btn-next">${g.phase === 1 && g.deploySlots.length > 0 ? '开始战斗' : '下一阶段'}</button>`,
@@ -126,6 +137,26 @@ export class UIManager {
     if (canSave) {
       const btnSave = document.getElementById('btn-save');
       if (btnSave) btnSave.onclick = () => this.showSavePanel();
+    }
+
+    // 战斗中：倍速 / 暂停
+    if (g.phase === 2 && !this.combatFinished) {
+      document.querySelectorAll('#hud-playback [data-speed]').forEach(el => {
+        (el as HTMLElement).onclick = () => {
+          const raw = (el as HTMLElement).dataset.speed!;
+          const spd: PlaybackSpeed = raw === 'max' ? 'max' : (Number(raw) as 1 | 2 | 4);
+          this.engine.combatSpeed = spd;
+          this.renderHUD();
+        };
+      });
+      const pauseBtn = document.getElementById('hud-btn-pause');
+      if (pauseBtn) {
+        pauseBtn.onclick = () => {
+          this.combatPaused = !this.combatPaused;
+          if (!this.combatPaused) this.lastTickWallTime = Date.now();
+          this.renderHUD();
+        };
+      }
     }
     const btnContinue = document.getElementById('btn-continue-combat');
     if (btnContinue) {
@@ -751,7 +782,8 @@ export class UIManager {
           this.weaponPrevRemaining.set(key, w.remainingTime);
           // wall-clock 插值：从上个引擎 tick 起，经过的真实时间
           const wallElapsed = Date.now() - this.lastTickWallTime;
-          const displayMs = Math.max(w.remainingTime - wallElapsed, 0);
+          const spd = this.engine.combatSpeed === 'max' ? 50 : this.engine.combatSpeed;
+          const displayMs = Math.max(w.remainingTime - wallElapsed * spd, 0);
           cdEl.textContent = `倒计时:${(displayMs / 1000).toFixed(1)}s`;
         }
       }
@@ -869,130 +901,76 @@ export class UIManager {
     }
   }
 
-  // ======================== 战斗预览（方案4：v6 新增） ========================
+  // ======================== 战斗预览与开战 ========================
 
-  /** 生成一条 targeting 描述文本 */
-  private _describeTargeting(w: { targetFaction: string; targetCondition?: import('../game/data').TargetCondition; priorityTarget: number | null; targetOrder: string }): string {
-    const tc = w.targetCondition;
-    let rule = '';
-    if (tc?.sortBy === 'hp_asc') rule = 'HP最低优先';
-    else if (tc?.sortBy === 'hp_desc') rule = 'HP最高优先';
-    else if (tc?.sortBy === 'stamina_asc') rule = '耐力最低优先';
-    else if (tc?.sortBy === 'random') rule = '随机';
-    else if (w.priorityTarget !== null) rule = `前排优先${w.priorityTarget}`;
-    else if (w.targetOrder === '从下往上') rule = '从后往前';
-    else rule = '从上往下';
+  /** 正式战：先抽池，再共用预览，确认后开打（不再二次抽池） */
+  async startCombat() {
+    this.showToast('正在匹配对手…');
+    try {
+      const prep = await this.engine.prepareOfficialBattle();
+      this.pendingAutoWin = prep.autoWin;
+      this.pendingEnemySlots = prep.enemySlots;
 
-    if (tc?.filterBy) {
-      const fbMap: Record<string, string> = { has_debuff: '有debuff', most_buffs: 'Buff最多', hp_below_50pct: 'HP<50%' };
-      rule += ` + ${fbMap[tc.filterBy] || tc.filterBy}`;
+      const playerSnaps = this.engine.calculateCombatSnapshots(prep.playerSlots).snapshots;
+      const enemySnaps = prep.enemySlots
+        ? this.engine.calculateCombatSnapshots(prep.enemySlots).snapshots
+        : [];
+
+      showCombatPreview({
+        title: '⚔ 战斗预览',
+        subtitle: prep.autoWin
+          ? '对战池暂无对手，确认后直接获胜'
+          : (prep.opponentName ? `对手：${prep.opponentName}` : '确认双方对阵信息后开始战斗'),
+        confirmLabel: prep.autoWin ? '确认获胜' : '开始战斗',
+        playerSnaps,
+        enemySnaps,
+        emptyEnemyHint: prep.autoWin ? '对战池暂无对手，确认后直接获胜' : '暂无上场单位',
+        onConfirm: () => { void this._doStartCombat(); },
+        onCancel: () => {
+          this.pendingEnemySlots = null;
+          this.pendingAutoWin = false;
+        },
+      });
+    } catch (e: any) {
+      this.showToast('匹配失败：' + (e?.message || e));
+      this.pendingEnemySlots = null;
+      this.pendingAutoWin = false;
     }
-    return `${rule} → ${w.targetFaction}`;
   }
 
-  /** 渲染战斗预览面板 — 全屏对阵视图 */
-  renderCombatPreview() {
-    // 计算玩家快照
-    const { snapshots: playerSnaps } = this.engine.calculateCombatSnapshots();
-
-    // 尝试生成敌方快照（pool 为空时的 deterministic 后备）
-    let enemySnaps: CombatUnitSnapshot[] = [];
-    try { enemySnaps = this.engine.generateEnemyBD(); } catch (_) { /* 忽略 */ }
-
-    const buildUnitCard = (u: CombatUnitSnapshot, side: 'player' | 'enemy'): string => {
-      const cls = side === 'player' ? 'cp-player' : 'cp-enemy';
-      let h = `<div class="cp-unit ${cls}">`;
-      h += `<div class="cp-unit-name">${u.entityName}</div>`;
-      h += `<div class="cp-unit-meta">HP:${u.currentHp}/${u.totalHp} 耐力:${u.currentStamina}/${u.maxStamina}</div>`;
-      if (u.activeWeapons.length === 0) {
-        h += `<div class="cp-weapon empty">（无可触发动作）</div>`;
-      } else {
-        for (const w of u.activeWeapons) {
-          const desc = this._describeTargeting(w);
-          h += `<div class="cp-weapon">→ ${w.name} <span class="cp-targeting">${desc}</span></div>`;
-        }
-      }
-      h += `</div>`;
-      return h;
-    };
-
-    let html = '<div id="combat-preview-overlay">';
-    html += '<div id="combat-preview">';
-
-    // 头部
-    html += '<div id="cp-header">';
-    html += '<div class="cp-title">⚔ 战斗预览</div>';
-    html += '<div class="cp-subtitle">确认双方对阵信息后开始战斗</div>';
-    html += '</div>';
-
-    // 对阵主体
-    html += '<div id="cp-body">';
-    html += '<div id="cp-player-col">';
-    html += '<div class="cp-col-title">【己方】</div>';
-    if (playerSnaps.length === 0) {
-      html += '<div class="cp-empty">暂无上场单位</div>';
-    } else {
-      for (const u of playerSnaps) {
-        html += buildUnitCard(u, 'player');
-      }
-    }
-    html += '</div>';
-
-    html += '<div id="cp-vs">VS</div>';
-
-    html += '<div id="cp-enemy-col">';
-    html += '<div class="cp-col-title">【敌方】</div>';
-    if (enemySnaps.length === 0) {
-      html += '<div class="cp-empty">对手将从对战池抽取</div>';
-    } else {
-      for (const u of enemySnaps) {
-        html += buildUnitCard(u, 'enemy');
-      }
-    }
-    html += '</div>';
-    html += '</div>'; // #cp-body
-
-    // 底部按钮
-    html += '<div id="cp-footer">';
-    html += '<button id="cp-btn-start">开始战斗</button>';
-    html += '<button id="cp-btn-cancel" class="btn-secondary">取消</button>';
-    html += '</div>';
-
-    html += '</div></div>'; // #combat-preview + overlay
-
-    // 注入 overlay
-    const app = document.getElementById('app')!;
-    const existing = document.getElementById('combat-preview-overlay');
-    if (existing) existing.remove();
-    app.insertAdjacentHTML('beforeend', html);
-
-    // 绑定事件
-    document.getElementById('cp-btn-start')!.onclick = () => {
-      document.getElementById('combat-preview-overlay')!.remove();
-      this._doStartCombat();
-    };
-    document.getElementById('cp-btn-cancel')!.onclick = () => {
-      document.getElementById('combat-preview-overlay')!.remove();
-    };
-    // 点击遮罩关闭
-    document.getElementById('combat-preview-overlay')!.addEventListener('click', (e) => {
-      if ((e.target as HTMLElement).id === 'combat-preview-overlay') {
-        document.getElementById('combat-preview-overlay')!.remove();
-      }
-    });
-  }
-
-  /** 实际执行战斗（原 startCombat 逻辑） */
+  /** 预览确认后开战 */
   private async _doStartCombat() {
     this.combatLog = [];
     this.combatFinished = false;
+    this.combatPaused = false;
+    this.engine.combatSpeed = 1;
+
+    const onEvent = (evt: CombatEvent) => {
+      this.combatLog.push(evt);
+      this.renderCombatLogPanel();
+      this.lastTickWallTime = Date.now();
+    };
+    const onEnd = (win: boolean, gold: number) => {
+      if (win) this.showToast(`战斗胜利！+${gold}金币`);
+      else this.showToast('战斗失败');
+      this.combatFinished = true;
+      this.pendingEnemySlots = null;
+      this.pendingAutoWin = false;
+      this.render();
+    };
+
+    // 空池：直接结算，进入战斗结束态（仍 phase=2 以便点继续）
+    if (this.pendingAutoWin || !this.pendingEnemySlots) {
+      this.engine.state.phase = 2;
+      this.engine.settleOfficialAutoWin(onEnd);
+      return;
+    }
+
     this.engine.state.phase = 2;
     this.render();
 
-    // 延迟让 UI 渲染
     await new Promise(r => setTimeout(r, 300));
 
-    // 启动实时更新（100ms 间隔，含 wall-clock 插值）
     this.lastTickWallTime = Date.now();
     this.weaponPrevRemaining.clear();
     this.combatUpdateTimer = setInterval(() => {
@@ -1000,21 +978,14 @@ export class UIManager {
     }, 100);
 
     try {
-      await this.engine.runCombat(
-        (evt) => {
-          this.combatLog.push(evt);
-          this.renderCombatLogPanel();
-          this.lastTickWallTime = Date.now();
-        },
-        (win, gold) => {
-          if (win) {
-            this.showToast(`战斗胜利！+${gold}金币`);
-          } else {
-            this.showToast('战斗失败');
-          }
-          this.combatFinished = true;
-          this.render();
-        },
+      await this.engine.runCombatWithSides(
+        this.engine.state.deploySlots,
+        this.pendingEnemySlots,
+        onEvent,
+        onEnd,
+        () => this.combatPaused,
+        undefined,
+        () => this.engine.combatSpeed,
       );
     } finally {
       if (this.combatUpdateTimer) {
@@ -1022,12 +993,6 @@ export class UIManager {
         this.combatUpdateTimer = null;
       }
     }
-  }
-
-  // 开始战斗
-  async startCombat() {
-    // 先展示战斗预览，用户确认后由 renderCombatPreview 回调 _doStartCombat
-    this.renderCombatPreview();
   }
 
   // ======================== 存档（单存档） ========================

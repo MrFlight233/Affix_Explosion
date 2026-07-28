@@ -2,19 +2,21 @@
 // 模拟对战 — 管理员专用的 BD 测试与战斗模拟工具
 // ============================================================
 
-import { GameEngine, CombatEvent, CombatUnitRuntime } from '../game/engine';
+import { GameEngine, CombatEvent, CombatUnitRuntime, PlaybackSpeed } from '../game/engine';
 import {
   ENTITY_DEFS, AFFIX_DEFS, EntityDef, AffixDef, ItemInstance, DeploySlot,
   getEntityDef, getAffixDef, isStarter, getEntityCategory, getEntityCategoryFilters,
   hasEntitySlots, getEffectiveEntitySlots, countUsedSlots, countUsedAffixSlots, getEffectiveValue,
   getEntityClassCategoryIds, getCategoryName, getAffixFilterCategories,
-  TargetCondition,
 } from '../game/data';
 import {
   beginPointerDrag, consumeSuppressNextClick, isPointerDragging,
   PointerDragSession, PointerDragHit,
 } from './pointerDrag';
 import { data as dataApi } from '../api/client';
+import { mountBattleLog, type BattleLogBridge } from './sim/mountBattleLog';
+import { showCombatPreview } from './combatPreview';
+import { renderPlaybackControlsHtml } from './playbackControls';
 
 // ============================================================
 // 状态类型
@@ -39,6 +41,7 @@ interface SimBattleState {
   inBattle: boolean;
   battleFinished: boolean;
   battlePaused: boolean;
+  combatSpeed: PlaybackSpeed;
   playerWin: boolean | null;
   battleLog: CombatEvent[];
   battleUpdateTimer: number | null;
@@ -74,6 +77,7 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
     inBattle: false,
     battleFinished: false,
     battlePaused: false,
+    combatSpeed: 1,
     playerWin: null,
     battleLog: [],
     battleUpdateTimer: null,
@@ -88,6 +92,25 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
   const weaponPrevRemaining = new Map<string, number>();
   /** BD 面板 pointer 委托是否已绑定 */
   let stablePointerBound = false;
+  let battleLogBridge: BattleLogBridge | null = null;
+
+  function refreshDeployUI(changedSides: Array<'player' | 'enemy'>, alsoPool = false) {
+    if (!buildSkeletonReady) {
+      renderZones();
+      return;
+    }
+    for (const side of changedSides) {
+      const id = side === 'player' ? 'sb-player-bd' : 'sb-enemy-bd';
+      updateZone(id, renderDeployArea(side));
+    }
+    if (alsoPool) {
+      updateZone('sb-pool', renderPoolContent());
+      bindPoolEvents();
+    }
+    bindPointerDragEvents();
+    bindTooltipEvents();
+    bindCardCollapseEvents();
+  }
 
   // ============================================================
   // Zone 渲染系统 — 骨架常驻 + 分区更新
@@ -208,6 +231,7 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
       const target = e.target as HTMLElement;
       const backBtn = target.closest('#sb-btn-edit-back');
       const pauseBtn = target.closest('#sb-btn-pause');
+      const speedBtn = target.closest('[data-speed]') as HTMLElement | null;
       if (backBtn) {
         hideSimTooltip();
         cancelled = true;
@@ -220,6 +244,13 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
       if (pauseBtn) {
         state.battlePaused = !state.battlePaused;
         if (!state.battlePaused) state.lastTickWallTime = Date.now(); // 恢复时重置插值时钟
+        updateZone('sb-battle-header', renderBattleHeader());
+      }
+      if (speedBtn?.dataset.speed) {
+        const raw = speedBtn.dataset.speed;
+        const spd: PlaybackSpeed = raw === 'max' ? 'max' : (Number(raw) as 1 | 2 | 4);
+        state.combatSpeed = spd;
+        engine.combatSpeed = spd;
         updateZone('sb-battle-header', renderBattleHeader());
       }
     });
@@ -903,7 +934,10 @@ function hideSimTooltip() {
       document.getElementById('sb-battle-body')!.innerHTML =
         `<div class="sb-battle-side" id="sb-player-units">${renderBattleSideCards('player', pu)}</div>` +
         `<div class="sb-battle-side" id="sb-enemy-units">${renderBattleSideCards('enemy', eu)}</div>`;
-      document.getElementById('sb-battle-log')!.innerHTML = renderBattleLog();
+      const logHost = document.getElementById('sb-battle-log')!;
+      battleLogBridge?.dispose();
+      battleLogBridge = mountBattleLog(logHost);
+      battleLogBridge.setEvents(state.battleLog);
       const resultEl = document.getElementById('sb-battle-result')!;
       if (state.battleFinished) {
         const durationSec = (engine.combatTime / 1000).toFixed(1);
@@ -947,7 +981,7 @@ function hideSimTooltip() {
       <strong>模拟对战 · 回合${state.round}</strong>
       ${state.battleFinished ? `<span>战斗结束 · 用时 ${(engine.combatTime / 1000).toFixed(1)}s</span>` : `<span>模拟时间: ${(engine.combatTime / 1000).toFixed(1)}s</span>`}
       <span style="flex:1;"></span>
-      <button class="sb-speed-btn${state.battlePaused ? ' paused' : ''}" id="sb-btn-pause">${state.battlePaused ? '已暂停' : '暂停'}</button>
+      ${renderPlaybackControlsHtml({ speed: state.combatSpeed, paused: state.battlePaused }, 'sb-btn-pause')}
     `;
   }
 
@@ -1500,7 +1534,8 @@ function hideSimTooltip() {
           weaponPrevRemaining.set(spanId, rawRemaining);
           // 实时插值：从上个引擎 tick 起，经过的真实时间
           const wallElapsed = Date.now() - state.lastTickWallTime;
-          const displayMs = Math.max(rawRemaining - wallElapsed, 0);
+          const spd = state.combatSpeed === 'max' ? 50 : state.combatSpeed;
+          const displayMs = Math.max(rawRemaining - wallElapsed * spd, 0);
           newVal = `${(displayMs / 1000).toFixed(1)}s`;
         }
       } else if (type === 'ov') {
@@ -1776,7 +1811,7 @@ function hideSimTooltip() {
       if (session.source !== 'bd') return null;
       let removed = removeFromSlots(state.playerSlots, session.id);
       if (!removed) removed = removeFromSlots(state.enemySlots, session.id);
-      if (removed) renderZones();
+      if (removed) refreshDeployUI(['player', 'enemy'], session.source !== 'bd');
       return null;
     }
 
@@ -1790,7 +1825,7 @@ function hideSimTooltip() {
       if (hit.listKind === 'top') {
         const err = reorderTopLevel(slots, session.id, toIdx);
         if (err) return err;
-        renderZones();
+        refreshDeployUI(['player', 'enemy'], session.source !== 'bd');
         return null;
       }
       if (!hit.parentInstanceId) return '缺少父实体';
@@ -1803,7 +1838,7 @@ function hideSimTooltip() {
       } else {
         const err = reorderSiblingChildren(parent, session.id, session.kind, toIdx);
         if (err) return err;
-        renderZones();
+        refreshDeployUI(['player', 'enemy'], session.source !== 'bd');
         return null;
       }
     }
@@ -1856,7 +1891,7 @@ function hideSimTooltip() {
           }
           parent.children.splice(insertAt, 0, item);
         }
-        renderZones();
+        refreshDeployUI(['player', 'enemy'], session.source !== 'bd');
         return null;
       }
 
@@ -1881,7 +1916,7 @@ function hideSimTooltip() {
           if (!parent) return '父实体不存在';
           insertByTypeIndex(parent, newItem, 'entity', toIdx);
         }
-        renderZones();
+        refreshDeployUI(['player', 'enemy'], true);
         return null;
       }
 
@@ -1899,7 +1934,7 @@ function hideSimTooltip() {
       if (parentId == null && slots.some(s => s.entity.instanceId === session.id)) {
         const err = reorderTopLevel(slots, session.id, toIdx ?? slots.length);
         if (err) return err;
-        renderZones();
+        refreshDeployUI(['player', 'enemy'], session.source !== 'bd');
         return null;
       }
 
@@ -1907,7 +1942,7 @@ function hideSimTooltip() {
       if (parentId && curParent && curParent.instanceId === parentId) {
         const err = reorderSiblingChildren(curParent, session.id, 'entity', toIdx ?? 0);
         if (err) return err;
-        renderZones();
+        refreshDeployUI(['player', 'enemy'], session.source !== 'bd');
         return null;
       }
 
@@ -1925,12 +1960,12 @@ function hideSimTooltip() {
         const parent = findItemInSlots(slots, parentId);
         if (!parent) {
           getSlots(fromSide).push({ entity: moved, children: [] });
-          renderZones();
+          refreshDeployUI(['player', 'enemy'], session.source !== 'bd');
           return '父实体不存在';
         }
         insertByTypeIndex(parent, moved, 'entity', toIdx);
       }
-      renderZones();
+      refreshDeployUI(['player', 'enemy'], session.source !== 'bd');
       return null;
     }
 
@@ -2160,94 +2195,25 @@ function hideSimTooltip() {
     }
   }
 
-  // v7: targeting 描述辅助函数（复刻 panels.ts _describeTargeting 逻辑）
-  function describeTargeting(w: {
-    targetFaction: string; targetCondition?: TargetCondition;
-    priorityTarget: number | null; targetOrder: string;
-  }): string {
-    const tc = w.targetCondition;
-    let rule = '';
-    if (tc?.sortBy === 'hp_asc') rule = 'HP最低优先';
-    else if (tc?.sortBy === 'hp_desc') rule = 'HP最高优先';
-    else if (tc?.sortBy === 'stamina_asc') rule = '耐力最低优先';
-    else if (tc?.sortBy === 'random') rule = '随机';
-    else if (w.priorityTarget !== null) rule = `前排优先${w.priorityTarget}`;
-    else if (w.targetOrder === '从下往上') rule = '从后往前';
-    else rule = '从上往下';
-    if (tc?.filterBy) {
-      const fbMap: Record<string, string> = { has_debuff: '有debuff', most_buffs: 'Buff最多', hp_below_50pct: 'HP<50%' };
-      rule += ` + ${fbMap[tc.filterBy] || tc.filterBy}`;
-    }
-    return `${rule} → ${w.targetFaction}`;
-  }
-
-  // v7: 模拟战斗预览面板
+  // 共用战斗预览
   function showSimBattlePreview() {
-    const app = document.getElementById('app')!;
-    const existing = document.getElementById('sb-combat-preview-overlay');
-    if (existing) existing.remove();
-
-    // 以 entity.children 为准，清掉 slot.children 幽灵残留后再算快照
     sanitizeSimSlotsBeforeCombat(state.playerSlots);
     sanitizeSimSlotsBeforeCombat(state.enemySlots);
 
-    // 计算双方快照
     const playerSnaps = engine.calculateCombatSnapshots(state.playerSlots).snapshots;
     const enemySnaps = engine.calculateCombatSnapshots(state.enemySlots).snapshots;
 
-    const buildUnitCard = (u: any, side: 'player' | 'enemy'): string => {
-      let h = `<div class="sb-preview-unit sb-preview-${side}">`;
-      h += `<div class="sb-preview-unit-name">${u.entityName}</div>`;
-      h += `<div class="sb-preview-unit-meta">HP:${u.currentHp}/${u.totalHp} 耐力:${u.currentStamina}/${u.maxStamina}</div>`;
-      if (u.activeWeapons.length === 0) {
-        h += `<div class="sb-preview-weapon empty">（无可触发动作）</div>`;
-      } else {
-        for (const w of u.activeWeapons) {
-          const desc = describeTargeting(w);
-          h += `<div class="sb-preview-weapon">→ ${w.name} <span class="sb-preview-targeting">${desc}</span></div>`;
-        }
-      }
-      h += `</div>`;
-      return h;
-    };
-
-    let html = '<div id="sb-combat-preview-overlay">';
-    html += '<div id="sb-combat-preview">';
-    html += '<div id="sb-preview-header">';
-    html += '<div class="sb-preview-title">⚔ 模拟战斗预览</div>';
-    html += '<div class="sb-preview-subtitle">确认双方对阵信息后开始战斗</div>';
-    html += '</div>';
-    html += '<div id="sb-preview-body">';
-    html += '<div id="sb-preview-player-col">';
-    html += '<div class="sb-preview-col-title">【玩家】</div>';
-    if (playerSnaps.length === 0) html += '<div class="sb-preview-empty">无上场单位</div>';
-    else for (const u of playerSnaps) html += buildUnitCard(u, 'player');
-    html += '</div>';
-    html += '<div id="sb-preview-vs">VS</div>';
-    html += '<div id="sb-preview-enemy-col">';
-    html += '<div class="sb-preview-col-title">【敌方】</div>';
-    if (enemySnaps.length === 0) html += '<div class="sb-preview-empty">无上场单位</div>';
-    else for (const u of enemySnaps) html += buildUnitCard(u, 'enemy');
-    html += '</div>';
-    html += '</div>';
-    html += '<div id="sb-preview-footer">';
-    html += '<button id="sb-preview-btn-start">开始模拟战斗</button>';
-    html += '<button id="sb-preview-btn-cancel">取消</button>';
-    html += '</div>';
-    html += '</div></div>';
-    app.insertAdjacentHTML('beforeend', html);
-
-    document.getElementById('sb-preview-btn-start')!.onclick = () => {
-      document.getElementById('sb-combat-preview-overlay')!.remove();
-      _doStartSimBattle();
-    };
-    document.getElementById('sb-preview-btn-cancel')!.onclick = () => {
-      document.getElementById('sb-combat-preview-overlay')!.remove();
-    };
-    document.getElementById('sb-combat-preview-overlay')!.addEventListener('click', (e) => {
-      if ((e.target as HTMLElement).id === 'sb-combat-preview-overlay') {
-        document.getElementById('sb-combat-preview-overlay')!.remove();
-      }
+    showCombatPreview({
+      title: '⚔ 模拟战斗预览',
+      subtitle: '确认双方对阵信息后开始战斗',
+      confirmLabel: '开始模拟战斗',
+      playerLabel: '【玩家】',
+      enemyLabel: '【敌方】',
+      playerSnaps,
+      enemySnaps,
+      emptyPlayerHint: '无上场单位',
+      emptyEnemyHint: '无上场单位',
+      onConfirm: () => { void _doStartSimBattle(); },
     });
   }
 
@@ -2290,24 +2256,10 @@ function hideSimTooltip() {
       (evt) => {
         if (cancelled) return;
         state.battleLog.push(evt);
-        // 即时增量渲染日志（消除 100ms 轮询延迟）
-        const logEl = document.getElementById('sb-battle-log');
-        if (logEl && !state.battleFinished) {
-          let entryHtml: string;
-          if (evt.effects.includes('击杀')) {
-            entryHtml = `<div class="sb-log-entry kill">[${(evt.time / 1000).toFixed(1)}s] ${evt.targetName} 击杀!</div>`;
-          } else if (evt.targetName === '战斗开始') {
-            entryHtml = '<div class="sb-log-entry">[0.0s] 战斗开始</div>';
-          } else {
-            entryHtml = `<div class="sb-log-entry">[${(evt.time / 1000).toFixed(1)}s] ${evt.actorName} · ${evt.weaponName} -> ${evt.targetName} 伤害 ${evt.damage} (HP:${Math.round(evt.targetHpAfter)}/${evt.targetMaxHp})</div>`;
-            for (const eff of evt.effects) {
-              if (eff !== '击杀') {
-                entryHtml += `<div class="sb-log-entry" style="padding-left:20px">${eff}</div>`;
-              }
-            }
-          }
-          logEl.insertAdjacentHTML('beforeend', entryHtml);
-          logEl.scrollTop = logEl.scrollHeight;
+        if (!state.battleFinished) {
+          battleLogBridge?.pushEvent(evt);
+          const logEl = document.getElementById('sb-battle-log');
+          if (logEl) logEl.scrollTop = logEl.scrollHeight;
         }
       },
       (win) => {
@@ -2325,6 +2277,7 @@ function hideSimTooltip() {
       },
       () => state.battlePaused,
       () => cancelled,
+      () => state.combatSpeed,
     );
 
     // 渲染战斗 UI（此时 runSimCombat 已设置 combatPlayerUnits/combatEnemyUnits，并过了 300ms 初始延迟）

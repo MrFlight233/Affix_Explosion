@@ -272,13 +272,18 @@ export interface CombatEvent {
   actorName: string;
   weaponName: string;
   targetName: string;
-  physicalDamage: number;
-  fireDamage: number;
-  poisonDamage: number;
-  totalDamage: number;
-  effects: string[];
-  actorHpAfter: number;
+  /** 伤害值（正=伤害，负=治疗）；与客户端引擎一致 */
+  damage: number;
   targetHpAfter: number;
+  targetMaxHp: number;
+  effects: string[];
+  targetingLabel?: string;
+  /** @deprecated 旧多伤种字段，勿再写入 */
+  physicalDamage?: number;
+  fireDamage?: number;
+  poisonDamage?: number;
+  totalDamage?: number;
+  actorHpAfter?: number;
 }
 
 export interface CombatResult {
