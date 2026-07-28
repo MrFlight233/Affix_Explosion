@@ -216,7 +216,7 @@ weapon.remainingTime = weapon.actionTime;
 
 const effects: string[] = [];
 if (onHitLabels.length > 0) effects.push(...onHitLabels);
-if (Math.abs(dmg) >= target.totalHp * 0.3) effects.push(dmg > 0 ? '重击' : '大回复');
+// （已移除）伤害≥目标最大HP 30% 时附加「重击/大回复」装饰标签 — 2026-07-27 按产品要求暂时关闭
 ```
 
 ---

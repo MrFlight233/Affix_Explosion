@@ -1209,10 +1209,9 @@ export class GameEngine {
         if (weapon.targetFaction === '友方') targetingLabel += ' → 友方';
         else if (weapon.targetFaction === '所有') targetingLabel += ' → 所有';
 
-        // 发射事件
+        // 发射事件（仅附带命中效果等真实标签；不做「重击/大回复」装饰判定）
         const effects: string[] = [];
         if (onHitLabels.length > 0) effects.push(...onHitLabels);
-        if (Math.abs(dmg) >= target.totalHp * 0.3) effects.push(dmg > 0 ? '重击' : '大回复');
 
         onEvent({
           time: Math.round(this.combatTime),

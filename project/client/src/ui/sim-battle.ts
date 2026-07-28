@@ -6,7 +6,7 @@ import { GameEngine, CombatEvent, CombatUnitRuntime } from '../game/engine';
 import {
   ENTITY_DEFS, AFFIX_DEFS, EntityDef, AffixDef, ItemInstance, DeploySlot,
   getEntityDef, getAffixDef, isStarter, getEntityCategory, getEntityCategoryFilters,
-  hasEntitySlots, getEffectiveEntitySlots, countUsedSlots, getEffectiveValue,
+  hasEntitySlots, getEffectiveEntitySlots, countUsedSlots, countUsedAffixSlots, getEffectiveValue,
   getEntityClassCategoryIds, getCategoryName, getAffixFilterCategories,
   TargetCondition,
 } from '../game/data';
@@ -519,16 +519,17 @@ function renderTooltipTree(
   const usedSlots = countUsedSlots(item);
 
   if (depth === 0 && affixes.length > 0) {
-    h += tipSection(`已挂载词条 (${affixes.length})`);
+    const usedAffix = countUsedAffixSlots(item);
+    h += tipSection(`已挂载词条 (${usedAffix}/${def.dynamicAffixSlots} 槽位, ${affixes.length}条)`);
     for (const a of affixes) {
       const ad = getAffixDef(a.defId);
-      h += `<div class="sb-tip-tree-row" style="${tipIndent(1)}">${ad?.name || a.defId}  <span class="sb-tip-muted">[${getCategoryName(ad?.category || '')}]</span>  ${ad?.effect || ''}</div>`;
+      h += `<div class="sb-tip-tree-row" style="${tipIndent(1)}">${ad?.name || a.defId}  <span class="sb-tip-muted">槽耗${ad?.slotCost ?? 0}</span>  <span class="sb-tip-muted">[${getCategoryName(ad?.category || '')}]</span>  ${ad?.effect || ''}</div>`;
     }
   }
   if (depth > 0 && affixes.length > 0) {
     for (const a of affixes) {
       const ad = getAffixDef(a.defId);
-      h += `<div class="sb-tip-tree-row" style="${indent}">${ad?.name || a.defId}  <span class="sb-tip-muted">[${getCategoryName(ad?.category || '')}]</span>  ${ad?.effect || ''}</div>`;
+      h += `<div class="sb-tip-tree-row" style="${indent}">${ad?.name || a.defId}  <span class="sb-tip-muted">槽耗${ad?.slotCost ?? 0}</span>  <span class="sb-tip-muted">[${getCategoryName(ad?.category || '')}]</span>  ${ad?.effect || ''}</div>`;
     }
   }
 
@@ -1215,7 +1216,9 @@ function hideSimTooltip() {
     }
 
     // Block 3: 词条
-    const dynAffixCount = (item.children || []).filter(c => c.type === 'affix').length;
+    const dynAffixList = (item.children || []).filter(c => c.type === 'affix');
+    const dynAffixCount = dynAffixList.length;
+    const usedAffixSlots = countUsedAffixSlots(item);
     const hasAffixBlock = (edef && edef.dynamicAffixSlots > 0) || dynAffixCount > 0 || (edef && edef.fixedAffixes.length > 0)
       || (edef && edef.poolPrerequisite.length > 0)
       || (edef && edef.preloadedDynamicAffixes && edef.preloadedDynamicAffixes.length > 0);
@@ -1226,7 +1229,7 @@ function hideSimTooltip() {
         h += `<div data-dropzone="affix" data-instance="${instanceId}" data-side="${side}" style="min-height:4px;">`;
       }
       h += `<div class="sb-block-title" data-affixblocktoggle="${instanceId}" style="cursor:pointer;">`;
-      h += `词条 · ${dynAffixCount}/${affixSlots} 槽位 <span style="font-weight:400;color:var(--sb-text-muted,inherit);margin-left:2px;">${affixBlockCollapsed ? '展开' : '收起'}</span></div>`;
+      h += `词条 · ${usedAffixSlots}/${affixSlots} 槽位 <span style="font-weight:400;color:var(--sb-text-muted,inherit);margin-left:2px;">${affixBlockCollapsed ? '展开' : '收起'}</span></div>`;
       h += `<div class="sb-foldable${affixBlockCollapsed ? ' sb-folded' : ''}">`;
       // 前置词条
       if (edef && edef.poolPrerequisite.length > 0) {
@@ -1255,19 +1258,20 @@ function hideSimTooltip() {
       if (affixSlots > 0) {
         const dynCollapsed = state.collapsedDynAffixRows.has(instanceId);
         const dnames = dynAffixCount > 0
-          ? (item.children || []).filter(c => c.type === 'affix').map(c => { const ad = getAffixDef(c.defId); return ad ? ad.name : c.defId; }).join('、')
+          ? dynAffixList.map(c => { const ad = getAffixDef(c.defId); return ad ? ad.name : c.defId; }).join('、')
           : '';
         h += `<div class="sb-card-stats" data-dyntoggle="${instanceId}" style="cursor:pointer;">`;
-        h += `动态词条 (${dynAffixCount}) <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${dynCollapsed ? '展开' : '收起'}</span>`;
+        h += `动态词条 (${dynAffixCount}条, 已用${usedAffixSlots}槽) <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${dynCollapsed ? '展开' : '收起'}</span>`;
         if (dynCollapsed && dynAffixCount > 0) h += ` ${dnames}`;
         h += '</div>';
         if (!dynCollapsed) {
-          for (const ac of (item.children || []).filter(c => c.type === 'affix')) {
+          for (const ac of dynAffixList) {
             const ad = getAffixDef(ac.defId);
-            if (ad) h += `<div class="sb-card-stats" style="margin-left:12px;" data-instance="${ac.instanceId}" data-defid="${ac.defId}" data-type="affix" data-side="${side}" data-dropzone="card" draggable="${mode === 'build'}">${ad.name}  效果:${ad.effect}  数值:${ad.value}</div>`;
+            if (ad) h += `<div class="sb-card-stats" style="margin-left:12px;" data-instance="${ac.instanceId}" data-defid="${ac.defId}" data-type="affix" data-side="${side}" data-dropzone="card" draggable="${mode === 'build'}">${ad.name}  槽耗${ad.slotCost}  效果:${ad.effect}  数值:${ad.value}</div>`;
           }
           if (mode === 'build') {
-            for (let i = 0; i < affixSlots - dynAffixCount; i++) {
+            const remaining = Math.max(0, affixSlots - usedAffixSlots);
+            for (let i = 0; i < remaining; i++) {
               h += `<div class="sb-empty-slot" data-dropzone="affix" data-instance="${instanceId}" data-side="${side}" style="margin-left:12px;">空槽位, 拖入词条</div>`;
             }
           }
@@ -1532,6 +1536,7 @@ function hideSimTooltip() {
         htmlEl.classList.remove('dragging');
         document.querySelectorAll('.drag-over').forEach(d => d.classList.remove('drag-over'));
         document.getElementById('sb-pool')?.classList.remove('remove-target');
+        clearPlaceholder();
       });
 
       // hover tooltip
@@ -1563,6 +1568,35 @@ function hideSimTooltip() {
     }
   }
 
+  /** 当前 drop 是否仍落在排序占位 / 刚才悬停的卡片上（否则应视为放入新区，勿劫持） */
+  function isDropOnSortTarget(e: DragEvent): boolean {
+    if (!lastHover) return false;
+    const t = e.target as Node | null;
+    if (!t) return false;
+    if (lastHover.cardEl.contains(t)) return true;
+    if (dropPlaceholder && (dropPlaceholder === t || dropPlaceholder.contains(t))) return true;
+    return false;
+  }
+
+  /** 若应走排序则执行并返回 true；否则返回 false 让调用方走放入逻辑 */
+  function trySortDrop(
+    payload: DragPayload, e: DragEvent,
+  ): boolean {
+    if (!isDropOnSortTarget(e) || !lastHover) return false;
+    const hdr = (lastHover.cardEl.matches('[data-dropzone="card"]')
+      ? lastHover.cardEl
+      : lastHover.cardEl.querySelector('[data-dropzone="card"]')) as HTMLElement | null;
+    if (!hdr?.dataset.instance || !hdr.dataset.side) return false;
+    const ib = lastHover.insertBefore;
+    const err = handleDropOnCard(
+      payload, hdr.dataset.side as 'player' | 'enemy', hdr.dataset.instance, e, ib,
+    );
+    if (err) showToast('排序错误:' + err);
+    setDragPayload(null);
+    clearPlaceholder();
+    return true;
+  }
+
   function bindDragEvents() {
     // 第一层 drop zones: 整个 BD 面板（稳定容器，只绑一次避免事件累积）
     if (!stableDragBound) {
@@ -1573,35 +1607,19 @@ function hideSimTooltip() {
       for (const { el, side } of bdZones) {
         if (!el) continue;
         bindDropZone(el, 'sim-battle', (payload, _zone, _slotIdx, e) => {
-          if (lastHover) {
-            const hdr = (lastHover.cardEl.matches('[data-dropzone="card"]') ? lastHover.cardEl : lastHover.cardEl.querySelector('[data-dropzone="card"]')) as HTMLElement;
-            if (hdr) {
-              const ib = lastHover.insertBefore;
-              const err = handleDropOnCard(payload, hdr.dataset.side as 'player'|'enemy', hdr.dataset.instance!, e, ib);
-              if (err) showToast('排序错误:'+err);
-              setDragPayload(null); clearPlaceholder(); return null;
-            }
-          }
+          if (trySortDrop(payload, e)) return null;
           return handleDropInDeploy(payload, side, undefined, null, e);
         });
       }
     }
 
-    // 子实体区 drop zones — 若有 lastHover 走排序
+    // 子实体区：仅当仍落在排序目标上才排序，否则放入该父实体
     document.querySelectorAll('[data-dropzone="child"]').forEach(el => {
       const htmlEl = el as HTMLElement;
       const side = htmlEl.dataset.side as 'player' | 'enemy';
       const parentId = htmlEl.dataset.instance!;
       bindDropZone(htmlEl, 'sim-battle', (payload, _zone, _slotIdx, e) => {
-        if (lastHover) {
-          const hdr = (lastHover.cardEl.matches('[data-dropzone="card"]') ? lastHover.cardEl : lastHover.cardEl.querySelector('[data-dropzone="card"]')) as HTMLElement;
-          if (hdr) {
-            const ib = lastHover.insertBefore;
-            const err = handleDropOnCard(payload, hdr.dataset.side as 'player'|'enemy', hdr.dataset.instance!, e, ib);
-            if (err) showToast('排序错误:'+err);
-            setDragPayload(null); clearPlaceholder(); return null;
-          }
-        }
+        if (trySortDrop(payload, e)) return null;
         return handleDropInDeploy(payload, side, undefined, parentId, e);
       });
     });
@@ -1609,8 +1627,6 @@ function hideSimTooltip() {
     // 卡片标题 drop zones（排序 + 词条挂载）
     document.querySelectorAll('[data-dropzone="card"]').forEach(el => {
       const htmlEl = el as HTMLElement;
-      const side = htmlEl.dataset.side as 'player' | 'enemy';
-      const targetInstId = htmlEl.dataset.instance!;
       const isAffixRow = htmlEl.dataset.type === 'affix';
       // 词条行用自身，卡片标题用父级 .sb-card
       const cardEl = isAffixRow ? htmlEl : (htmlEl.closest('.sb-card') as HTMLElement);
@@ -1633,40 +1649,27 @@ function hideSimTooltip() {
       // drop handled by unified BD panel/child zone handlers
     });
 
-    // 词条区 drop zones — 若有 lastHover 走排序
+    // 词条区：同子实体区，避免旧排序占位劫持「放入词条槽」
     document.querySelectorAll('[data-dropzone="affix"]').forEach(el => {
       const htmlEl = el as HTMLElement;
       const side = htmlEl.dataset.side as 'player' | 'enemy';
       const parentId = htmlEl.dataset.instance!;
       bindDropZone(htmlEl, 'sim-battle', (payload, _zone, _slotIdx, e) => {
-        if (lastHover) {
-          const hdr = (lastHover.cardEl.matches('[data-dropzone="card"]') ? lastHover.cardEl : lastHover.cardEl.querySelector('[data-dropzone="card"]')) as HTMLElement;
-          if (hdr) {
-            const ib = lastHover.insertBefore;
-            const err = handleDropOnCard(payload, hdr.dataset.side as 'player'|'enemy', hdr.dataset.instance!, e, ib);
-            if (err) showToast('排序错误:'+err);
-            setDragPayload(null); clearPlaceholder(); return null;
-          }
-        }
+        if (trySortDrop(payload, e)) return null;
         return handleDropInDeploy(payload, side, undefined, parentId, e);
       });
     });
 
-    // 空槽位 drop zones — 若有 lastHover 走排序
+    // 空槽位：明确「放入新槽」意图，清除排序占位，不走 lastHover 排序
     document.querySelectorAll('.sb-empty-slot').forEach(el => {
       const htmlEl = el as HTMLElement;
       const side = htmlEl.dataset.side as 'player' | 'enemy';
       const parentId = htmlEl.dataset.instance!;
+      htmlEl.addEventListener('dragover', () => {
+        clearPlaceholder();
+      });
       bindDropZone(htmlEl, 'sim-battle', (payload, _zone, _slotIdx, e) => {
-        if (lastHover) {
-          const hdr = (lastHover.cardEl.matches('[data-dropzone="card"]') ? lastHover.cardEl : lastHover.cardEl.querySelector('[data-dropzone="card"]')) as HTMLElement;
-          if (hdr) {
-            const ib = lastHover.insertBefore;
-            const err = handleDropOnCard(payload, hdr.dataset.side as 'player'|'enemy', hdr.dataset.instance!, e, ib);
-            if (err) showToast('排序错误:'+err);
-            setDragPayload(null); clearPlaceholder(); return null;
-          }
-        }
+        clearPlaceholder();
         return handleDropInDeploy(payload, side, undefined, parentId, e);
       });
     });
@@ -1757,10 +1760,14 @@ function hideSimTooltip() {
       e.stopPropagation();
       el.classList.remove('drag-over');
       const payload = getDragPayload();
-      if (!payload) return;
+      if (!payload) {
+        clearPlaceholder();
+        return;
+      }
       const err = onDrop(payload, zone, undefined, e);
       if (err) showToast(err);
       setDragPayload(null);
+      clearPlaceholder();
     });
   }
 
@@ -1828,6 +1835,17 @@ function hideSimTooltip() {
 
       // 词条拖到实体上 → 加入实体 children
       if (draggedItem.type === 'affix' && tgtItem.type !== 'affix') {
+        const tgtDef = getEntityDef(tgtItem.defId);
+        const dragAffDef = getAffixDef(draggedItem.defId);
+        if (!tgtDef || !dragAffDef) return '词条或实体定义不存在';
+        // 若已在目标下，仅属排序场景，此处不处理
+        const alreadyChild = (tgtItem.children || []).some(c => c.instanceId === instId);
+        if (!alreadyChild) {
+          const usedAffix = countUsedAffixSlots(tgtItem);
+          if (usedAffix + dragAffDef.slotCost > tgtDef.dynamicAffixSlots) {
+            return `词条槽位不足(剩${tgtDef.dynamicAffixSlots - usedAffix},需${dragAffDef.slotCost})`;
+          }
+        }
         removeFromSlots(slots, instId);
         if (!tgtItem.children) tgtItem.children = [];
         tgtItem.children.push(draggedItem);
@@ -1900,8 +1918,12 @@ function hideSimTooltip() {
       }
       const parentDef = getEntityDef(targetItem.defId);
       if (!parentDef) return '未知实体';
-      const dynCount = (targetItem.children || []).filter(c => c.type === 'affix').length;
-      if (dynCount >= parentDef.dynamicAffixSlots) return '词条槽位已满';
+      const adef = getAffixDef(defId);
+      if (!adef) return '未知词条';
+      const usedAffix = countUsedAffixSlots(targetItem);
+      if (usedAffix + adef.slotCost > parentDef.dynamicAffixSlots) {
+        return `词条槽位不足(剩${parentDef.dynamicAffixSlots - usedAffix},需${adef.slotCost})`;
+      }
       const newItem = engine.createItem(defId, type);
       state.collapsedCards.add(newItem.instanceId);
       if (!targetItem.children) targetItem.children = [];

@@ -1,11 +1,11 @@
 // ============================================================
 // AffixRepo — 词条模板 CRUD
-// 写操作：DB INSERT/UPDATE/DELETE + 内存缓存写穿透
+// 写操作：DB INSERT/UPDATE/DELETE + 写后回读入缓存（缓存 ≡ DB）
 // 读操作：纯内存缓存
 // ============================================================
 
 import { getDB } from '../connection';
-import { templateCache, affixDefToRow } from '../cache';
+import { templateCache, affixDefToRow, affixRowToDef } from '../cache';
 
 function validateCategory(category: string): void {
   if (!templateCache.getCategory(category)) {
@@ -14,6 +14,16 @@ function validateCategory(category: string): void {
       { statusCode: 400 }
     );
   }
+}
+
+/** 写库后从 DB 回读，保证缓存与库一致 */
+function reloadAffixIntoCache(id: string): Record<string, any> {
+  const db = getDB();
+  const row = db.prepare('SELECT * FROM affixes WHERE id = ?').get(id) as Record<string, any>;
+  const persisted = affixRowToDef(row);
+  templateCache.setAffix(persisted);
+  templateCache.bumpVersion();
+  return persisted;
 }
 
 export class AffixRepo {
@@ -53,6 +63,9 @@ export class AffixRepo {
       staminaBonus: def.staminaBonus ?? 0,
       hpRegenerationBonus: def.hpRegenerationBonus ?? 0,
       hpBonus: def.hpBonus ?? 0,
+      // null = 显式无覆写
+      targetingModifier: def.targetingModifier != null ? def.targetingModifier : undefined,
+      hasPassiveBonuses: def.hasPassiveBonuses ?? false,
     };
 
     const db = getDB();
@@ -61,19 +74,16 @@ export class AffixRepo {
         id, name, category, value, cost_value, slot_cost,
         repeatable, prerequisite, pool_prerequisite, effect, on_hit_effects,
         damage_bonus, stamina_regeneration_bonus, stamina_bonus, hp_regeneration_bonus, hp_bonus,
-        updated_at
+        targeting_modifier, has_passive_bonuses, updated_at
       ) VALUES (
         @id, @name, @category, @value, @cost_value, @slot_cost,
         @repeatable, @prerequisite, @pool_prerequisite, @effect, @on_hit_effects,
         @damage_bonus, @stamina_regeneration_bonus, @stamina_bonus, @hp_regeneration_bonus, @hp_bonus,
-        @updated_at
+        @targeting_modifier, @has_passive_bonuses, @updated_at
       )
     `).run(affixDefToRow(filled));
 
-    templateCache.setAffix(filled);
-    templateCache.bumpVersion();
-
-    return filled;
+    return reloadAffixIntoCache(filled.id);
   }
 
   update(id: string, patch: Record<string, any>): Record<string, any> {
@@ -88,6 +98,9 @@ export class AffixRepo {
       id,
     };
 
+    // 客户端传 null 表示清除 Targeting 覆写
+    if (patch.targetingModifier === null) merged.targetingModifier = undefined;
+
     validateCategory(merged.category ?? 'special');
 
     const db = getDB();
@@ -99,14 +112,13 @@ export class AffixRepo {
         effect=@effect, on_hit_effects=@on_hit_effects,
         damage_bonus=@damage_bonus, stamina_regeneration_bonus=@stamina_regeneration_bonus,
         stamina_bonus=@stamina_bonus, hp_regeneration_bonus=@hp_regeneration_bonus,
-        hp_bonus=@hp_bonus, updated_at=@updated_at
+        hp_bonus=@hp_bonus,
+        targeting_modifier=@targeting_modifier, has_passive_bonuses=@has_passive_bonuses,
+        updated_at=@updated_at
       WHERE id=@id
     `).run(affixDefToRow(merged));
 
-    templateCache.setAffix(merged);
-    templateCache.bumpVersion();
-
-    return merged;
+    return reloadAffixIntoCache(id);
   }
 
   delete(id: string): Record<string, any> {

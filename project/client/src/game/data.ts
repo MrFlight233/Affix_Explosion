@@ -46,7 +46,7 @@ export interface EntityDef {
   value: number; fixedAffixes: string[]; dynamicAffixSlots: number; poolPrerequisite: string[];
   /** 创建该实体时自动生成的子实体列表。字符串 = 纯模板引用; { defId, overrides?, fixedAffixes?, preloadedDynamicAffixes? } = 带覆写与词条预设 */
   defaultChildren?: (string | DefaultChildSpec)[];
-  /** 模板级预装动态词条 — 创建实例时自动挂载到 children（占用 dynamicAffixSlots） */
+  /** 模板级预装动态词条 — 创建实例时自动挂载到 children（按各词条 slotCost 占用 dynamicAffixSlots） */
   preloadedDynamicAffixes?: string[];
 
   // ---- 启动端字段（fixedAffixes 含 'starter' 时有效，否则为 0） ----
@@ -280,13 +280,24 @@ export function getFirstLayerSlots(round: number): number {
   return round;
 }
 
-/** 计算某父实体的已被占用的槽位（只看直属实体类子项） */
+/** 计算某父实体的已被占用的槽位（只看直属实体类子项；slotCost=0 不占） */
 export function countUsedSlots(parent: ItemInstance): number {
   if (!parent.children) return 0;
   return parent.children
     .filter(c => c.type === 'entity')
     .reduce((sum, c) => {
       const d = getEntityDef(c.defId);
+      return sum + (d ? d.slotCost : 0);
+    }, 0);
+}
+
+/** 计算某父实体动态词条已占用槽位（slotCost 之和；slotCost=0 不占） */
+export function countUsedAffixSlots(parent: ItemInstance): number {
+  if (!parent.children) return 0;
+  return parent.children
+    .filter(c => c.type === 'affix')
+    .reduce((sum, c) => {
+      const d = getAffixDef(c.defId);
       return sum + (d ? d.slotCost : 0);
     }, 0);
 }

@@ -1,11 +1,21 @@
 // ============================================================
 // EntityRepo — 实体模板 CRUD
-// 写操作：DB INSERT/UPDATE/DELETE + 内存缓存写穿透
+// 写操作：DB INSERT/UPDATE/DELETE + 写后回读入缓存（缓存 ≡ DB）
 // 读操作：纯内存缓存（零 DB 查询）
 // ============================================================
 
 import { getDB } from '../connection';
 import { templateCache, entityDefToRow, entityRowToDef } from '../cache';
+
+/** 写库后从 DB 回读，保证缓存与库一致 */
+function reloadEntityIntoCache(id: string): Record<string, any> {
+  const db = getDB();
+  const row = db.prepare('SELECT * FROM entities WHERE id = ?').get(id) as Record<string, any>;
+  const persisted = entityRowToDef(row);
+  templateCache.setEntity(persisted);
+  templateCache.bumpVersion();
+  return persisted;
+}
 
 export class EntityRepo {
   /** 获取所有实体（从缓存，零 DB 查询） */
@@ -58,6 +68,8 @@ export class EntityRepo {
       targetOrder: def.targetOrder ?? def.attackOrder ?? null,
       priorityTarget: def.priorityTarget ?? null,
       targetFaction: def.targetFaction ?? null,
+      // null = 显式无条件 Targeting
+      targetCondition: def.targetCondition != null ? def.targetCondition : undefined,
       preloadedDynamicAffixes: def.preloadedDynamicAffixes ?? undefined,
       staminaRegenerationBonus: def.staminaRegenerationBonus ?? 0,
       staminaBonus: def.staminaBonus ?? 0,
@@ -74,7 +86,7 @@ export class EntityRepo {
         default_children, preloaded_dynamic_affixes,
         hp, max_stamina, stamina_regen, hp_regen, max_load,
         is_active, stamina_cost, action_time, damage, damage_bonus,
-        target_type, target_order, priority_target, target_faction,
+        target_type, target_order, priority_target, target_faction, target_condition,
         stamina_regeneration_bonus, stamina_bonus, hp_regeneration_bonus, hp_bonus, updated_at
       ) VALUES (
         @id, @name, @slot_cost, @entity_slots, @weight, @value,
@@ -82,16 +94,12 @@ export class EntityRepo {
         @default_children, @preloaded_dynamic_affixes,
         @hp, @max_stamina, @stamina_regen, @hp_regen, @max_load,
         @is_active, @stamina_cost, @action_time, @damage, @damage_bonus,
-        @target_type, @target_order, @priority_target, @target_faction,
+        @target_type, @target_order, @priority_target, @target_faction, @target_condition,
         @stamina_regeneration_bonus, @stamina_bonus, @hp_regeneration_bonus, @hp_bonus, @updated_at
       )
     `).run(row);
 
-    // 写穿透：更新缓存 + 版本号
-    templateCache.setEntity(filled);
-    templateCache.bumpVersion();
-
-    return filled;
+    return reloadEntityIntoCache(filled.id);
   }
 
   /**
@@ -111,9 +119,10 @@ export class EntityRepo {
       id, // 锁定 ID
     };
 
-    // 支持清空可选的数组字段：客户端传 null 时显式设为 undefined
+    // 支持清空可选字段：客户端传 null 时显式设为 undefined
     if (patch.defaultChildren === null) merged.defaultChildren = undefined;
     if (patch.preloadedDynamicAffixes === null) merged.preloadedDynamicAffixes = undefined;
+    if (patch.targetCondition === null) merged.targetCondition = undefined;
 
     // 兼容旧字段名 attackType/attackOrder
     if (patch.targetType === undefined && patch.attackType !== undefined) {
@@ -135,15 +144,12 @@ export class EntityRepo {
         hp=@hp, max_stamina=@max_stamina, stamina_regen=@stamina_regen, hp_regen=@hp_regen, max_load=@max_load,
         is_active=@is_active, stamina_cost=@stamina_cost, action_time=@action_time, damage=@damage, damage_bonus=@damage_bonus,
         target_type=@target_type, target_order=@target_order,
-        priority_target=@priority_target, target_faction=@target_faction,
+        priority_target=@priority_target, target_faction=@target_faction, target_condition=@target_condition,
         stamina_regeneration_bonus=@stamina_regeneration_bonus, stamina_bonus=@stamina_bonus, hp_regeneration_bonus=@hp_regeneration_bonus, hp_bonus=@hp_bonus, updated_at=@updated_at
       WHERE id=@id
     `).run(row);
 
-    templateCache.setEntity(merged);
-    templateCache.bumpVersion();
-
-    return merged;
+    return reloadEntityIntoCache(id);
   }
 
   /**

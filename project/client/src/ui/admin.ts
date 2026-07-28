@@ -801,18 +801,18 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     const entitySlotsVal = parseInt(String(v('entitySlots', 0))) || 0;
     const dcRaw = v('defaultChildren') || [];
     const dcSpecs = normalizeDefaultChildren(dcRaw);
-    const childUsed = dcSpecs.length;
+    const childUsed = sumEntitySlotCosts(dcSpecs.map(getChildDefId));
 
     const dynSlots = parseInt(String(v('dynamicAffixSlots', 0))) || 0;
     const preloadedDyn = v('preloadedDynamicAffixes') || [];
-    const dynUsed = preloadedDyn.length;
+    const dynUsed = sumAffixSlotCosts(preloadedDyn);
 
     let h = `<h3 style="margin-top:0;">${isNew ? '新增实体' : '编辑实体：' + data.name}</h3><div class="admin-form" id="entity-form">`;
     h += `<div class="admin-form-actions"><button class="btn btn-primary" id="ef-btn-save">${isNew ? '创建实体' : '保存修改'}</button><button class="btn" id="ef-btn-cancel">取消</button>${isNew ? '' : '<button class="btn btn-danger" id="ef-btn-delete">删除此项</button>'}</div>`;
     h += `<div class="admin-form-section"><h4>基本信息</h4>`;
     h += `<div class="admin-field"><label>ID</label><input id="ef-id" value="${v('id')}" ${isNew ? '' : 'readonly'}></div>`;
     h += `<div class="admin-field"><label>名称</label><input id="ef-name" value="${v('name')}"></div>`;
-    h += `<div class="admin-field"><label>占用槽位</label><input id="ef-slotCost" type="number" value="${v('slotCost', 1)}"></div>`;
+    h += `<div class="admin-field"><label>占用槽位</label><input id="ef-slotCost" type="number" min="0" value="${v('slotCost', 1)}" title="0=不占用父实体/第一层槽位"></div>`;
     h += `<div class="admin-field"><label>重量</label><input id="ef-weight" type="number" value="${v('weight', 0)}"></div>`;
     h += `<div class="admin-field"><label>价值</label><input id="ef-value" type="number" value="${v('value', 1)}"></div>`;
     h += `</div>`;
@@ -893,6 +893,33 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
 
   function getChildDefId(spec: any): string { return typeof spec === 'string' ? spec : spec?.defId || spec?.id || 'unknown'; }
 
+  /** 按所选实体模板 slotCost 求和（0 不占） */
+  function sumEntitySlotCosts(defIds: string[]): number {
+    return defIds.reduce((sum, id) => {
+      const e = state.entities.find((x: any) => x.id === id);
+      const n = e ? Number(e.slotCost) : 0;
+      return sum + (Number.isFinite(n) && n > 0 ? n : 0);
+    }, 0);
+  }
+
+  /** 按所选词条模板 slotCost 求和（0 不占） */
+  function sumAffixSlotCosts(defIds: string[]): number {
+    return defIds.reduce((sum, id) => {
+      const a = state.affixes.find((x: any) => x.id === id);
+      const n = a ? Number(a.slotCost) : 0;
+      return sum + (Number.isFinite(n) && n > 0 ? n : 0);
+    }, 0);
+  }
+
+  function updateDynAffixHint() {
+    const slotText = document.getElementById('ef-dynaffix-slot-text');
+    const slotsInput = document.getElementById('ef-dynamicAffixSlots') as HTMLInputElement;
+    if (!slotText || !slotsInput) return;
+    const slots = parseInt(slotsInput.value) || 0;
+    const used = sumAffixSlotCosts(getSelected('ef-preloadedDynamicAffixes'));
+    slotText.textContent = `已用 ${used} / ${slots}`;
+  }
+
   function renderChildrenEditor(specs: (string | DefaultChildSpec)[], parentId: string, entityOpts: { id: string; name: string; cat: string; }[]): string {
     // 首次渲染时从数据初始化 _childSelections
     if (!_childSelections[parentId]) {
@@ -934,13 +961,13 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     });
   }
 
-  /** 更新子实体使用计数提示 */
+  /** 更新子实体已用槽位提示（按 slotCost 之和） */
   function updateChildHint(parentId: string) {
     const hint = document.getElementById('ef-child-hint');
     const slotsInput = document.getElementById('ef-entitySlots') as HTMLInputElement;
     if (!hint || !slotsInput) return;
     const slots = parseInt(slotsInput.value) || 0;
-    const used = (_childSelections[parentId] || []).length;
+    const used = sumEntitySlotCosts(_childSelections[parentId] || []);
     hint.textContent = `已用 ${used} / ${slots} 个槽位`;
   }
 
@@ -960,7 +987,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     h += `<div class="admin-field"><label>效果描述</label><input id="af-effect" value="${v('effect')}"></div>`;
     h += `<div class="admin-field"><label>数值</label><input id="af-value" type="number" value="${v('value',0)}"></div>`;
     h += `<div class="admin-field"><label>价值</label><input id="af-costValue" type="number" value="${v('costValue',0)}"></div>`;
-    h += `<div class="admin-field"><label>槽位消耗</label><input id="af-slotCost" type="number" value="${v('slotCost',0)}"></div>`;
+    h += `<div class="admin-field"><label>槽位消耗</label><input id="af-slotCost" type="number" min="0" value="${v('slotCost',0)}" title="0=不占用动态词条槽位"></div>`;
     h += `<div class="admin-field"><label>可重复</label><input id="af-repeatable" type="checkbox" ${v('repeatable')?'checked':''}></div>`;
     h += `</div>`;
     h += `<div class="admin-form-section"><h4>前置条件</h4>`;
@@ -1023,14 +1050,25 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     dynSlotInput?.addEventListener('input', () => {
       const v = parseInt(dynSlotInput.value) || 0;
       const area = document.getElementById('ef-dynaffix-area');
-      const slotText = document.getElementById('ef-dynaffix-slot-text');
       if (v > 0) {
         if (area) area.style.display = '';
-        if (slotText) slotText.textContent = `已用 ${getSelected('ef-preloadedDynamicAffixes').length} / ${v}`;
+        updateDynAffixHint();
       } else {
         if (area) area.style.display = 'none';
         // 自动清除预装词条
         updatePopoverField('ef-preloadedDynamicAffixes', [], affixOpts);
+        updateDynAffixHint();
+      }
+    });
+    // 预装词条增删后按 slotCost 刷新「已用」
+    document.getElementById('ef-preloadedDynamicAffixes-panel')?.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('.popover-panel-item')) {
+        setTimeout(updateDynAffixHint, 0);
+      }
+    });
+    document.getElementById('ef-preloadedDynamicAffixes-chips')?.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('.popover-chip-x')) {
+        setTimeout(updateDynAffixHint, 0);
       }
     });
 
@@ -1074,7 +1112,10 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
 
       const entity: any = {
         id, name,
-        slotCost: parseInt((document.getElementById('ef-slotCost') as HTMLInputElement).value) || 1,
+        slotCost: (() => {
+          const n = parseInt((document.getElementById('ef-slotCost') as HTMLInputElement).value, 10);
+          return Number.isFinite(n) && n >= 0 ? n : 1;
+        })(),
         entitySlots: parseInt((document.getElementById('ef-entitySlots') as HTMLInputElement).value) || 0,
         weight: parseInt((document.getElementById('ef-weight') as HTMLInputElement).value) || 0,
         value: parseInt((document.getElementById('ef-value') as HTMLInputElement).value) || 1,
@@ -1100,7 +1141,10 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         targetCondition: (() => {
           const sortBy = (document.getElementById('ef-tc-sortBy') as HTMLSelectElement).value || null;
           const filterBy = (document.getElementById('ef-tc-filterBy') as HTMLSelectElement).value || null;
-          return sortBy || filterBy ? { sortBy: sortBy || undefined, filterBy: filterBy || undefined, fallback: 'targetOrder' as const } : undefined;
+          // null（非 undefined）以便 JSON 带上 key，服务端可清除旧值
+          return sortBy || filterBy
+            ? { sortBy: sortBy || undefined, filterBy: filterBy || undefined, fallback: 'targetOrder' as const }
+            : null;
         })(),
         staminaRegenerationBonus: parseInt((document.getElementById('ef-staminaRegenerationBonus') as HTMLInputElement).value) || 0,
         staminaBonus: parseInt((document.getElementById('ef-staminaBonus') as HTMLInputElement).value) || 0,
@@ -1187,7 +1231,10 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         category: (document.getElementById('af-category') as HTMLSelectElement).value,
         value: parseFloat((document.getElementById('af-value') as HTMLInputElement).value) || 0,
         costValue: parseInt((document.getElementById('af-costValue') as HTMLInputElement).value) || 0,
-        slotCost: parseInt((document.getElementById('af-slotCost') as HTMLInputElement).value) || 0,
+        slotCost: (() => {
+          const n = parseInt((document.getElementById('af-slotCost') as HTMLInputElement).value, 10);
+          return Number.isFinite(n) && n >= 0 ? n : 0;
+        })(),
         repeatable: (document.getElementById('af-repeatable') as HTMLInputElement).checked,
         prerequisite: getSelected('af-prerequisite'),
         poolPrerequisite: getSelected('af-poolPrerequisite'),
@@ -1203,7 +1250,8 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         // v7: expanded targeting modifier with master toggle
         targetingModifier: (() => {
           const enabled = (document.getElementById('af-tm-enabled') as HTMLSelectElement).value === '1';
-          if (!enabled) return undefined;
+          // null（非 undefined）以便 JSON 带上 key，服务端可清除旧值
+          if (!enabled) return null;
           const mod: any = {};
           const tf = (document.getElementById('af-tm-targetFaction') as HTMLSelectElement).value;
           if (tf) mod.targetFaction = tf;
@@ -1218,7 +1266,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
           const fbVal = (document.getElementById('af-tm-filterBy') as HTMLSelectElement).value;
           if (fbVal === 'none') mod.filterBy = null;
           else if (fbVal) mod.filterBy = fbVal;
-          return Object.keys(mod).length > 0 ? mod : undefined;
+          return Object.keys(mod).length > 0 ? mod : null;
         })(),
       };
       try {
