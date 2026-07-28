@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>工具页交互色 · 设计方向预览</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif; }
+  body { background: #f5f3f0; color: #333; min-height: 100dvh; }
+
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 24px; background: #fff; border-bottom: 1px solid #e8e4df;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .topbar h1 { font-size: 15px; font-weight: 600; }
+  .topbar .note { font-size: 12px; color: #999; }
+
+  .dials-row {
+    display: flex; gap: 24px; align-items: center; padding: 16px 24px;
+    background: #faf9f7; border-bottom: 1px solid #eee; flex-wrap: wrap;
+  }
+  .dial-group { display: flex; align-items: center; gap: 8px; }
+  .dial-group label { font-size: 12px; color: #666; white-space: nowrap; min-width: 70px; }
+  .dial-group input[type=range] { width: 120px; accent-color: #555; }
+  .dial-group .dial-val {
+    font-size: 11px; color: #999; min-width: 28px; text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .preview-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+    padding: 24px; max-width: 1400px; margin: 0 auto;
+  }
+  @media (max-width: 860px) { .preview-grid { grid-template-columns: 1fr; } }
+
+  .dir-card {
+    background: #fff; border: 1px solid #e8e4df; border-radius: 8px; overflow: hidden;
+  }
+  .dir-card.recommended { border-color: #c4a574; }
+  .dir-card.recommended::before {
+    content: '★ 推荐'; display: block;
+    font-size: 11px; font-weight: 600; color: #fff; background: #c4a574;
+    padding: 4px 12px; text-align: center; letter-spacing: 0.5px;
+  }
+  .mockup-stage {
+    padding: 12px; min-height: 360px;
+    display: flex; align-items: stretch; justify-content: center;
+  }
+  .dir-footer {
+    display: flex; flex-direction: column; gap: 10px;
+    padding: 12px 14px; border-top: 1px solid #f0eee9;
+  }
+  .dir-meta {
+    width: 100%; font-size: 12px; color: #666; line-height: 1.5;
+    min-width: 240px;
+  }
+  .dir-label { font-size: 13px; font-weight: 600; color: #333; }
+  .dir-tagline { font-size: 11px; color: #888; margin-top: 2px; }
+  .qmdp-pick-button {
+    align-self: flex-start;
+    padding: 6px 18px; border: 1px solid #ccc; border-radius: 6px;
+    background: #fff; font-size: 13px; cursor: pointer; font-weight: 500;
+  }
+  .qmdp-pick-button:hover { background: #f5f5f5; border-color: #999; }
+
+  .explain-panel { max-width: 1400px; margin: 0 auto; padding: 0 24px 32px; }
+  .explain-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 860px) { .explain-grid { grid-template-columns: 1fr; } }
+  .explain-card {
+    padding: 14px; border: 1px solid #e8e4df; border-radius: 6px;
+    background: #faf9f7; font-size: 12px; line-height: 1.8;
+  }
+  .explain-card h4 { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .explain-card .meta { color: #888; font-size: 11px; }
+  .explain-card .rec-reason {
+    color: #8b6914; font-size: 11px; margin-top: 6px; padding-top: 6px;
+    border-top: 1px solid #e8e4df;
+  }
+  .preview-disclaimer {
+    text-align: center; font-size: 12px; color: #999; padding: 0 24px 40px;
+  }
+
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.3);
+    z-index: 999; align-items: center; justify-content: center;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal-box {
+    background: #fff; border-radius: 12px; padding: 28px 32px;
+    max-width: 420px; width: 90%; box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+  }
+  .modal-box h3 { font-size: 16px; margin-bottom: 16px; }
+  .modal-box .chosen-name { font-size: 18px; font-weight: 700; margin-bottom: 14px; }
+  .modal-box .dial-summary { font-size: 12px; color: #666; margin-bottom: 16px; line-height: 1.8; }
+  .modal-box textarea {
+    width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px;
+    font-size: 13px; resize: vertical; min-height: 56px; font-family: inherit;
+  }
+  .modal-box .modal-actions { display: flex; gap: 10px; margin-top: 16px; justify-content: flex-end; }
+  .modal-box .modal-actions button {
+    padding: 8px 20px; border-radius: 6px; font-size: 13px; cursor: pointer; border: none;
+  }
+  .btn-cancel { background: #f0f0f0; color: #555; }
+  .btn-confirm { background: #333; color: #fff; }
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: #333; color: #fff; padding: 10px 24px; border-radius: 8px;
+    font-size: 13px; z-index: 2000; display: none;
+  }
+
+  /* shared mock shell */
+  .mock-wrap {
+    width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+    font-size: 11px; min-height: 320px;
+  }
+  .mock-panel {
+    border: 1px solid; border-radius: 6px; overflow: hidden; display: flex; flex-direction: column;
+  }
+  .mock-title {
+    font-size: 10px; font-weight: 600; padding: 6px 8px; border-bottom: 1px solid;
+    letter-spacing: 0.02em;
+  }
+  .mock-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 8px; border-bottom: 1px solid; cursor: default; gap: 6px;
+  }
+  .mock-row .name { font-weight: 500; }
+  .mock-row .stat { font-size: 10px; opacity: 0.7; }
+  .mock-chip {
+    display: inline-block; font-size: 10px; padding: 2px 8px;
+    border: 1px solid; border-radius: 4px; margin: 4px 2px 0;
+  }
+  .mock-legend {
+    font-size: 9px; padding: 6px 8px; opacity: 0.75; border-top: 1px solid;
+    margin-top: auto;
+  }
+  .state-tag {
+    font-size: 9px; padding: 1px 5px; border-radius: 3px; white-space: nowrap;
+  }
+
+  /* ═══ A 渐进加深 · 全灰阶 + 左指示条 ═══ */
+  .dir-a {
+    --bg: #fafafa; --surface: #fff; --border: #e5e5e5; --text: #262626;
+    --muted: #737373; --hover: #e8e8e8; --selected: #d4d4d4;
+    --indicator: #404040; --focus: #525252; --subtle: #ececec;
+  }
+  .dir-a .mock-panel { background: var(--bg); border-color: var(--border); color: var(--text);
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  .dir-a .mock-title { background: var(--surface); border-color: var(--border); color: var(--muted); }
+  .dir-a .mock-row { border-color: #f0f0f0; background: transparent; box-shadow: inset 3px 0 0 transparent; }
+  .dir-a .mock-row.is-default { background: transparent; }
+  .dir-a .mock-row.is-hover { background: var(--hover); box-shadow: inset 3px 0 0 var(--indicator); }
+  .dir-a .mock-row.is-selected { background: var(--selected); font-weight: 600; box-shadow: inset 3px 0 0 var(--indicator); }
+  .dir-a .mock-row.is-focus {
+    background: var(--subtle); outline: 2px solid var(--focus); outline-offset: -2px;
+  }
+  .dir-a .mock-chip { border-color: var(--border); background: var(--surface); color: var(--muted); }
+  .dir-a .mock-chip.on { background: var(--subtle); color: var(--text); border-color: var(--focus); font-weight: 600; }
+  .dir-a .state-tag { background: #ececec; color: #525252; }
+  .dir-a .mock-legend { border-color: var(--border); }
+
+  /* ═══ B 专业工具强调 · 冷蓝 accent ═══ */
+  .dir-b {
+    --bg: #f7f8fa; --surface: #fff; --border: #e2e5ea; --text: #1f2937;
+    --muted: #6b7280; --hover: #eef1f6; --selected: #e0eaf8;
+    --accent: #2563eb; --ring: rgba(37,99,235,0.35);
+    font-family: "IBM Plex Sans", "Segoe UI", "PingFang SC", sans-serif;
+  }
+  .dir-b .mock-panel { background: var(--bg); border-color: var(--border); color: var(--text); }
+  .dir-b .mock-title { background: var(--surface); border-color: var(--border); color: var(--muted); }
+  .dir-b .mock-row { border-color: #eef0f3; }
+  .dir-b .mock-row.is-hover { background: var(--hover); }
+  .dir-b .mock-row.is-selected { background: var(--selected); color: #1e3a8a; font-weight: 600;
+    box-shadow: inset 3px 0 0 var(--accent); }
+  .dir-b .mock-row.is-focus {
+    background: #f5f8ff; box-shadow: 0 0 0 2px var(--ring); outline: 1px solid var(--accent);
+  }
+  .dir-b .mock-chip { border-color: var(--border); background: var(--surface); color: var(--muted); border-radius: 999px; }
+  .dir-b .mock-chip.on { background: #eff6ff; color: var(--accent); border-color: #93c5fd; font-weight: 600; }
+  .dir-b .state-tag { background: #dbeafe; color: #1d4ed8; }
+  .dir-b .mock-legend { border-color: var(--border); }
+
+  /* ═══ C 结构重塑 · 边框/左条/字重，少填色 ═══ */
+  .dir-c {
+    --bg: #fff; --border: #d4d4d4; --text: #171717; --muted: #737373;
+    --bar: #171717; --bar-soft: #a3a3a3;
+    font-family: "Source Serif 4", "Noto Serif SC", "Songti SC", serif;
+  }
+  .dir-c .mock-panel { background: var(--bg); border-color: var(--border); color: var(--text);
+    border-radius: 0; }
+  .dir-c .mock-title {
+    background: transparent; border-color: var(--border); color: var(--text);
+    text-transform: uppercase; letter-spacing: 0.08em; font-size: 10px;
+  }
+  .dir-c .mock-row { border-color: transparent; border-bottom: 1px solid #eee;
+    box-shadow: inset 2px 0 0 transparent; background: transparent !important; }
+  .dir-c .mock-row.is-hover { box-shadow: inset 2px 0 0 var(--bar-soft); }
+  .dir-c .mock-row.is-selected { box-shadow: inset 2px 0 0 var(--bar); font-weight: 700; }
+  .dir-c .mock-row.is-focus {
+    outline: 1px solid var(--bar); outline-offset: -1px;
+    box-shadow: inset 2px 0 0 var(--bar);
+  }
+  .dir-c .mock-chip {
+    border: none; border-bottom: 1px solid transparent; border-radius: 0;
+    background: transparent; color: var(--muted); padding: 2px 4px;
+  }
+  .dir-c .mock-chip.on { color: var(--text); border-bottom-color: var(--bar); font-weight: 700; }
+  .dir-c .state-tag { background: transparent; border: 1px solid #ccc; color: #444; border-radius: 0; }
+  .dir-c .mock-legend { border-color: var(--border); font-family: -apple-system, "PingFang SC", sans-serif; }
+
+  /* ═══ D 暗色高密度 ═══ */
+  .dir-d {
+    --bg: #141416; --surface: #1c1c1f; --border: #2e2e33; --text: #e5e5e5;
+    --muted: #8b8b93; --hover: #2a2a30; --selected: #33333a;
+    --accent: #a3a3a3; --focus: #fafafa;
+    font-family: "JetBrains Mono", "Cascadia Code", "SF Mono", monospace;
+  }
+  .dir-d .mock-panel { background: var(--bg); border-color: var(--border); color: var(--text); }
+  .dir-d .mock-title { background: var(--surface); border-color: var(--border); color: var(--muted); }
+  .dir-d .mock-row { border-color: #222226; }
+  .dir-d .mock-row.is-hover { background: var(--hover); }
+  .dir-d .mock-row.is-selected {
+    background: var(--selected); font-weight: 600;
+    box-shadow: inset 3px 0 0 #fafafa;
+  }
+  .dir-d .mock-row.is-focus {
+    background: #25252b; outline: 2px solid var(--focus); outline-offset: -2px;
+  }
+  .dir-d .mock-chip { border-color: var(--border); background: var(--surface); color: var(--muted); }
+  .dir-d .mock-chip.on { background: #33333a; color: #fff; border-color: #a3a3a3; font-weight: 600; }
+  .dir-d .state-tag { background: #2a2a30; color: #d4d4d8; }
+  .dir-d .mock-legend { border-color: var(--border); color: var(--muted); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>工具页交互色重设计</h1>
+  <span class="note">方向样机 · 非最终 App · 快捷键 1–4</span>
+</div>
+
+<div class="dials-row">
+  <div class="dial-group">
+    <label>视觉冒险度</label>
+    <input type="range" id="dial-variance" min="1" max="10" value="4">
+    <span class="dial-val" id="val-variance" data-qmdp-output>4/10</span>
+  </div>
+  <div class="dial-group">
+    <label>动效强度</label>
+    <input type="range" id="dial-motion" min="1" max="10" value="3">
+    <span class="dial-val" id="val-motion" data-qmdp-output>3/10</span>
+  </div>
+  <div class="dial-group">
+    <label>信息密度</label>
+    <input type="range" id="dial-density" min="1" max="10" value="6">
+    <span class="dial-val" id="val-density" data-qmdp-output>6/10</span>
+  </div>
+</div>
+
+<div class="preview-grid">
+
+  <!-- A -->
+  <div class="dir-card recommended" data-dir="A" data-design-option="A">
+    <div class="mockup-stage dir-a">
+      <div class="mock-wrap">
+        <div class="mock-panel">
+          <div class="mock-title">制作物品 · 列表</div>
+          <div class="mock-row is-default"><span class="name">铁剑</span><span class="stat">15 dmg</span><span class="state-tag">默认</span></div>
+          <div class="mock-row is-hover"><span class="name">皮甲</span><span class="stat">w8</span><span class="state-tag">悬停</span></div>
+          <div class="mock-row is-selected"><span class="name">剑士</span><span class="stat">实体</span><span class="state-tag">选中</span></div>
+          <div class="mock-row is-focus"><span class="name">轻步</span><span class="stat">词条</span><span class="state-tag">焦点</span></div>
+          <div style="padding:6px 8px;">
+            <span class="mock-chip">全部</span><span class="mock-chip on">实体</span><span class="mock-chip">词条</span>
+          </div>
+          <div class="mock-legend">灰阶加深 + 3px 左指示条 · 状态靠亮度差</div>
+        </div>
+        <div class="mock-panel">
+          <div class="mock-title">模拟战斗 · 物品池</div>
+          <div class="mock-row is-hover"><span class="name">木盾</span><span class="stat">槽1</span><span class="state-tag">悬停</span></div>
+          <div class="mock-row is-default"><span class="name">拳头</span><span class="stat">子实体</span><span class="state-tag">默认</span></div>
+          <div class="mock-row is-selected"><span class="name">哥布林</span><span class="stat">敌方</span><span class="state-tag">选中</span></div>
+          <div class="mock-row is-focus"><span class="name">暴击</span><span class="stat">词条</span><span class="state-tag">焦点</span></div>
+          <div class="mock-legend">与 adm 同 token 体系 · 无色相</div>
+        </div>
+      </div>
+    </div>
+    <div class="dir-footer">
+      <div class="dir-meta">
+        <div class="dir-label">方向 A · 渐进加深</div>
+        <div class="dir-tagline">仍全灰阶；加深 hover/selected + 左边框指示条，不动色相</div>
+      </div>
+      <button class="qmdp-pick-button" data-dir="A" data-name="渐进加深" data-qmdp-native-handler="true">选择 A · 渐进加深</button>
+    </div>
+  </div>
+
+  <!-- B -->
+  <div class="dir-card" data-dir="B" data-design-option="B">
+    <div class="mockup-stage dir-b">
+      <div class="mock-wrap">
+        <div class="mock-panel">
+          <div class="mock-title">制作物品 · 列表</div>
+          <div class="mock-row is-default"><span class="name">铁剑</span><span class="stat">15 dmg</span><span class="state-tag">默认</span></div>
+          <div class="mock-row is-hover"><span class="name">皮甲</span><span class="stat">w8</span><span class="state-tag">悬停</span></div>
+          <div class="mock-row is-selected"><span class="name">剑士</span><span class="stat">实体</span><span class="state-tag">选中</span></div>
+          <div class="mock-row is-focus"><span class="name">轻步</span><span class="stat">词条</span><span class="state-tag">焦点</span></div>
+          <div style="padding:6px 8px;">
+            <span class="mock-chip">全部</span><span class="mock-chip on">实体</span><span class="mock-chip">词条</span>
+          </div>
+          <div class="mock-legend">中性底 + 单一冷蓝强调 · focus ring 清晰</div>
+        </div>
+        <div class="mock-panel">
+          <div class="mock-title">模拟战斗 · 物品池</div>
+          <div class="mock-row is-hover"><span class="name">木盾</span><span class="stat">槽1</span><span class="state-tag">悬停</span></div>
+          <div class="mock-row is-default"><span class="name">拳头</span><span class="stat">子实体</span><span class="state-tag">默认</span></div>
+          <div class="mock-row is-selected"><span class="name">哥布林</span><span class="stat">敌方</span><span class="state-tag">选中</span></div>
+          <div class="mock-row is-focus"><span class="name">暴击</span><span class="stat">词条</span><span class="state-tag">焦点</span></div>
+          <div class="mock-legend">IBM/Linear 工具感 · 无衬线</div>
+        </div>
+      </div>
+    </div>
+    <div class="dir-footer">
+      <div class="dir-meta">
+        <div class="dir-label">方向 B · 专业工具强调</div>
+        <div class="dir-tagline">中性底 + 冷蓝 accent；选中/焦点用蓝底与 ring</div>
+      </div>
+      <button class="qmdp-pick-button" data-dir="B" data-name="专业工具强调" data-qmdp-native-handler="true">选择 B · 专业工具强调</button>
+    </div>
+  </div>
+
+  <!-- C -->
+  <div class="dir-card" data-dir="C" data-design-option="C">
+    <div class="mockup-stage dir-c">
+      <div class="mock-wrap">
+        <div class="mock-panel">
+          <div class="mock-title">制作物品 · 列表</div>
+          <div class="mock-row is-default"><span class="name">铁剑</span><span class="stat">15 dmg</span><span class="state-tag">默认</span></div>
+          <div class="mock-row is-hover"><span class="name">皮甲</span><span class="stat">w8</span><span class="state-tag">悬停</span></div>
+          <div class="mock-row is-selected"><span class="name">剑士</span><span class="stat">实体</span><span class="state-tag">选中</span></div>
+          <div class="mock-row is-focus"><span class="name">轻步</span><span class="stat">词条</span><span class="state-tag">焦点</span></div>
+          <div style="padding:6px 8px;">
+            <span class="mock-chip">全部</span><span class="mock-chip on">实体</span><span class="mock-chip">词条</span>
+          </div>
+          <div class="mock-legend">少填色 · 靠左条 + 字重 + 轮廓</div>
+        </div>
+        <div class="mock-panel">
+          <div class="mock-title">模拟战斗 · 物品池</div>
+          <div class="mock-row is-hover"><span class="name">木盾</span><span class="stat">槽1</span><span class="state-tag">悬停</span></div>
+          <div class="mock-row is-default"><span class="name">拳头</span><span class="stat">子实体</span><span class="state-tag">默认</span></div>
+          <div class="mock-row is-selected"><span class="name">哥布林</span><span class="stat">敌方</span><span class="state-tag">选中</span></div>
+          <div class="mock-row is-focus"><span class="name">暴击</span><span class="stat">词条</span><span class="state-tag">焦点</span></div>
+          <div class="mock-legend">衬线标题气质 · 印刷编辑感</div>
+        </div>
+      </div>
+    </div>
+    <div class="dir-footer">
+      <div class="dir-meta">
+        <div class="dir-label">方向 C · 结构重塑</div>
+        <div class="dir-tagline">状态靠边框/左条/字重，几乎不用底色填充</div>
+      </div>
+      <button class="qmdp-pick-button" data-dir="C" data-name="结构重塑" data-qmdp-native-handler="true">选择 C · 结构重塑</button>
+    </div>
+  </div>
+
+  <!-- D -->
+  <div class="dir-card" data-dir="D" data-design-option="D">
+    <div class="mockup-stage dir-d">
+      <div class="mock-wrap">
+        <div class="mock-panel">
+          <div class="mock-title">制作物品 · 列表</div>
+          <div class="mock-row is-default"><span class="name">铁剑</span><span class="stat">15 dmg</span><span class="state-tag">默认</span></div>
+          <div class="mock-row is-hover"><span class="name">皮甲</span><span class="stat">w8</span><span class="state-tag">悬停</span></div>
+          <div class="mock-row is-selected"><span class="name">剑士</span><span class="stat">实体</span><span class="state-tag">选中</span></div>
+          <div class="mock-row is-focus"><span class="name">轻步</span><span class="stat">词条</span><span class="state-tag">焦点</span></div>
+          <div style="padding:6px 8px;">
+            <span class="mock-chip">全部</span><span class="mock-chip on">实体</span><span class="mock-chip">词条</span>
+          </div>
+          <div class="mock-legend">暗底 · 亮边/亮底悬停对比最强</div>
+        </div>
+        <div class="mock-panel">
+          <div class="mock-title">模拟战斗 · 物品池</div>
+          <div class="mock-row is-hover"><span class="name">木盾</span><span class="stat">槽1</span><span class="state-tag">悬停</span></div>
+          <div class="mock-row is-default"><span class="name">拳头</span><span class="stat">子实体</span><span class="state-tag">默认</span></div>
+          <div class="mock-row is-selected"><span class="name">哥布林</span><span class="stat">敌方</span><span class="state-tag">选中</span></div>
+          <div class="mock-row is-focus"><span class="name">暴击</span><span class="stat">词条</span><span class="state-tag">焦点</span></div>
+          <div class="mock-legend">等宽字体 · IDE/终端工具感</div>
+        </div>
+      </div>
+    </div>
+    <div class="dir-footer">
+      <div class="dir-meta">
+        <div class="dir-label">方向 D · 暗色高密度</div>
+        <div class="dir-tagline">暗底工具面板；亮 outline 与左条做状态</div>
+      </div>
+      <button class="qmdp-pick-button" data-dir="D" data-name="暗色高密度" data-qmdp-native-handler="true">选择 D · 暗色高密度</button>
+    </div>
+  </div>
+
+</div>
+
+<div class="explain-panel">
+  <div class="explain-grid">
+    <div class="explain-card">
+      <h4>A · 渐进加深 <span style="color:#c4a574;">★ 推荐</span></h4>
+      <div class="meta">视觉冒险 4 · 动效 3 · 密度 6 · 无衬线 · 亮色 · 中性灰</div>
+      <p>保留工作风隐身与 Zinc 灰阶，只把 hover/selected/focus/drag-over 加深，并加 3px 左指示条。</p>
+      <div class="rec-reason">推荐理由：直接解决「焦点色太淡」；风险最低；与现有 DESIGN.md / 主游戏亮色一致，半天可落地。</div>
+    </div>
+    <div class="explain-card">
+      <h4>B · 专业工具强调</h4>
+      <div class="meta">视觉冒险 5 · 动效 3 · 密度 6 · 无衬线 · 亮色 · 冷蓝</div>
+      <p>引入单一冷蓝作为选中/焦点强调色，hover 仍用更深中性底。</p>
+      <p style="color:#888;">优点：状态语义更清晰<br>代价：打破「编辑视图无色」原则</p>
+    </div>
+    <div class="explain-card">
+      <h4>C · 结构重塑</h4>
+      <div class="meta">视觉冒险 6 · 动效 2 · 密度 5 · 衬线 · 亮色 · 少填色</div>
+      <p>几乎不用背景填充，靠左边框、字重、轮廓区分状态。</p>
+      <p style="color:#888;">优点：极克制、印刷感<br>代价：密集列表里左条可能不够醒目</p>
+    </div>
+    <div class="explain-card">
+      <h4>D · 暗色高密度</h4>
+      <div class="meta">视觉冒险 7 · 动效 2 · 密度 8 · 等宽 · 暗色</div>
+      <p>暗底上用亮边与亮底做悬停，对比度最高。</p>
+      <p style="color:#888;">优点：辨识度最强<br>代价：与主游戏白底黑字割裂</p>
+    </div>
+  </div>
+</div>
+
+<div class="preview-disclaimer">方向样机，用于选择视觉与交互气质，不是最终 App / 最终页面；选定后才进入正式实现。</div>
+
+<div class="modal-overlay" id="confirm-modal">
+  <div class="modal-box">
+    <h3>确认选择</h3>
+    <div class="chosen-name" id="chosen-name">—</div>
+    <div class="dial-summary" id="chosen-dials">—</div>
+    <textarea id="adjust-input" placeholder="调整建议（可选）"></textarea>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="btn-cancel">取消</button>
+      <button class="btn-confirm" id="btn-confirm">确认并回传</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function() {
+  const dials = {
+    variance: document.getElementById('dial-variance'),
+    motion: document.getElementById('dial-motion'),
+    density: document.getElementById('dial-density'),
+  };
+  function syncDial(key, elId) {
+    document.getElementById(elId).textContent = dials[key].value + '/10';
+  }
+  dials.variance.addEventListener('input', () => syncDial('variance', 'val-variance'));
+  dials.motion.addEventListener('input', () => syncDial('motion', 'val-motion'));
+  dials.density.addEventListener('input', () => syncDial('density', 'val-density'));
+
+  const modal = document.getElementById('confirm-modal');
+  const chosenName = document.getElementById('chosen-name');
+  const chosenDials = document.getElementById('chosen-dials');
+  const adjustInput = document.getElementById('adjust-input');
+  let pending = null;
+
+  const names = { A: '渐进加深', B: '专业工具强调', C: '结构重塑', D: '暗色高密度' };
+
+  function openModal(id) {
+    pending = id;
+    chosenName.textContent = '方向 ' + id + ' · ' + names[id];
+    chosenDials.innerHTML =
+      '视觉冒险度 ' + dials.variance.value + '/10<br>' +
+      '动效强度 ' + dials.motion.value + '/10<br>' +
+      '信息密度 ' + dials.density.value + '/10';
+    adjustInput.value = '';
+    modal.classList.add('active');
+  }
+
+  document.querySelectorAll('.qmdp-pick-button').forEach(btn => {
+    btn.addEventListener('click', () => openModal(btn.getAttribute('data-dir')));
+  });
+  document.addEventListener('keydown', (e) => {
+    const map = { '1': 'A', '2': 'B', '3': 'C', '4': 'D' };
+    if (map[e.key] && !modal.classList.contains('active')) openModal(map[e.key]);
+  });
+  document.getElementById('btn-cancel').addEventListener('click', () => {
+    modal.classList.remove('active'); pending = null;
+  });
+
+  async function commit() {
+    if (!pending) return;
+    const payload = {
+      id: pending,
+      label: pending,
+      name: names[pending],
+      notes: '工具页交互色',
+      dials: {
+        variance: Number(dials.variance.value),
+        motion: Number(dials.motion.value),
+        density: Number(dials.density.value),
+      },
+      adjustments: adjustInput.value || '',
+    };
+    try {
+      await fetch('/api/select', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    } catch (_) {
+      // file:// 降级：无法回传
+    }
+    modal.classList.remove('active');
+    const toast = document.getElementById('toast');
+    toast.textContent = '已回传 · 方向 ' + pending;
+    toast.style.display = 'block';
+    setTimeout(() => { toast.style.display = 'none'; }, 2000);
+  }
+  document.getElementById('btn-confirm').addEventListener('click', commit);
+})();
+</script>
+</body>
+</html>

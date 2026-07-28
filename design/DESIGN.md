@@ -24,13 +24,20 @@
 | `--sb-text-secondary` | `#737373` | 辅助文字 |
 | `--sb-text-muted` | `#a3a3a3` | 弱化文字 |
 | `--sb-accent` | `#525252` | 主重音（选中/激活） |
-| `--sb-accent-subtle` | `#f5f5f5` | 重音浅底 |
+| `--sb-accent-subtle` | `#ececec` | 重音浅底（Chip/按钮） |
+| `--sb-hover` | `#e8e8e8` | 行/列表悬停底 |
+| `--sb-selected` | `#d4d4d4` | 选中底（强于 hover） |
+| `--sb-focus-ring` | `rgba(38,38,38,0.28)` | focus / focus-within 环 |
+| `--sb-indicator` | `#404040` | 列表 3px 左指示条 |
+| `--sb-drag-over-bg` | `rgba(64,64,64,0.08)` | 拖拽落点底 |
 | `--sb-danger` | `#dc2626` | 危险/错误 |
 | `--sb-success` | `#16a34a` | 成功/HP 健康 |
 | `--sb-warning` | `#ca8a04` | 警告/低状态 |
 | `--sb-info` | `#525252` | 信息/中性提示 |
 
-**原则**：无品牌色。灰色系为主，只用 Zinc 中性灰。功能色仅战斗视图中使用，编辑视图完全无色。
+**原则**：无品牌色相。灰色系为主，只用 Zinc 中性灰。功能语义色（红/绿/黄）仅战斗视图使用。编辑视图允许**功能性交互态对比**（hover / focus / selected / drag-over），状态必须一眼可辨，但不得引入彩色品牌强调。
+
+**状态层级**（由弱到强）：`default → hover → focus-visible → selected/active → drag-over`。列表 hover/selected 使用更深灰底 + `inset 3px` 左指示条。
 
 ## 3. 排版规则
 
@@ -63,15 +70,15 @@
 - 折叠过渡：`max-height` 动画 200ms ease-out
 
 ### 按钮
-- 默认：白底 + 边框，hover 变 `--sb-accent-subtle`
+- 默认：白底 + 边框，hover 变 `--sb-hover`
 - 主操作：深灰底（`#404040`）+ 白字，hover 变 `#525252`
 - 筛选 Chip：11px 字号，圆角 4px，间距 4px gap
-- 激活态：`--sb-accent-subtle` 底 + `--sb-accent` 边框
+- 激活态：`--sb-accent-subtle` 底 + `--sb-accent` 边框（对比强于普通 hover）
 - 按压反馈：`:active { transform: scale(0.98) }`（40ms）
 
 ### 输入框
 - 白底 + 1px `--sb-border`，focus 时边框 `--sb-accent`
-- focus-visible: 2px `--sb-accent` 环，offset 1px
+- focus-visible / focus-within：`0 0 0 2px var(--sb-focus-ring)`（或 2px `--sb-accent` outline）
 
 ### Toast
 - 深灰底（`#404040`）+ 白字，底部居中
@@ -110,7 +117,8 @@
 - 折叠用 max-height 动画（性能好、可中断）
 - hover 包 `@media (hover: hover) and (pointer: fine)`
 - 所有交互加 `prefers-reduced-motion` 兜底
-- 拖拽反馈清晰（drag-over 蓝色浅底 + 蓝色左边框）
+- 拖拽反馈清晰（drag-over 用 `--sb-drag-over-bg` + accent 边框/左边框，强于普通 hover）
+- 列表悬停/选中用 `--sb-hover` / `--sb-selected` + 左指示条，禁止再用 `#f8f8f8` / `#f3f3f3` 级极淡灰
 
 ❌ DON'T:
 - 不用 emoji 装饰
@@ -121,6 +129,7 @@
 - 不用纯黑 `#000`
 - 不用外发光 / 霓虹
 - 不用 ══ 双线分隔符
+- 不用与底色几乎同色的「假 hover」（如 `#f8f8f8` on `#fafafa`）
 
 ## 8. 响应式行为
 
@@ -164,7 +173,7 @@ Ctrl+K 快速聚焦搜索，全程键盘可达。高效高频操作优先。
 
 ### 色板
 
-管理页使用独立的 `--adm-*` 命名空间（与 `--sb-*` 值相同，作用域隔离）：
+管理页使用独立的 `--adm-*` 命名空间（与 `--sb-*` 交互态 token 对齐，作用域隔离）：
 
 | Token | 值 | 用途 |
 |-------|----|------|
@@ -174,8 +183,13 @@ Ctrl+K 快速聚焦搜索，全程键盘可达。高效高频操作优先。
 | `--adm-text` | `#262626` | 正文 |
 | `--adm-text-secondary` | `#737373` | 辅助文字 |
 | `--adm-text-muted` | `#a3a3a3` | 弱化文字 |
-| `--adm-accent` | `#525252` | 重音色（选中/激活/focus 环） |
-| `--adm-accent-subtle` | `#f5f5f5` | 重音浅底 |
+| `--adm-accent` | `#525252` | 重音色（选中/激活） |
+| `--adm-accent-subtle` | `#ececec` | 重音浅底 |
+| `--adm-hover` | `#e8e8e8` | 列表悬停底 |
+| `--adm-selected` | `#d4d4d4` | 列表选中底 |
+| `--adm-focus-ring` | `rgba(38,38,38,0.28)` | focus 环 |
+| `--adm-indicator` | `#404040` | 列表左指示条 |
+| `--adm-drag-over-bg` | `rgba(64,64,64,0.08)` | 拖拽落点（若有） |
 | `--adm-danger` | `#dc2626` | 危险操作 |
 | `--adm-danger-subtle` | `#fef2f2` | 危险浅底 |
 
@@ -201,7 +215,7 @@ Ctrl+K 快速聚焦搜索，全程键盘可达。高效高频操作优先。
 **搜索命令栏**：`Ctrl+K` 快速聚焦，带等宽快捷键提示 `.adm-search-cmd-k`
 **分类筛选 Chip**：11px 字号，4px 圆角，激活态加粗 + border-color 强调
 **新增按钮**：填充 accent 色（`#404040`）+ 白字，字重 600，36px 高，86px 圆角
-**列表项**：hover 浅底 `#f8f8f8`，选中 `#f3f3f3` + 加粗
+**列表项**：hover `--adm-hover` + 3px 左指示条；选中 `--adm-selected` + 加粗 + 同色指示条（强于 hover）
 **Popover 选择器**：Trigger 区域显示已选 Chip + "+ 添加"按钮；点击弹出面板含搜索输入框，实时过滤，点击即添加
 **Popover Chip**：`×` 按钮移除，hover 变红
 **表单分区**：6px 圆角白底卡片 + 浅灰标题栏；标题右侧显示槽位计数

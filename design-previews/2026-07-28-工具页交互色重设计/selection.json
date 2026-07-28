@@ -1,0 +1,9 @@
+{
+  "id": "A",
+  "label": "A",
+  "name": "渐进加深",
+  "notes": "Implement the plan — 范围：制作物品+模拟战斗；调性：工作风隐身加深灰阶",
+  "dials": { "variance": 4, "motion": 3, "density": 6 },
+  "adjustments": "按计划推荐方向 A 落地；悬停/选中/焦点必须一眼可辨",
+  "selectedAt": "2026-07-28T16:56:00+08:00"
+}
