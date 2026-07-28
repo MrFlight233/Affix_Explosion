@@ -2074,8 +2074,8 @@ function hideSimTooltip() {
     let item = findItemInSlots(slots, instanceId);
     if (!item) { slots = state.enemySlots; item = findItemInSlots(slots, instanceId); side = 'enemy'; }
     if (!item) return;
-    const cardEl = (document.querySelector(`.sb-card:has([data-cardtoggle="${instanceId}"])`) ||
-                    document.querySelector(`[data-cardtoggle="${instanceId}"]`)?.closest('.sb-card')) as HTMLElement | null;
+    // 必须从该实例自己的 header 向上找最近 .sb-card，禁止 :has()（会命中祖先第一层卡）
+    const cardEl = document.querySelector(`[data-cardtoggle="${instanceId}"]`)?.closest('.sb-card') as HTMLElement | null;
     if (!cardEl) return;
     const depth = parseInt(cardEl.dataset.depth || '0');
     let combatUnit: CombatUnitRuntime | null | undefined = undefined;
@@ -2088,15 +2088,15 @@ function hideSimTooltip() {
     temp.innerHTML = newHtml;
     const newCard = temp.firstElementChild as HTMLElement;
     cardEl.replaceWith(newCard);
-    // 只对新卡片绑折叠事件
+    // 对新卡片整棵子树重绑折叠与 tooltip
     bindCardCollapseEventsOnCard(newCard);
-    if (mode === 'battle') bindBattleTooltipsOnCard(newCard);
+    bindTooltipEventsOnCard(newCard);
   }
 
   function bindCardCollapseEventsOnCard(card: HTMLElement) {
-    // 同上逻辑，但只作用于单张卡片内的 toggle
-    const cardToggle = card.querySelector('[data-cardtoggle]') as HTMLElement;
-    if (cardToggle) {
+    // 嵌套子卡也有 data-cardtoggle，必须全部绑定
+    card.querySelectorAll('[data-cardtoggle]').forEach(el => {
+      const cardToggle = el as HTMLElement;
       cardToggle.addEventListener('click', (e) => {
         if (consumeSuppressNextClick() || isPointerDragging()) {
           e.preventDefault();
@@ -2105,14 +2105,16 @@ function hideSimTooltip() {
         }
         e.stopPropagation();
         const instId = cardToggle.dataset.cardtoggle!;
+        const targetCard = cardToggle.closest('.sb-card') as HTMLElement | null;
+        if (!targetCard) return;
         const collapsing = !state.collapsedCards.has(instId);
         if (collapsing) state.collapsedCards.add(instId);
         else state.collapsedCards.delete(instId);
-        card.classList.toggle('sb-card-collapsed', collapsing);
+        targetCard.classList.toggle('sb-card-collapsed', collapsing);
         const btn = cardToggle.querySelector('.sb-card-collapse-btn');
         if (btn) btn.textContent = collapsing ? '展开' : '收起';
       });
-    }
+    });
     // 词条/子实体 block toggle 同理...
     card.querySelectorAll('[data-affixblocktoggle]').forEach(t => {
       t.addEventListener('click', (ev) => {
@@ -2164,7 +2166,8 @@ function hideSimTooltip() {
     });
   }
 
-  function bindBattleTooltipsOnCard(card: HTMLElement) {
+  /** 单张卡片（含子树）tooltip 绑定；build / battle 共用 */
+  function bindTooltipEventsOnCard(card: HTMLElement) {
     card.querySelectorAll('[data-defid]').forEach(el => {
       const hEl = el as HTMLElement;
       const defId = hEl.dataset.defid!;
@@ -2173,6 +2176,10 @@ function hideSimTooltip() {
       hEl.addEventListener('mouseenter', (ev) => showSimTooltip(ev as MouseEvent, defId, type, instId));
       hEl.addEventListener('mouseleave', hideSimTooltip);
     });
+  }
+
+  function bindBattleTooltipsOnCard(card: HTMLElement) {
+    bindTooltipEventsOnCard(card);
   }
 
   // ============================================================
