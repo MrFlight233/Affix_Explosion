@@ -5,7 +5,6 @@
 import {
   ENTITY_DEFS,
   AFFIX_DEFS,
-  isStarter,
   getEntityDef,
   getAffixDef,
   getEntityCategory,
@@ -18,12 +17,10 @@ import {
 } from '../game/data';
 
 type TabType = 'entities' | 'affixes';
-type EntityTypeFilter = 'all-entity' | 'starter' | 'active' | 'passive';
 
 interface TabSession {
   searchQuery: string;
   selectedId: string | null;
-  entityTypeFilter: EntityTypeFilter;
   entityCatFilter: string;
   affixCatFilter: string;
 }
@@ -79,14 +76,6 @@ function sumAffixSlotCosts(defIds: string[]): number {
   }, 0);
 }
 
-function entityTypeLabel(e: EntityDef): string {
-  const parts: string[] = [];
-  if (isStarter(e)) parts.push('启动端');
-  if (e.isActive) parts.push('可触发');
-  if (!isStarter(e) && !e.isActive) parts.push('被动');
-  return parts.join(' · ') || '—';
-}
-
 /** 导出：启动页「全物品池」 */
 export function showFullItemPool(onBack: () => void): void {
   const app = document.getElementById('app')!;
@@ -96,14 +85,12 @@ export function showFullItemPool(onBack: () => void): void {
     entities: {
       searchQuery: '',
       selectedId: null,
-      entityTypeFilter: 'all-entity',
       entityCatFilter: 'all',
       affixCatFilter: 'all',
     },
     affixes: {
       searchQuery: '',
       selectedId: null,
-      entityTypeFilter: 'all-entity',
       entityCatFilter: 'all',
       affixCatFilter: 'all',
     },
@@ -245,9 +232,7 @@ export function showFullItemPool(onBack: () => void): void {
                 ? Object.keys(spec.overrides).length
                 : 0;
               const name = (cd?.name || defId) + (ov > 0 ? ' (定制)' : '');
-              const cat = cd
-                ? [entityTypeLabel(cd), getEntityCategory(cd).join(' / ')].filter(Boolean).join(' · ')
-                : '';
+              const cat = cd ? getEntityCategory(cd).join(' / ') : '';
               const effect = cd
                 ? `槽耗 ${cd.slotCost} · 价 ${cd.value}${ov > 0 ? ` · 覆写${ov}字段` : ''}`
                 : '—';
@@ -430,9 +415,6 @@ export function showFullItemPool(onBack: () => void): void {
   function getFilteredEntities(): EntityDef[] {
     const s = sess();
     let list = ENTITY_DEFS.slice();
-    if (s.entityTypeFilter === 'starter') list = list.filter(e => isStarter(e));
-    else if (s.entityTypeFilter === 'active') list = list.filter(e => !isStarter(e) && e.isActive);
-    else if (s.entityTypeFilter === 'passive') list = list.filter(e => !isStarter(e) && !e.isActive);
     if (s.entityCatFilter !== 'all') {
       list = list.filter(e => getEntityCategory(e).includes(s.entityCatFilter));
     }
@@ -468,21 +450,13 @@ export function showFullItemPool(onBack: () => void): void {
     const s = sess();
     let html = '';
     if (tab === 'entities') {
-      const typeChips: { v: EntityTypeFilter; label: string }[] = [
-        { v: 'all-entity', label: '全部实体' },
-        { v: 'starter', label: '启动端' },
-        { v: 'active', label: '可触发' },
-        { v: 'passive', label: '被动加成' },
-      ];
-      for (const c of typeChips) {
-        html += `<button type="button" class="ip-chip${s.entityTypeFilter === c.v ? ' active' : ''}" data-etype="${c.v}">${c.label}</button>`;
-      }
+      // 与制作物品实体 Tab 一致：仅分类 Chip（全部 + 实体分类名）
       for (const cat of getEntityCategoryFilters()) {
-        if (cat === 'all') continue;
-        html += `<button type="button" class="ip-chip${s.entityCatFilter === cat ? ' active' : ''}" data-ecat="${esc(cat)}">${esc(cat)}</button>`;
+        const label = cat === 'all' ? '全部' : cat;
+        html += `<button type="button" class="ip-chip${s.entityCatFilter === cat ? ' active' : ''}" data-ecat="${esc(cat)}">${esc(label)}</button>`;
       }
     } else {
-      html += `<button type="button" class="ip-chip${s.affixCatFilter === 'all' ? ' active' : ''}" data-acat="all">全部类别</button>`;
+      html += `<button type="button" class="ip-chip${s.affixCatFilter === 'all' ? ' active' : ''}" data-acat="all">全部</button>`;
       for (const c of getAffixFilterCategories()) {
         html += `<button type="button" class="ip-chip${s.affixCatFilter === c.id ? ' active' : ''}" data-acat="${esc(c.id)}">${esc(c.name)}</button>`;
       }
@@ -497,7 +471,7 @@ export function showFullItemPool(onBack: () => void): void {
     let html = '';
     if (tab === 'entities') {
       for (const e of getFilteredEntities()) {
-        const meta = [entityTypeLabel(e), getEntityCategory(e).join(' / ')].filter(Boolean).join(' · ');
+        const meta = getEntityCategory(e).join(' / ') || '—';
         html += `<div class="ip-list-item${s.selectedId === e.id ? ' selected' : ''}" data-id="${esc(e.id)}" role="button" tabindex="0">
           <span class="name">${esc(e.name)}</span>
           <span class="meta">${esc(meta)}</span>
@@ -635,12 +609,8 @@ export function showFullItemPool(onBack: () => void): void {
     const chip = (e.target as HTMLElement).closest('.ip-chip') as HTMLElement | null;
     if (!chip) return;
     const s = sess();
-    if (chip.dataset.etype) {
-      s.entityTypeFilter = chip.dataset.etype as EntityTypeFilter;
-      s.selectedId = null;
-    } else if (chip.dataset.ecat) {
-      // 分类 Chip 与类型 Chip 可叠加；再次点击同一分类取消
-      s.entityCatFilter = s.entityCatFilter === chip.dataset.ecat ? 'all' : chip.dataset.ecat;
+    if (chip.dataset.ecat) {
+      s.entityCatFilter = chip.dataset.ecat;
       s.selectedId = null;
     } else if (chip.dataset.acat) {
       s.affixCatFilter = chip.dataset.acat;

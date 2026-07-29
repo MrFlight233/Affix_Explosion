@@ -269,7 +269,7 @@ Ctrl+K 快速聚焦搜索，全程键盘可达。高效高频操作优先。
 ### 布局
 
 - 顶栏：返回 · 标题 · 下划线 Tab（实体 / 词条）
-- 左栏 300px：类型/分类 Chip → Ctrl+K 搜索 → 列表（hover/selected + 左指示条）
+- 左栏 300px：分类 Chip（与制作物品一致：`全部` + 实体分类名）→ Ctrl+K 搜索 → 列表（hover/selected + 左指示条；列表 meta 仅分类，不展示启动端/可触发/被动）
 - 右栏：只读表单分区，字段顺序与显隐对齐 `buildEntityForm` / `buildAffixForm`
 
 ### 详情约定
