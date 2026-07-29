@@ -9,7 +9,6 @@ import {
 } from '../game/data';
 import { makeDraggable, makeDropZone, DragPayload } from './dragDrop';
 import { showTooltip, hideTooltip } from './tooltip';
-import { showCombatPreview } from './combatPreview';
 import { renderPlaybackControlsHtml } from './playbackControls';
 
 export class UIManager {
@@ -29,7 +28,7 @@ export class UIManager {
   combatUpdateTimer: any = null;
   lastTickWallTime: number = 0;
   weaponPrevRemaining: Map<string, number> = new Map();
-  /** 预览确认后缓存的敌方 BD（避免二次抽池） */
+  /** 匹配后缓存的敌方 BD（避免二次抽池） */
   pendingEnemySlots: DeploySlot[] | null = null;
   pendingAutoWin = false;
   combatPaused = false;
@@ -901,36 +900,16 @@ export class UIManager {
     }
   }
 
-  // ======================== 战斗预览与开战 ========================
+  // ======================== 开战 ========================
 
-  /** 正式战：先抽池，再共用预览，确认后开打（不再二次抽池） */
+  /** 正式战：先抽池，再立即开战（不再二次抽池） */
   async startCombat() {
     this.showToast('正在匹配对手…');
     try {
       const prep = await this.engine.prepareOfficialBattle();
       this.pendingAutoWin = prep.autoWin;
       this.pendingEnemySlots = prep.enemySlots;
-
-      const playerSnaps = this.engine.calculateCombatSnapshots(prep.playerSlots).snapshots;
-      const enemySnaps = prep.enemySlots
-        ? this.engine.calculateCombatSnapshots(prep.enemySlots).snapshots
-        : [];
-
-      showCombatPreview({
-        title: '⚔ 战斗预览',
-        subtitle: prep.autoWin
-          ? '对战池暂无对手，确认后直接获胜'
-          : (prep.opponentName ? `对手：${prep.opponentName}` : '确认双方对阵信息后开始战斗'),
-        confirmLabel: prep.autoWin ? '确认获胜' : '开始战斗',
-        playerSnaps,
-        enemySnaps,
-        emptyEnemyHint: prep.autoWin ? '对战池暂无对手，确认后直接获胜' : '暂无上场单位',
-        onConfirm: () => { void this._doStartCombat(); },
-        onCancel: () => {
-          this.pendingEnemySlots = null;
-          this.pendingAutoWin = false;
-        },
-      });
+      await this._doStartCombat();
     } catch (e: any) {
       this.showToast('匹配失败：' + (e?.message || e));
       this.pendingEnemySlots = null;
@@ -938,7 +917,7 @@ export class UIManager {
     }
   }
 
-  /** 预览确认后开战 */
+  /** 匹配完成后开战 */
   private async _doStartCombat() {
     this.combatLog = [];
     this.combatFinished = false;

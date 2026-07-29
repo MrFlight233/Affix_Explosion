@@ -15,7 +15,6 @@ import {
 } from './pointerDrag';
 import { data as dataApi } from '../api/client';
 import { mountBattleLog, type BattleLogBridge } from './sim/mountBattleLog';
-import { showCombatPreview } from './combatPreview';
 import { renderPlaybackControlsHtml } from './playbackControls';
 
 // ============================================================
@@ -402,7 +401,7 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
     }
   }
 
-  /** 开战/预览前：清空 slot.children，避免历史浅拷贝幽灵子实体被引擎再次合并 */
+  /** 开战前：清空 slot.children，避免历史浅拷贝幽灵子实体被引擎再次合并 */
   function sanitizeSimSlotsBeforeCombat(slots: DeploySlot[]): void {
     for (const slot of slots) {
       slot.children = [];
@@ -2202,38 +2201,16 @@ function hideSimTooltip() {
     }
   }
 
-  // 共用战斗预览
-  function showSimBattlePreview() {
-    sanitizeSimSlotsBeforeCombat(state.playerSlots);
-    sanitizeSimSlotsBeforeCombat(state.enemySlots);
-
-    const playerSnaps = engine.calculateCombatSnapshots(state.playerSlots).snapshots;
-    const enemySnaps = engine.calculateCombatSnapshots(state.enemySlots).snapshots;
-
-    showCombatPreview({
-      title: '⚔ 模拟战斗预览',
-      subtitle: '确认双方对阵信息后开始战斗',
-      confirmLabel: '开始模拟战斗',
-      playerLabel: '【玩家】',
-      enemyLabel: '【敌方】',
-      playerSnaps,
-      enemySnaps,
-      emptyPlayerHint: '无上场单位',
-      emptyEnemyHint: '无上场单位',
-      onConfirm: () => { void _doStartSimBattle(); },
-    });
-  }
-
   async function startSimBattle() {
     if (state.playerSlots.length === 0 && state.enemySlots.length === 0) {
       showToast('请至少为一方组建 BD');
       return;
     }
-    showSimBattlePreview();
+    void _doStartSimBattle();
   }
 
   async function _doStartSimBattle() {
-    // 再次确保无 slot.children 幽灵（预览阶段已清过；此处兜底）
+    // 开战前清空 slot.children，避免历史浅拷贝幽灵子实体被引擎再次合并
     sanitizeSimSlotsBeforeCombat(state.playerSlots);
     sanitizeSimSlotsBeforeCombat(state.enemySlots);
 

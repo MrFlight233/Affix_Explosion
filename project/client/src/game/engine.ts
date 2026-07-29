@@ -882,7 +882,7 @@ export class GameEngine {
 
   /**
    * 正式战准备：上传己方 BD + 从对战池抽取敌方。
-   * 不改变 phase/金币；供预览后再开战。
+   * 不改变 phase/金币；匹配后开战前调用，避免二次抽池。
    */
   async prepareOfficialBattle(): Promise<{
     playerSlots: DeploySlot[];
@@ -922,7 +922,7 @@ export class GameEngine {
     return { playerSlots, enemySlots: null, autoWin: true };
   }
 
-  /** 空池自动获胜结算（预览确认后调用） */
+  /** 空池自动获胜结算（匹配后开战时调用） */
   settleOfficialAutoWin(onEnd: (win: boolean, gold: number) => void): { win: true; goldReward: number } {
     const goldReward = this.applyCombatVictoryRewards();
     onEnd(true, goldReward);
@@ -931,7 +931,7 @@ export class GameEngine {
 
   /**
    * 用已解析的双方 BD 开战（不再抽池）。
-   * 正式战预览确认后、或兼容 runCombat 内部使用。
+   * 正式战匹配完成后、或兼容 runCombat 内部使用。
    */
   async runCombatWithSides(
     playerSlots: DeploySlot[],
@@ -980,7 +980,7 @@ export class GameEngine {
     }
   }
 
-  /** 正式战斗兼容入口：prepare + 自动胜或 runCombatWithSides（无预览时使用） */
+  /** 正式战斗兼容入口：prepare + 自动胜或 runCombatWithSides */
   async runCombat(
     onEvent: (evt: CombatEvent) => void,
     onEnd: (win: boolean, gold: number) => void,
