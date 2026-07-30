@@ -230,8 +230,9 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
       h += '<h4>现有分类</h4>';
       for (const c of cats) {
         const isEC = c.isEntityClass ? ' [实体分类]' : '';
+        const hideFilter = c.showInFilter === false ? ' [商店筛选隐藏]' : '';
         h += `<div class="cat-mgr-row" data-cid="${c.id}">
-          <span>${c.name}<span class="cat-mgr-meta">${c.id}${isEC}</span></span>
+          <span>${c.name}<span class="cat-mgr-meta">${c.id}${isEC}${hideFilter}</span></span>
         </div>`;
       }
       h += '</div><div class="cat-mgr-form">';
@@ -241,6 +242,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         h += '<div class="admin-field"><label>名称</label><input id="catmf-name" type="text" placeholder="e.g. 光环"></div>';
         h += '<div class="admin-field"><label>排序序号</label><input id="catmf-sort" type="number" value="10"></div>';
         h += '<div class="admin-field"><label><input id="catmf-isclass" type="checkbox"> 实体分类标记</label></div>';
+        h += '<div class="admin-field"><label><input id="catmf-showfilter" type="checkbox" checked> 商店筛选中显示</label></div>';
         h += '<div style="margin-top:8px;display:flex;gap:6px;"><button class="btn btn-small" id="catmf-save" style="padding:4px 12px;border:1px solid var(--adm-border);border-radius:4px;background:var(--adm-surface);cursor:pointer;font-family:inherit;">保存</button> <button class="btn btn-small" id="catmf-cancel" style="padding:4px 12px;border:1px solid var(--adm-border);border-radius:4px;background:var(--adm-surface);cursor:pointer;font-family:inherit;">取消</button></div>';
       } else if (editingCat) {
         h += `<h4>编辑：${editingCat.name}</h4>`;
@@ -248,6 +250,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         h += `<div class="admin-field"><label>名称</label><input id="catmf-name" value="${editingCat.name}"></div>`;
         h += `<div class="admin-field"><label>排序序号</label><input id="catmf-sort" type="number" value="${editingCat.sortOrder}"></div>`;
         h += `<div class="admin-field"><label><input id="catmf-isclass" type="checkbox"${editingCat.isEntityClass ? ' checked' : ''}> 实体分类标记</label></div>`;
+        h += `<div class="admin-field"><label><input id="catmf-showfilter" type="checkbox"${editingCat.showInFilter !== false ? ' checked' : ''}> 商店筛选中显示</label></div>`;
         h += '<div style="margin-top:8px;display:flex;gap:6px;"><button class="btn btn-small" id="catmf-save" style="padding:4px 12px;border:1px solid var(--adm-border);border-radius:4px;background:var(--adm-surface);cursor:pointer;font-family:inherit;">保存</button> <button class="btn btn-small" id="catmf-delete" style="padding:4px 12px;border:1px solid #fecaca;border-radius:4px;background:var(--adm-surface);color:var(--adm-danger);cursor:pointer;font-family:inherit;">删除</button> <button class="btn btn-small" id="catmf-cancel" style="padding:4px 12px;border:1px solid var(--adm-border);border-radius:4px;background:var(--adm-surface);cursor:pointer;font-family:inherit;">取消</button></div>';
       } else {
         h += '<p style="color:var(--adm-text-muted);">选择左侧分类编辑，或点击"新增"</p>';
@@ -299,16 +302,18 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         if (!name) { alert('名称不能为空'); return; }
         const sortOrder = parseInt((document.getElementById('catmf-sort') as HTMLInputElement)?.value || '0', 10);
         const isEntityClass = (document.getElementById('catmf-isclass') as HTMLInputElement)?.checked ?? false;
+        const showInFilter = (document.getElementById('catmf-showfilter') as HTMLInputElement)?.checked ?? true;
         try {
           if (newCatMode) {
             const id = (document.getElementById('catmf-id') as HTMLInputElement)?.value?.trim();
             if (!id) { alert('ID 不能为空'); return; }
-            await admin.createCategory({ id, name, sortOrder, isEntityClass });
+            await admin.createCategory({ id, name, sortOrder, isEntityClass, showInFilter });
           } else if (editingCat) {
-            await admin.updateCategory(editingCat.id, { name, sortOrder, isEntityClass });
+            await admin.updateCategory(editingCat.id, { name, sortOrder, isEntityClass, showInFilter });
           }
           editingCat = null; newCatMode = false;
           await refreshModal();
+          render();
         } catch (e: any) { alert('保存失败：' + e.message); }
       });
       document.getElementById('catmf-delete')?.addEventListener('click', async () => {
@@ -318,6 +323,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
           await admin.deleteCategory(editingCat.id);
           editingCat = null; newCatMode = false;
           await refreshModal();
+          render();
         } catch (e: any) { alert('删除失败：' + e.message); }
       });
     }

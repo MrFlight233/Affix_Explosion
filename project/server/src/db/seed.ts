@@ -113,6 +113,7 @@ export function initTables(): void {
       name            TEXT NOT NULL,
       sort_order      INTEGER NOT NULL DEFAULT 0,
       is_entity_class INTEGER NOT NULL DEFAULT 0,
+      show_in_filter  INTEGER NOT NULL DEFAULT 1,
       created_at      TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -134,6 +135,8 @@ export function initTables(): void {
   migrateAffixPassiveBonusesToggleV7(db);
   // ---- 迁移：v8 实体被动总开关 + 负重加成 ----
   migrateLoadBonusAndEntityPassiveToggleV8(db);
+  // ---- 迁移：categories 表新增 show_in_filter ----
+  migrateCategoryShowInFilter(db);
 
   console.log('[DB] 所有表创建/验证完成');
 }
@@ -375,5 +378,18 @@ function migrateLoadBonusAndEntityPassiveToggleV8(db: ReturnType<typeof getDB>):
     }
   } catch (e) {
     console.warn('[DB] v8 load_bonus/has_passive_bonuses 迁移跳过:', (e as Error).message);
+  }
+}
+
+/** 迁移 categories 表：新增 show_in_filter（筛选中显示，默认 1） */
+function migrateCategoryShowInFilter(db: ReturnType<typeof getDB>): void {
+  try {
+    const cols = db.prepare("PRAGMA table_info('categories')").all() as { name: string }[];
+    if (!cols.some(c => c.name === 'show_in_filter')) {
+      db.exec('ALTER TABLE categories ADD COLUMN show_in_filter INTEGER NOT NULL DEFAULT 1');
+      console.log('[DB] categories 表已迁移：添加 show_in_filter 列');
+    }
+  } catch (e) {
+    console.warn('[DB] categories show_in_filter 迁移跳过:', (e as Error).message);
   }
 }

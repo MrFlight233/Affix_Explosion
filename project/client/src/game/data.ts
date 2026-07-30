@@ -122,6 +122,8 @@ export interface CategoryDef {
   name: string;         // 显示名，如 '属性', '实体分类'
   sortOrder: number;
   isEntityClass: boolean;
+  /** 是否在正式局商店词条分类筛选 Chip 中展示；缺省视为 true。不影响全物品池/模拟战/管理端 */
+  showInFilter: boolean;
 }
 
 export interface ItemInstance {
@@ -187,9 +189,16 @@ export function getCategoryName(categoryId: string): string {
   return c ? c.name : categoryId;
 }
 
-/** 获取用于词条筛选的分类列表（全部分类） */
+/** 获取用于词条筛选的分类列表（全部分类；管理端/全物品池/模拟战） */
 export function getAffixFilterCategories(): CategoryDef[] {
   return [...CATEGORIES].sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
+/** 正式局商店词条筛选用分类（仅 showInFilter 不为 false） */
+export function getShopAffixFilterCategories(): CategoryDef[] {
+  return [...CATEGORIES]
+    .filter(c => c.showInFilter !== false)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
 /** 获取实体分类标记的分类 ID 集合（isEntityClass=true） */

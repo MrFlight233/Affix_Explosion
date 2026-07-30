@@ -5,13 +5,13 @@
 import { GameEngine } from '../game/engine';
 import {
   ItemInstance, EntityDef, AffixDef,
-  getEntityDef, getAffixDef, findInTree,
+  getEntityDef, getAffixDef, findInTree, getShopAffixFilterCategories,
 } from '../game/data';
 import { renderEntityCard } from './build/entityCard';
 import {
   PoolFilterState, filterPoolItems, renderPoolFiltersHtml, bindPoolFilterEvents,
 } from './build/poolList';
-import { bindSbTooltips, showSimTooltip, hideSimTooltip } from './build/simTooltip';
+import { bindSbTooltips } from './build/simTooltip';
 import { CollapseState, collapseItemTree } from './build/types';
 import {
   beginPointerDrag, consumeSuppressNextClick, isPointerDragging,
@@ -163,10 +163,18 @@ export function renderOfficialShopItemListHtml(ctx: OfficialExploreCtx): string 
 
 export function renderOfficialShopHtml(ctx: OfficialExploreCtx): string {
   const cap = ctx.engine.getMerchantValueCap();
+  // 若当前词条分类已从商店筛选隐藏，回退到「全部」
+  const shopCats = getShopAffixFilterCategories();
+  if (
+    ctx.poolFilter.affixCatFilter !== 'all' &&
+    !shopCats.some(c => c.id === ctx.poolFilter.affixCatFilter)
+  ) {
+    ctx.poolFilter.affixCatFilter = 'all';
+  }
   let h = `<div class="panel fg-merchant" id="merchant-panel" data-fg-zone="sell">`;
   h += `<div class="panel-title">固定商人（价值上限: ${cap}）</div>`;
   h += '<p class="fg-sell-hint">拖到左侧出场 BD：购买并装备 · 拖到下方仓库：购买并入库 · 拖入本面板：半价出售</p>';
-  h += renderPoolFiltersHtml(ctx.poolFilter);
+  h += renderPoolFiltersHtml(ctx.poolFilter, { forShop: true });
   h += renderOfficialShopItemListHtml(ctx);
   h += '</div>';
   return h;
@@ -400,8 +408,6 @@ function bindShopItemPointer(root: HTMLElement, ctx: OfficialExploreCtx): void {
         originEl: htmlEl,
       }, { onCommit: (s, h) => commitOfficialDrag(ctx, s, h) });
     });
-    htmlEl.addEventListener('mouseenter', (ev) => showSimTooltip(ev as MouseEvent, defId, type));
-    htmlEl.addEventListener('mouseleave', hideSimTooltip);
   });
 }
 

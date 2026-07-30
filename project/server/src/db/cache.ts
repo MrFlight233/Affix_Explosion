@@ -174,6 +174,8 @@ class TemplateCache {
         name: row.name,
         sortOrder: row.sort_order,
         isEntityClass: row.is_entity_class === 1,
+        // 缺列/null 视为 true（兼容旧库）
+        showInFilter: row.show_in_filter !== 0,
       });
     }
 

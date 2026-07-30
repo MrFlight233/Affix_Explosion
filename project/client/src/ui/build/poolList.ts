@@ -1,6 +1,7 @@
 import {
   ENTITY_DEFS, AFFIX_DEFS, EntityDef, AffixDef,
-  getEntityCategory, getEntityCategoryFilters, getCategoryName, getAffixFilterCategories,
+  getEntityCategory, getEntityCategoryFilters, getCategoryName,
+  getAffixFilterCategories, getShopAffixFilterCategories,
 } from '../../game/data';
 
 export interface PoolFilterState {
@@ -37,9 +38,12 @@ export function filterPoolItems(
   return { entities, affixes };
 }
 
-export function renderPoolFiltersHtml(state: PoolFilterState): string {
+export function renderPoolFiltersHtml(
+  state: PoolFilterState,
+  opts?: { forShop?: boolean },
+): string {
   const ecats = getEntityCategoryFilters();
-  const aCatObjs = getAffixFilterCategories();
+  const aCatObjs = opts?.forShop ? getShopAffixFilterCategories() : getAffixFilterCategories();
 
   let h = '<div id="sb-pool-filters">';
   h += '<div class="filter-row">';

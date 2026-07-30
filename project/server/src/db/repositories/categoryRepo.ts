@@ -33,17 +33,19 @@ export class CategoryRepo {
       name: def.name,
       sortOrder: def.sortOrder ?? 0,
       isEntityClass: def.isEntityClass ?? false,
+      showInFilter: def.showInFilter ?? true,
     };
 
     const db = getDB();
     db.prepare(`
-      INSERT INTO categories (id, name, sort_order, is_entity_class, updated_at)
-      VALUES (@id, @name, @sort_order, @is_entity_class, @updated_at)
+      INSERT INTO categories (id, name, sort_order, is_entity_class, show_in_filter, updated_at)
+      VALUES (@id, @name, @sort_order, @is_entity_class, @show_in_filter, @updated_at)
     `).run({
       id: filled.id,
       name: filled.name,
       sort_order: filled.sortOrder,
       is_entity_class: filled.isEntityClass ? 1 : 0,
+      show_in_filter: filled.showInFilter ? 1 : 0,
       updated_at: new Date().toISOString(),
     });
 
@@ -68,13 +70,15 @@ export class CategoryRepo {
     const db = getDB();
     db.prepare(`
       UPDATE categories SET
-        name=@name, sort_order=@sort_order, is_entity_class=@is_entity_class, updated_at=@updated_at
+        name=@name, sort_order=@sort_order, is_entity_class=@is_entity_class,
+        show_in_filter=@show_in_filter, updated_at=@updated_at
       WHERE id=@id
     `).run({
       id: merged.id,
       name: merged.name,
       sort_order: merged.sortOrder ?? 0,
       is_entity_class: merged.isEntityClass ? 1 : 0,
+      show_in_filter: (merged.showInFilter !== false) ? 1 : 0,
       updated_at: new Date().toISOString(),
     });
 
