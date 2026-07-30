@@ -112,9 +112,9 @@ function showStartScreen() {
 
 async function showHistoryScreen() {
   app.innerHTML = `
-    <div id="history-screen" class="fg-settlement">
+    <div id="history-screen" class="fg-settlement fg-settlement-wide">
       <h1>历史回顾</h1>
-      <div id="history-list" style="margin:16px 0;max-height:60vh;overflow:auto;text-align:left;"></div>
+      <div id="history-list" class="fg-history-list"></div>
       <button id="btn-history-back">返回</button>
     </div>
   `;
@@ -125,17 +125,74 @@ async function showHistoryScreen() {
     const { history } = await import('./api/client');
     const data = await history.list();
     if (!data.runs.length) {
-      list.innerHTML = '<p style="color:var(--text-dim);">暂无通关记录</p>';
+      list.innerHTML = '<p style="color:var(--text-dim);">暂无历史记录</p>';
       return;
     }
-    list.innerHTML = data.runs.map(r =>
-      `<div class="event-card" style="margin-bottom:8px;">
-        <div>#${r.id} · ${r.created_at}</div>
-        <div style="font-size:12px;color:var(--text-dim);">回合上限 ${r.maxRound ?? '-'} · 战斗 ${r.battles} · 金币 ${r.gold ?? '-'}</div>
-      </div>`
-    ).join('');
+    list.innerHTML = data.runs.map(r => {
+      const status = r.status === 'cleared' ? 'cleared' : 'in_progress';
+      const badge = status === 'cleared'
+        ? '<span class="fg-run-badge cleared">已通关</span>'
+        : '<span class="fg-run-badge progress">进行中</span>';
+      const wins = r.wins ?? 0;
+      const losses = r.losses ?? 0;
+      return `<button type="button" class="fg-history-card" data-run-id="${r.id}">
+        <div class="fg-history-card-top">
+          <span>${r.created_at}</span>
+          ${badge}
+        </div>
+        <div class="fg-history-card-stats">胜 ${wins} · 负 ${losses}</div>
+      </button>`;
+    }).join('');
+    list.querySelectorAll('[data-run-id]').forEach(el => {
+      el.addEventListener('click', () => {
+        const id = Number((el as HTMLElement).dataset.runId);
+        if (Number.isFinite(id)) void showHistoryRunDetail(id);
+      });
+    });
   } catch (e: any) {
     list.innerHTML = `<p style="color:var(--warn);">加载失败：${e?.message || e}</p>`;
+  }
+}
+
+async function showHistoryRunDetail(id: number) {
+  app.innerHTML = `
+    <div id="history-detail" class="fg-settlement fg-settlement-pane">
+      <p style="color:var(--text-dim);">加载中…</p>
+    </div>
+  `;
+  try {
+    const { history } = await import('./api/client');
+    const {
+      countWinsLosses,
+      renderRunReviewShellHtml,
+      bindRunReview,
+    } = await import('./ui/runReview');
+    const data = await history.get(id);
+    const run = data.run || {};
+    const battles = Array.isArray(run.battles) ? run.battles : [];
+    const wl = countWinsLosses(battles);
+    const status = run.status === 'cleared' ? 'cleared' as const : 'in_progress' as const;
+    const root = document.getElementById('history-detail')!;
+    root.innerHTML = renderRunReviewShellHtml({
+      title: data.created_at || '历史回顾',
+      wins: wl.wins,
+      losses: wl.losses,
+      statusBadge: status,
+      showGold: status === 'cleared',
+      gold: run.gold,
+      maxRound: run.maxRound,
+      battles,
+      leadingHtml: '<button type="button" id="btn-history-detail-back" class="fg-link-back">← 返回列表</button>',
+    });
+    document.getElementById('btn-history-detail-back')!.onclick = () => showHistoryScreen();
+    bindRunReview(root, battles);
+  } catch (e: any) {
+    const root = document.getElementById('history-detail')!;
+    root.innerHTML = `
+      <p style="color:var(--warn);">加载失败：${e?.message || e}</p>
+      <button id="btn-history-detail-back">返回列表</button>
+    `;
+    document.getElementById('btn-history-detail-back')!.onclick = () => showHistoryScreen();
   }
 }
 

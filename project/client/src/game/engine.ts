@@ -73,6 +73,8 @@ function seededRandom(seed: number): () => number {
 export class GameEngine {
   state!: GameState;
   username = '';
+  /** 关联历史归档 id；首战 upsert 后写入存档 */
+  historyRunId: number | null = null;
 
   onStateChange?: () => void;
   onToast?: (msg: string) => void;
@@ -101,6 +103,7 @@ export class GameEngine {
     this.rebuildItemPool();
     // 开局 BD / 仓库皆空，不自动部署默认 starter
     this.rightPanel = null;
+    this.historyRunId = null;
     // 进入回合 1 探险：发放探险金 + 生成事件
     this.grantExploreGold();
     this.generateEvents();
@@ -1154,9 +1157,45 @@ export class GameEngine {
       visitedEventMerchants: this.state.visitedEventMerchants,
       battles: this.state.battles,
       maxRound: this.state.maxRound,
+      historyRunId: this.historyRunId,
       savedAt: new Date().toISOString(),
       saveVersion: 2,
     };
+  }
+
+  /** 组装历史归档 run 快照 */
+  buildHistoryRunPayload(status: 'in_progress' | 'cleared'): Record<string, unknown> {
+    const payload: Record<string, unknown> = {
+      status,
+      maxRound: this.state.maxRound,
+      gold: this.state.gold,
+      seed: this.state.seed,
+      battles: this.state.battles,
+      updatedAt: new Date().toISOString(),
+    };
+    if (status === 'cleared') {
+      payload.finishedAt = new Date().toISOString();
+      payload.deploySlots = this.state.deploySlots;
+      payload.warehouse = this.state.warehouse;
+    }
+    return payload;
+  }
+
+  /**
+   * 首战创建 / 之后更新历史归档。无战斗记录时跳过。
+   * 失败抛错由调用方决定是否 toast。
+   */
+  async syncHistoryRun(status: 'in_progress' | 'cleared' = 'in_progress'): Promise<void> {
+    if (!this.state.battles.length) return;
+    const run = this.buildHistoryRunPayload(status);
+    const { history } = await import('../api/client');
+    if (this.historyRunId == null) {
+      const r = await history.create(run);
+      this.historyRunId = r.id;
+      await this.autoSave();
+    } else {
+      await history.update(this.historyRunId, run);
+    }
   }
 
   loadSaveData(data: any) {
@@ -1178,6 +1217,7 @@ export class GameEngine {
     this.state.visitedEventMerchants = data.visitedEventMerchants ?? [];
     this.state.battles = data.battles ?? [];
     this.state.maxRound = data.maxRound ?? MAX_ROUND;
+    this.historyRunId = typeof data.historyRunId === 'number' ? data.historyRunId : null;
     if (Array.isArray(data.currentEvents) && data.currentEvents.length > 0) {
       this.state.currentEvents = data.currentEvents;
     } else if (this.isExplore()) {

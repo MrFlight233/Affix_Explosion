@@ -17,7 +17,7 @@ export class HistoryRepo {
     return row || null;
   }
 
-  /** 通关归档一整局 JSON */
+  /** 创建一整局 JSON（首战或兼容旧通关归档） */
   insert(userId: number, runJson: string): number {
     if (!runJson || typeof runJson !== 'string') {
       throw Object.assign(new Error('缺少归档数据'), { statusCode: 400 });
@@ -30,6 +30,21 @@ export class HistoryRepo {
       "INSERT INTO run_history (user_id, run_json, created_at) VALUES (?, ?, datetime('now'))",
     ).run(userId, runJson);
     return Number(info.lastInsertRowid);
+  }
+
+  /** 增量更新本局（校验归属） */
+  update(userId: number, id: number, runJson: string): boolean {
+    if (!runJson || typeof runJson !== 'string') {
+      throw Object.assign(new Error('缺少归档数据'), { statusCode: 400 });
+    }
+    if (runJson.length > 2_000_000) {
+      throw Object.assign(new Error('归档数据过大'), { statusCode: 400 });
+    }
+    const db = getDB();
+    const info = db.prepare(
+      'UPDATE run_history SET run_json = ? WHERE user_id = ? AND id = ?',
+    ).run(runJson, userId, id);
+    return info.changes > 0;
   }
 }
 

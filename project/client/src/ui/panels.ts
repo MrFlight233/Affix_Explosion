@@ -660,9 +660,18 @@ export class UIManager {
       this.combatFinished = true;
       this.combatResultSummary = { win, gold, autoWin: this.pendingAutoWin };
       const battles = this.engine.state.battles;
-      if (battles.length > 0 && this.combatLog.length > 0) {
-        battles[battles.length - 1].log = [...this.combatLog];
-        this.engine.autoSave();
+      if (battles.length > 0) {
+        if (this.combatLog.length > 0) {
+          battles[battles.length - 1].log = [...this.combatLog];
+        }
+        void (async () => {
+          try {
+            await this.engine.autoSave();
+            await this.engine.syncHistoryRun('in_progress');
+          } catch (e) {
+            console.warn('历史归档同步失败', e);
+          }
+        })();
       }
       this.pendingEnemySlots = null;
       this.pendingAutoWin = false;
@@ -722,37 +731,44 @@ export class UIManager {
   async renderSettlement() {
     const app = document.getElementById('app')!;
     const g = this.engine.state;
-    const wins = g.battles.filter(b => b.result === 'win' || b.result === 'auto_win').length;
-    const losses = g.battles.filter(b => b.result === 'loss').length;
+    const {
+      countWinsLosses,
+      renderRunReviewShellHtml,
+      bindRunReview,
+    } = await import('./runReview');
+    const wl = countWinsLosses(g.battles);
 
     app.innerHTML = `
-      <div id="settlement-screen" class="fg-settlement">
-        <h1>通关结算</h1>
-        <p class="fg-settlement-sub">完成 ${g.maxRound} 回合 · 金币 ${g.gold}</p>
-        <div class="fg-settlement-stats">胜 ${wins} · 负 ${losses} · 场次 ${g.battles.length}</div>
-        <div id="settlement-status" style="color:var(--fg-text-muted,var(--text-dim));margin:12px 0;min-height:20px;">正在归档本局…</div>
-        <button id="btn-settlement-home" class="fg-btn-primary" disabled>返回主菜单</button>
+      <div id="settlement-screen" class="fg-settlement fg-settlement-pane">
+        ${renderRunReviewShellHtml({
+          title: '通关结算',
+          wins: wl.wins,
+          losses: wl.losses,
+          gold: g.gold,
+          maxRound: g.maxRound,
+          showGold: true,
+          statusBadge: 'cleared',
+          battles: g.battles,
+          statusHtml: '<span id="settlement-status" class="fg-settlement-status">正在标记本局已通关…</span>',
+          actionsHtml: '<button id="btn-settlement-home" class="fg-btn-primary" disabled>返回主菜单</button>',
+        })}
       </div>
     `;
+
+    const root = document.getElementById('settlement-screen')!;
+    bindRunReview(root, g.battles);
 
     const status = document.getElementById('settlement-status')!;
     const homeBtn = document.getElementById('btn-settlement-home') as HTMLButtonElement;
 
     try {
-      const { history, saves } = await import('../api/client');
-      await history.archive({
-        maxRound: g.maxRound,
-        gold: g.gold,
-        battles: g.battles,
-        seed: g.seed,
-        deploySlots: g.deploySlots,
-        warehouse: g.warehouse,
-        finishedAt: new Date().toISOString(),
-      });
+      const { saves } = await import('../api/client');
+      await this.engine.syncHistoryRun('cleared');
       await saves.del();
-      status.textContent = '已归档至历史，进行中存档已清除';
+      this.engine.historyRunId = null;
+      status.textContent = '已通关并写入历史，进行中存档已清除';
     } catch (e: any) {
-      status.textContent = '归档失败：' + (e?.message || e) + '（仍可返回主菜单）';
+      status.textContent = '历史更新失败：' + (e?.message || e) + '（仍可浏览本页并返回主菜单）';
     }
 
     homeBtn.disabled = false;

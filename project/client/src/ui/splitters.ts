@@ -13,10 +13,19 @@ export interface CombatSplit {
   logPct: number;
 }
 
+export interface RunReviewSplit {
+  /** 左侧场次列表占 body 宽度百分比 */
+  listPct: number;
+  /** 右侧详情内日志区占 detail-body 高度百分比 */
+  logPct: number;
+}
+
 const STORAGE_KEY = 'fg-explore-split';
 const COMBAT_STORAGE_KEY = 'fg-combat-split';
+const RUN_REVIEW_STORAGE_KEY = 'fg-run-review-split';
 const DEFAULT: ExploreSplit = { leftPct: 48, topPct: 55 };
 const COMBAT_DEFAULT: CombatSplit = { logPct: 28 };
+const RUN_REVIEW_DEFAULT: RunReviewSplit = { listPct: 26, logPct: 38 };
 
 const LEFT_MIN_PX = 280;
 const RIGHT_MIN_PX = 320;
@@ -26,10 +35,19 @@ const COMBAT_LOG_MIN_PX = 100;
 const COMBAT_BD_MIN_PX = 120;
 const COMBAT_LOG_MIN_PCT = 12;
 const COMBAT_LOG_MAX_PCT = 55;
+const RUN_LIST_MIN_PX = 160;
+const RUN_DETAIL_MIN_PX = 280;
+const RUN_LIST_MIN_PCT = 16;
+const RUN_LIST_MAX_PCT = 45;
+const RUN_LOG_MIN_PX = 80;
+const RUN_BD_MIN_PX = 100;
+const RUN_LOG_MIN_PCT = 18;
+const RUN_LOG_MAX_PCT = 65;
 
 let current: ExploreSplit = loadSplit();
 let combatCurrent: CombatSplit = loadCombatSplit();
-let dragKind: 'v' | 'h' | 'combat-h' | null = null;
+let runReviewCurrent: RunReviewSplit = loadRunReviewSplit();
+let dragKind: 'v' | 'h' | 'combat-h' | 'run-v' | 'run-h' | null = null;
 let activeLayout: HTMLElement | null = null;
 
 export function loadSplit(): ExploreSplit {
@@ -82,6 +100,35 @@ export function saveCombatSplit(s: CombatSplit) {
 export function applyCombatSplit(layout: HTMLElement, split: CombatSplit = combatCurrent) {
   combatCurrent = split;
   layout.style.setProperty('--fg-combat-log-pct', `${split.logPct}%`);
+}
+
+export function loadRunReviewSplit(): RunReviewSplit {
+  try {
+    const raw = localStorage.getItem(RUN_REVIEW_STORAGE_KEY);
+    if (!raw) return { ...RUN_REVIEW_DEFAULT };
+    const parsed = JSON.parse(raw) as Partial<RunReviewSplit>;
+    const listPct = Number(parsed.listPct);
+    const logPct = Number(parsed.logPct);
+    if (!Number.isFinite(listPct) || !Number.isFinite(logPct)) return { ...RUN_REVIEW_DEFAULT };
+    return {
+      listPct: clamp(listPct, RUN_LIST_MIN_PCT, RUN_LIST_MAX_PCT),
+      logPct: clamp(logPct, RUN_LOG_MIN_PCT, RUN_LOG_MAX_PCT),
+    };
+  } catch {
+    return { ...RUN_REVIEW_DEFAULT };
+  }
+}
+
+export function saveRunReviewSplit(s: RunReviewSplit) {
+  try {
+    localStorage.setItem(RUN_REVIEW_STORAGE_KEY, JSON.stringify(s));
+  } catch { /* ignore quota */ }
+}
+
+export function applyRunReviewSplit(layout: HTMLElement, split: RunReviewSplit = runReviewCurrent) {
+  runReviewCurrent = split;
+  layout.style.setProperty('--fg-run-list-pct', `${split.listPct}%`);
+  layout.style.setProperty('--fg-run-log-pct', `${split.logPct}%`);
 }
 
 function clamp(n: number, min: number, max: number) {
@@ -175,4 +222,75 @@ export function bindSplitters(layout: HTMLElement) {
   vSplit.addEventListener('mousedown', start('v'));
   hSplit.addEventListener('mousedown', start('h'));
   if (combatHSplit) combatHSplit.addEventListener('mousedown', start('combat-h'));
+}
+
+/**
+ * 结算/历史回顾三分区可调分界线（按 layout 幂等）。
+ * 竖线：场次列表 | 详情；横线：双方 BD | 战斗日志。
+ */
+export function bindRunReviewSplitters(layout: HTMLElement) {
+  runReviewCurrent = loadRunReviewSplit();
+  applyRunReviewSplit(layout, runReviewCurrent);
+  if (layout.dataset.runSplitBound === '1') return;
+  layout.dataset.runSplitBound = '1';
+
+  const onMove = (e: MouseEvent) => {
+    if (!dragKind || !activeLayout) return;
+    if (dragKind === 'run-v') {
+      const body = activeLayout.querySelector('.fg-run-body') as HTMLElement | null;
+      if (!body) return;
+      const rect = body.getBoundingClientRect();
+      const width = rect.width;
+      if (width <= 0) return;
+      let listPx = e.clientX - rect.left;
+      listPx = clamp(listPx, RUN_LIST_MIN_PX, Math.max(RUN_LIST_MIN_PX, width - RUN_DETAIL_MIN_PX));
+      let listPct = (listPx / width) * 100;
+      listPct = clamp(listPct, RUN_LIST_MIN_PCT, RUN_LIST_MAX_PCT);
+      if (width - (listPct / 100) * width < RUN_DETAIL_MIN_PX) {
+        listPct = ((width - RUN_DETAIL_MIN_PX) / width) * 100;
+      }
+      runReviewCurrent = { ...runReviewCurrent, listPct };
+      applyRunReviewSplit(activeLayout, runReviewCurrent);
+    } else if (dragKind === 'run-h') {
+      const detailBody = activeLayout.querySelector('.fg-run-detail-body') as HTMLElement | null;
+      if (!detailBody) return;
+      const rect = detailBody.getBoundingClientRect();
+      const height = rect.height;
+      if (height <= 0) return;
+      let logPx = rect.bottom - e.clientY;
+      logPx = clamp(logPx, RUN_LOG_MIN_PX, Math.max(RUN_LOG_MIN_PX, height - RUN_BD_MIN_PX));
+      let logPct = (logPx / height) * 100;
+      logPct = clamp(logPct, RUN_LOG_MIN_PCT, RUN_LOG_MAX_PCT);
+      runReviewCurrent = { ...runReviewCurrent, logPct };
+      applyRunReviewSplit(activeLayout, runReviewCurrent);
+    }
+  };
+
+  const endDrag = () => {
+    if (dragKind !== 'run-v' && dragKind !== 'run-h') return;
+    dragKind = null;
+    activeLayout = null;
+    document.body.classList.remove('fg-resizing-col', 'fg-resizing-row');
+    saveRunReviewSplit(runReviewCurrent);
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', endDrag);
+  };
+
+  const start = (kind: 'run-v' | 'run-h') => (e: MouseEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    dragKind = kind;
+    activeLayout = layout;
+    document.body.classList.add(kind === 'run-v' ? 'fg-resizing-col' : 'fg-resizing-row');
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', endDrag);
+  };
+
+  // 横线在换场时会重建 DOM，用委托绑定
+  layout.addEventListener('mousedown', (e) => {
+    const t = (e.target as HTMLElement).closest('#fg-run-v-split, #fg-run-h-split') as HTMLElement | null;
+    if (!t || !layout.contains(t)) return;
+    if (t.id === 'fg-run-v-split') start('run-v')(e);
+    else if (t.id === 'fg-run-h-split') start('run-h')(e);
+  });
 }

@@ -147,12 +147,34 @@ export const saves = {
   del: () => request<{ok:boolean}>('/saves', {method:'DELETE'}),
 };
 
+export type HistoryRunStatus = 'in_progress' | 'cleared';
+
+export interface HistoryRunSummary {
+  id: number;
+  created_at: string;
+  status?: HistoryRunStatus;
+  wins?: number;
+  losses?: number;
+  maxRound?: number;
+  battles: number;
+  gold?: number;
+}
+
 export const history = {
-  list: () => request<{runs: Array<{id:number;created_at:string;maxRound?:number;battles:number;gold?:number}>}>('/history'),
-  get: (id: number) => request<{id:number;created_at:string;run:any}>(`/history/${id}`),
+  list: () => request<{ runs: HistoryRunSummary[] }>('/history'),
+  get: (id: number) => request<{ id: number; created_at: string; run: any }>(`/history/${id}`),
+  /** @deprecated 使用 create */
   archive: (run: any) =>
-    request<{ok:boolean;id:number}>('/history', {
+    request<{ ok: boolean; id: number }>('/history', {
       method: 'POST', body: JSON.stringify({ run }),
+    }),
+  create: (run: any) =>
+    request<{ ok: boolean; id: number }>('/history', {
+      method: 'POST', body: JSON.stringify({ run }),
+    }),
+  update: (id: number, run: any) =>
+    request<{ ok: boolean; id: number }>(`/history/${id}`, {
+      method: 'PUT', body: JSON.stringify({ run }),
     }),
 };
 
