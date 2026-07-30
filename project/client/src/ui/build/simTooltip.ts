@@ -205,7 +205,10 @@ export function showSimTooltip(
   instanceId?: string | null,
   getInstance?: (instanceId: string) => ItemInstance | null,
 ): void {
-  if (tipShowTimer) clearTimeout(tipShowTimer);
+  if (tipShowTimer) {
+    clearTimeout(tipShowTimer);
+    tipShowTimer = null;
+  }
   const tip = ensureTooltip();
   const inner = tip.querySelector('.sb-tip-inner')!;
 
@@ -381,7 +384,9 @@ export function showSimTooltip(
 }
 
 export function hideSimTooltip(): void {
+  if (tipShowTimer) clearTimeout(tipShowTimer);
   tipShowTimer = setTimeout(() => {
+    tipShowTimer = null;
     if (tooltipEl) {
       tooltipEl.classList.add('sb-tip-hiding');
       tooltipEl.classList.remove('sb-tip-visible');
@@ -434,7 +439,14 @@ export function bindSbTooltips(
     const t = (e.target as HTMLElement).closest('[data-defid]') as HTMLElement | null;
     if (!t || !root.contains(t)) return;
     const to = e.relatedTarget as Node | null;
+    // 移入同一 [data-defid] 的子节点：不关
     if (to && t.contains(to)) return;
+    // relatedTarget 常为 null（进出子节点时）：用落点兜底，仍在同一行则不关
+    if (!to) {
+      const me = e as MouseEvent;
+      const under = document.elementFromPoint(me.clientX, me.clientY) as HTMLElement | null;
+      if (under && (t === under || t.contains(under))) return;
+    }
     hideSimTooltip();
   });
 }
