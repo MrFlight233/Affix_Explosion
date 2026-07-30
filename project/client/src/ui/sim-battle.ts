@@ -4,10 +4,9 @@
 
 import { GameEngine, CombatEvent, CombatUnitRuntime, PlaybackSpeed } from '../game/engine';
 import {
-  ENTITY_DEFS, AFFIX_DEFS, EntityDef, AffixDef, ItemInstance, DeploySlot,
-  getEntityDef, getAffixDef, isStarter, getEntityCategory, getEntityCategoryFilters,
-  hasEntitySlots, getEffectiveEntitySlots, countUsedSlots, countUsedAffixSlots, getEffectiveValue,
-  getEntityClassCategoryIds, getCategoryName, getAffixFilterCategories,
+  EntityDef, ItemInstance, DeploySlot,
+  getEntityDef, getAffixDef, isStarter,
+  getEffectiveEntitySlots, countUsedSlots, countUsedAffixSlots,
 } from '../game/data';
 import {
   beginPointerDrag, consumeSuppressNextClick, isPointerDragging,
@@ -16,6 +15,17 @@ import {
 import { data as dataApi } from '../api/client';
 import { mountBattleLog, type BattleLogBridge } from './sim/mountBattleLog';
 import { renderPlaybackControlsHtml } from './playbackControls';
+import type { CollapseState } from './build/types';
+import { renderEntityCard } from './build/entityCard';
+import {
+  renderPoolFiltersHtml, renderPoolItemListHtml, bindPoolFilterEvents,
+  type PoolFilterState,
+} from './build/poolList';
+import {
+  showSimTooltip, hideSimTooltip, disposeSimTooltip,
+  bindSbTooltips, bindTooltipOnRoot,
+} from './build/simTooltip';
+import { patchBattleValues } from './build/battlePatch';
 
 // ============================================================
 // 状态类型
@@ -92,6 +102,25 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
   /** BD 面板 pointer 委托是否已绑定 */
   let stablePointerBound = false;
   let battleLogBridge: BattleLogBridge | null = null;
+  let cancelled = false;
+
+  function getCollapse(): CollapseState {
+    return {
+      collapsedCards: state.collapsedCards,
+      collapsedAffixBlocks: state.collapsedAffixBlocks,
+      collapsedChildBlocks: state.collapsedChildBlocks,
+      collapsedFixedAffixRows: state.collapsedFixedAffixRows,
+      collapsedDynAffixRows: state.collapsedDynAffixRows,
+    };
+  }
+
+  function getPoolFilterState(): PoolFilterState {
+    return state;
+  }
+
+  function getInstance(instanceId: string): ItemInstance | null {
+    return findItemInSlots(state.playerSlots, instanceId) || findItemInSlots(state.enemySlots, instanceId);
+  }
 
   function refreshDeployUI(changedSides: Array<'player' | 'enemy'>, alsoPool = false) {
     if (!buildSkeletonReady) {
@@ -169,7 +198,7 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
       if (btn) {
         hideSimTooltip();
         if (state.battleUpdateTimer) { cancelAnimationFrame(state.battleUpdateTimer); state.battleUpdateTimer = null; }
-        if (tooltipEl) { tooltipEl.remove(); tooltipEl = null; }
+        disposeSimTooltip();
         onBack();
       }
     });
@@ -235,7 +264,7 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
         hideSimTooltip();
         cancelled = true;
         if (state.battleUpdateTimer !== null) { cancelAnimationFrame(state.battleUpdateTimer); state.battleUpdateTimer = null; }
-        if (tooltipEl) { tooltipEl.remove(); tooltipEl = null; }
+        disposeSimTooltip();
         state.inBattle = false; state.battleFinished = false; state.battlePaused = false;
         state.battleLog = [];
         renderZones();
@@ -423,456 +452,6 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
   function getSlots(side: 'player' | 'enemy'): DeploySlot[] {
     return side === 'player' ? state.playerSlots : state.enemySlots;
   }
-// ============================================================
-// Tooltip（紧凑格式）
-// ============================================================
-
-/** 克 → 展示：|g|<1000 用 g，否则 kg（整除用整数，否则最多 3 位去尾零） */
-function formatWeightG(grams: number): string {
-  const n = Number(grams) || 0;
-  const abs = Math.abs(n);
-  if (abs < 1000) return `${n}g`;
-  const kg = n / 1000;
-  const s = Number.isInteger(kg) ? String(kg) : String(parseFloat(kg.toFixed(3)));
-  return `${s}kg`;
-}
-
-/** 负重加成带符号：+2kg / -500g */
-function formatWeightBonusG(grams: number): string {
-  const n = Number(grams) || 0;
-  if (n === 0) return '0g';
-  const body = formatWeightG(Math.abs(n));
-  return n > 0 ? `+${body}` : `-${body}`;
-}
-
-// ── Tooltip ──
-function tipkv(k: string, v: string | number): string {
-  return `<span class="sb-tip-kv"><span class="sb-tip-key">${k}</span><span class="sb-tip-val">${v}</span></span>`;
-}
-function tipSection(title: string): string {
-  return `<div class="sb-tip-section">${title}</div>`;
-}
-function tipIndent(depth: number): string {
-  return `margin-left:${depth * 12}px;`;
-}
-
-/** 递归计算实体总值：自身 + 固定词条 + 动态词条 + 子孙实体 */
-function computeTotalValue(item: ItemInstance): number {
-  const def = getEntityDef(item.defId);
-  let total = def?.value || 0;
-  if (def) {
-    for (const fa of def.fixedAffixes) {
-      const ad = getAffixDef(fa);
-      if (ad) total += Math.abs(ad.costValue);
-    }
-  }
-  for (const c of (item.children || [])) {
-    if (c.type === 'affix') {
-      const ad = getAffixDef(c.defId);
-      if (ad) total += Math.abs(ad.costValue);
-    } else if (c.type === 'entity') {
-      total += computeTotalValue(c);
-    }
-  }
-  return total;
-}
-
-/** 从固定+动态词条中提取所有类型标签 */
-function getTypeBadges(def: EntityDef, inst?: ItemInstance | null): string[] {
-  const tags = [...getEntityCategory(def)];
-  if (inst) {
-    for (const c of (inst.children || [])) {
-      if (c.type === 'affix') {
-        const a = getAffixDef(c.defId);
-        if (a && !tags.includes(a.name)) {
-          tags.push(a.name);
-        }
-      }
-    }
-  }
-  return tags;
-}
-
-/** 检查实体是否有被动加成（受 hasPassiveBonuses 约束；字段含 loadBonus） */
-function hasPassive(def: EntityDef): boolean {
-  if (def.hasPassiveBonuses === false) return false;
-  return ((def.damageBonus || 0) !== 0)
-    || (def.hpBonus || 0) !== 0
-    || (def.hpRegenerationBonus || 0) !== 0
-    || (def.staminaBonus || 0) !== 0
-    || (def.staminaRegenerationBonus || 0) !== 0
-    || (def.loadBonus || 0) !== 0;
-}
-
-/** 将词条/实体ID数组解析为中文名称 */
-function resolveNames(ids: string[]): string {
-  return ids.map(id => {
-    const ad = getAffixDef(id);
-    if (ad) return ad.name;
-    const ed = getEntityDef(id);
-    if (ed) return ed.name;
-    return id;
-  }).join('、') || '无';
-}
-
-/** 递归渲染实例子树（tooltip 用），depth=0 为顶层 */
-function renderTooltipTree(
-  item: ItemInstance, def: EntityDef, depth: number,
-  sideFirst?: string, combatUnit?: CombatUnitRuntime | null,
-): string {
-  const isSt = isStarter(def);
-  const indent = tipIndent(depth);
-  let h = '';
-
-  if (depth === 0) {
-    // 分类
-    const cat = getEntityCategory(def).join(' / ');
-    h += `<div class="sb-tip-cat">${cat}</div>`;
-
-    // 基本信息
-    h += tipSection('基本信息');
-    h += '<div class="sb-tip-grid">';
-    if (isSt) {
-      const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${def.hp}/${def.hp}`;
-      const stam = combatUnit ? `${Math.floor(combatUnit.currentStamina)}/${combatUnit.maxStamina}` : `${def.maxStamina}/${def.maxStamina}`;
-      const sRegen = combatUnit ? combatUnit.staminaRegen : def.staminaRegen;
-      const hRegen = combatUnit ? combatUnit.hpRegeneration : (def.hpRegen || 0);
-      h += tipkv('生命', hp) + tipkv('耐力', stam);
-      h += tipkv('耐力恢复', sRegen + '/s') + tipkv('生命恢复', hRegen + '/s');
-      h += tipkv('负重上限', formatWeightG(def.maxLoad));
-    }
-    h += tipkv('槽位消耗', def.slotCost);
-    if (!isSt) h += tipkv('重量', formatWeightG(def.weight));
-    h += '</div>';
-
-    // 主动动作
-    if (def.isActive) {
-      h += tipSection('主动动作');
-      h += '<div class="sb-tip-grid">';
-      let dmg = def.damage, time = (def.actionTime / 1000).toFixed(1) + 's';
-      if (combatUnit) {
-        const matched = combatUnit.weapons.find(w => w.name === def.name);
-        if (matched) { dmg = matched.damage; time = `${(Math.max(matched.remainingTime, 0) / 1000).toFixed(1)}s`; }
-      }
-      h += tipkv('伤害', dmg) + tipkv('耗时', time);
-      h += tipkv('耐耗', def.staminaCost) + tipkv('针对类型', def.targetType || '—');
-      if (def.targetOrder) h += tipkv('针对顺序', def.targetOrder);
-      if (def.priorityTarget != null) h += tipkv('优先目标', '第' + def.priorityTarget + '位');
-      if (def.targetFaction) h += tipkv('针对目标', def.targetFaction);
-      // v6: 条件 Targeting（优先显示运行时 matched 值，兜底模板值）
-      const tc = (combatUnit ? combatUnit.weapons.find(w => w.name === def.name)?.targetCondition : null) ?? def.targetCondition;
-      if (tc?.sortBy) {
-        const sortMap: Record<string, string> = { hp_asc: 'HP最低优先', hp_desc: 'HP最高优先', stamina_asc: '耐力最低优先', random: '随机' };
-        h += tipkv('条件排序', sortMap[tc.sortBy] || tc.sortBy);
-      }
-      if (tc?.filterBy) {
-        const fbMap: Record<string, string> = { has_debuff: '有debuff', most_buffs: 'Buff最多', hp_below_50pct: 'HP<50%' };
-        h += tipkv('条件过滤', fbMap[tc.filterBy] || tc.filterBy);
-      }
-      h += '</div>';
-    }
-
-    // 被动加成
-    if (hasPassive(def)) {
-      h += tipSection('被动加成');
-      h += '<div class="sb-tip-grid">';
-      if (def.damageBonus) h += tipkv('伤害加成', (def.damageBonus > 0 ? '+' : '') + def.damageBonus);
-      if (def.hpBonus) h += tipkv('生命加成', (def.hpBonus > 0 ? '+' : '') + def.hpBonus);
-      if (def.hpRegenerationBonus) h += tipkv('生命恢复加成', '+' + def.hpRegenerationBonus + '/s');
-      if (def.staminaBonus) h += tipkv('耐力加成', '+' + def.staminaBonus);
-      if (def.staminaRegenerationBonus) h += tipkv('耐力恢复加成', '+' + def.staminaRegenerationBonus + '/s');
-      if (def.loadBonus) h += tipkv('负重加成', formatWeightBonusG(def.loadBonus));
-      h += '</div>';
-    }
-
-    // 词条
-    const hasAffixInfo = def.poolPrerequisite.length > 0
-      || def.fixedAffixes.length > 0
-      || def.dynamicAffixSlots > 0
-      || (def.preloadedDynamicAffixes && def.preloadedDynamicAffixes.length > 0);
-    if (hasAffixInfo) {
-      h += tipSection('词条');
-      if (def.poolPrerequisite.length > 0) {
-        h += `<div class="sb-tip-fixed-row" style="${indent}">前置词条: ${resolveNames(def.poolPrerequisite)}</div>`;
-      }
-      if (def.fixedAffixes.length > 0) {
-        for (const fa of def.fixedAffixes) {
-          const fd = getAffixDef(fa);
-          h += `<div class="sb-tip-fixed-row" style="${indent}">${fd?.name || fa}  <span class="sb-tip-fixed-effect">${fd?.effect || ''}</span></div>`;
-        }
-      }
-      if (def.dynamicAffixSlots > 0) {
-        h += `<div class="sb-tip-fixed-row" style="${indent}">动态词条槽位: ${def.dynamicAffixSlots}</div>`;
-      }
-      if (def.preloadedDynamicAffixes && def.preloadedDynamicAffixes.length > 0) {
-        h += `<div class="sb-tip-fixed-row" style="${indent}">预装动态词条: ${resolveNames(def.preloadedDynamicAffixes)}</div>`;
-      }
-    }
-  }
-
-  // children: 已挂载的动态词条 + 子实体
-  const affixes = (item.children || []).filter(c => c.type === 'affix');
-  const entities = (item.children || []).filter(c => c.type === 'entity');
-  const effSlots = getEffectiveEntitySlots(def);
-  const usedSlots = countUsedSlots(item);
-
-  if (depth === 0 && affixes.length > 0) {
-    const usedAffix = countUsedAffixSlots(item);
-    h += tipSection(`已挂载词条 (${usedAffix}/${def.dynamicAffixSlots} 槽位, ${affixes.length}条)`);
-    for (const a of affixes) {
-      const ad = getAffixDef(a.defId);
-      h += `<div class="sb-tip-tree-row" style="${tipIndent(1)}">${ad?.name || a.defId}  <span class="sb-tip-muted">槽耗${ad?.slotCost ?? 0}</span>  <span class="sb-tip-muted">[${getCategoryName(ad?.category || '')}]</span>  ${ad?.effect || ''}</div>`;
-    }
-  }
-  if (depth > 0 && affixes.length > 0) {
-    for (const a of affixes) {
-      const ad = getAffixDef(a.defId);
-      h += `<div class="sb-tip-tree-row" style="${indent}">${ad?.name || a.defId}  <span class="sb-tip-muted">槽耗${ad?.slotCost ?? 0}</span>  <span class="sb-tip-muted">[${getCategoryName(ad?.category || '')}]</span>  ${ad?.effect || ''}</div>`;
-    }
-  }
-
-  if (entities.length > 0) {
-    if (depth === 0) {
-      h += tipSection(`子实体 (${usedSlots}/${effSlots} 槽位)`);
-    }
-    for (const child of entities) {
-      const cd = getEntityDef(child.defId);
-      if (!cd) continue;
-      let row = `<div class="sb-tip-tree-row" style="${depth === 0 ? tipIndent(1) : indent}">`;
-      row += `<span class="sb-tip-entity-name">${cd.name}</span>`;
-      if (isStarter(cd)) {
-        row += `  HP:${cd.hp}  耐力:${cd.maxStamina}`;
-      }
-      if (cd.isActive) {
-        row += `  伤:${cd.damage}  ${(cd.actionTime / 1000).toFixed(1)}s`;
-      }
-      row += `  <span class="sb-tip-muted">槽耗${cd.slotCost}</span>`;
-      row += '</div>';
-      h += row;
-      h += renderTooltipTree(child, cd, depth + 1, sideFirst, combatUnit);
-    }
-  }
-
-  return h;
-}
-
-let tooltipEl: HTMLElement | null = null;
-let tipShowTimer: ReturnType<typeof setTimeout> | null = null;
-let cancelled = false;
-
-function ensureTooltip(): HTMLElement {
-  if (!tooltipEl) {
-    tooltipEl = document.createElement('div');
-    tooltipEl.id = 'sb-tooltip';
-    tooltipEl.innerHTML = '<div class="sb-tip-inner"></div>';
-    document.body.appendChild(tooltipEl);
-  }
-  return tooltipEl;
-}
-
-function showSimTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affix', instanceId?: string | null) {
-  if (tipShowTimer) clearTimeout(tipShowTimer);
-  const tip = ensureTooltip();
-  const inner = tip.querySelector('.sb-tip-inner')!;
-
-  if (type === 'entity') {
-    const def = getEntityDef(defId);
-    if (!def) return;
-    // 优先查找实例
-    let inst: ItemInstance | null = null;
-    if (instanceId) {
-      inst = findItemInSlots(state.playerSlots, instanceId) || findItemInSlots(state.enemySlots, instanceId);
-    }
-    // Header: 名称(左) + 价格(右) 同行
-    const value = inst ? computeTotalValue(inst) : def.value;
-    let h = `<div class="sb-tip-header"><div class="sb-tip-name">${def.name}</div>`;
-    h += `<div class="sb-tip-price">价${value}</div></div>`;
-
-    const isSt = isStarter(def);
-    const renderPoolDef = () => {
-      let html = '';
-      // 分类
-      const cat = getEntityCategory(def).join(' / ');
-      html += `<div class="sb-tip-cat">${cat}</div>`;
-
-      // 基本信息
-      html += tipSection('基本信息');
-      html += '<div class="sb-tip-grid">';
-      if (isSt) {
-        html += tipkv('生命', def.hp) + tipkv('耐力', def.maxStamina);
-        html += tipkv('耐力恢复', def.staminaRegen + '/s') + tipkv('生命恢复', (def.hpRegen || 0) + '/s');
-        html += tipkv('负重上限', formatWeightG(def.maxLoad));
-      }
-      html += tipkv('槽位消耗', def.slotCost);
-      if (!isSt) html += tipkv('重量', formatWeightG(def.weight));
-      html += '</div>';
-
-      // 主动动作
-      if (def.isActive) {
-        html += tipSection('主动动作');
-        html += '<div class="sb-tip-grid">';
-        html += tipkv('伤害', def.damage) + tipkv('耗时', (def.actionTime / 1000).toFixed(1) + 's');
-        html += tipkv('耐耗', def.staminaCost) + tipkv('针对类型', def.targetType || '—');
-        if (def.targetOrder) html += tipkv('针对顺序', def.targetOrder);
-        if (def.priorityTarget != null) html += tipkv('优先目标', '第' + def.priorityTarget + '位');
-        if (def.targetFaction) html += tipkv('针对目标', def.targetFaction);
-        // v6: 条件 Targeting
-        if (def.targetCondition?.sortBy) {
-          const sortMap: Record<string, string> = { hp_asc: 'HP最低优先', hp_desc: 'HP最高优先', stamina_asc: '耐力最低优先', random: '随机' };
-          html += tipkv('条件排序', sortMap[def.targetCondition.sortBy] || def.targetCondition.sortBy);
-        }
-        if (def.targetCondition?.filterBy) {
-          const fbMap: Record<string, string> = { has_debuff: '有debuff', most_buffs: 'Buff最多', hp_below_50pct: 'HP<50%' };
-          html += tipkv('条件过滤', fbMap[def.targetCondition.filterBy] || def.targetCondition.filterBy);
-        }
-        html += '</div>';
-      }
-
-      // 被动加成
-      if (hasPassive(def)) {
-        html += tipSection('被动加成');
-        html += '<div class="sb-tip-grid">';
-        if (def.damageBonus) html += tipkv('伤害加成', (def.damageBonus > 0 ? '+' : '') + def.damageBonus);
-        if (def.hpBonus) html += tipkv('生命加成', (def.hpBonus > 0 ? '+' : '') + def.hpBonus);
-        if (def.hpRegenerationBonus) html += tipkv('生命恢复加成', '+' + def.hpRegenerationBonus + '/s');
-        if (def.staminaBonus) html += tipkv('耐力加成', '+' + def.staminaBonus);
-        if (def.staminaRegenerationBonus) html += tipkv('耐力恢复加成', '+' + def.staminaRegenerationBonus + '/s');
-        if (def.loadBonus) html += tipkv('负重加成', formatWeightBonusG(def.loadBonus));
-        html += '</div>';
-      }
-
-      // 词条
-      const hasAffixInfo = def.poolPrerequisite.length > 0
-        || def.fixedAffixes.length > 0
-        || def.dynamicAffixSlots > 0
-        || (def.preloadedDynamicAffixes && def.preloadedDynamicAffixes.length > 0);
-      if (hasAffixInfo) {
-        html += tipSection('词条');
-        if (def.poolPrerequisite.length > 0) {
-          html += `<div class="sb-tip-fixed-row">前置词条: ${resolveNames(def.poolPrerequisite)}</div>`;
-        }
-        if (def.fixedAffixes.length > 0) {
-          for (const fa of def.fixedAffixes) {
-            const fd = getAffixDef(fa);
-            html += `<div class="sb-tip-fixed-row">${fd?.name || fa}  <span class="sb-tip-fixed-effect">${fd?.effect || ''}</span></div>`;
-          }
-        }
-        if (def.dynamicAffixSlots > 0) {
-          html += `<div class="sb-tip-fixed-row">动态词条槽位: ${def.dynamicAffixSlots}</div>`;
-        }
-        if (def.preloadedDynamicAffixes && def.preloadedDynamicAffixes.length > 0) {
-          html += `<div class="sb-tip-fixed-row">预装动态词条: ${resolveNames(def.preloadedDynamicAffixes)}</div>`;
-        }
-      }
-
-      // 子实体（defaultChildren）
-      const defaultKids = def.defaultChildren || [];
-      if (defaultKids.length > 0) {
-        html += tipSection(`预装子实体 (${defaultKids.length})`);
-        for (const kidSpec of defaultKids) {
-          const kidId = typeof kidSpec === 'string' ? kidSpec : kidSpec.defId;
-          const cd = getEntityDef(kidId);
-          if (!cd) continue;
-          let row = `<div class="sb-tip-tree-row" style="${tipIndent(1)}"><span class="sb-tip-entity-name">${cd.name}</span>`;
-          if (isStarter(cd)) {
-            row += `  HP:${cd.hp}  耐力:${cd.maxStamina}`;
-          }
-          if (cd.isActive) {
-            row += `  伤:${cd.damage}  ${(cd.actionTime / 1000).toFixed(1)}s`;
-          }
-          row += `  <span class="sb-tip-muted">槽耗${cd.slotCost}</span></div>`;
-          html += row;
-        }
-      }
-
-      // 子实体槽位
-      if (def.entitySlots > 0) {
-        if (defaultKids.length === 0) {
-          html += tipSection('子实体');
-        }
-        html += `<div class="sb-tip-fixed-row">实体槽位: ${def.entitySlots}</div>`;
-      }
-      return html;
-    };
-
-    if (inst) {
-      // 实例模式：递归渲染完整树
-      let cu: CombatUnitRuntime | null | undefined = undefined;
-      h += renderTooltipTree(inst, def, 0, undefined, cu);
-    } else {
-      // 池物品模式
-      h += renderPoolDef();
-    }
-    inner.innerHTML = h;
-  } else {
-    const def = getAffixDef(defId);
-    if (!def) return;
-    // Header: 名称(左) + 价格(右) 同行
-    let h = `<div class="sb-tip-header"><div class="sb-tip-name">${def.name}</div>`;
-    h += `<div class="sb-tip-price">价${Math.abs(def.costValue)}</div></div>`;
-    // 分类
-    h += `<div class="sb-tip-cat">${getCategoryName(def.category)}</div>`;
-    // 效果描述
-    h += tipSection('效果描述');
-    h += `<div class="sb-tip-effect">${def.effect}</div>`;
-    // 被动加成
-    const hasPsv = def.hasPassiveBonuses !== false && (
-      !!(def.damageBonus) || !!(def.hpBonus) || !!(def.hpRegenerationBonus)
-      || !!(def.staminaBonus) || !!(def.staminaRegenerationBonus) || !!(def.loadBonus)
-    );
-    if (hasPsv) {
-      h += tipSection('被动加成');
-      h += '<div class="sb-tip-grid">';
-      if (def.damageBonus) h += tipkv('伤害加成', `${def.damageBonus > 0 ? '+' : ''}${def.damageBonus}`);
-      if (def.hpBonus) h += tipkv('生命加成', `${def.hpBonus > 0 ? '+' : ''}${def.hpBonus}`);
-      if (def.hpRegenerationBonus) h += tipkv('生命恢复', `+${def.hpRegenerationBonus}/秒`);
-      if (def.staminaBonus) h += tipkv('耐力加成', `+${def.staminaBonus}`);
-      if (def.staminaRegenerationBonus) h += tipkv('耐力恢复', `+${def.staminaRegenerationBonus}/秒`);
-      if (def.loadBonus) h += tipkv('负重加成', formatWeightBonusG(def.loadBonus));
-      h += '</div>';
-    }
-    // 基本信息
-    h += tipSection('基本信息');
-    h += '<div class="sb-tip-grid">';
-    h += tipkv('槽位消耗', def.slotCost);
-    h += tipkv('可重复', def.repeatable ? '是' : '否');
-    h += '</div>';
-    // 词条
-    const hasAffixInfo = def.prerequisite.length > 0 || def.poolPrerequisite.length > 0;
-    if (hasAffixInfo) {
-      h += tipSection('词条');
-      if (def.prerequisite.length > 0) {
-        h += `<div class="sb-tip-fixed-row">前置词条: ${resolveNames(def.prerequisite)}</div>`;
-      }
-      if (def.poolPrerequisite.length > 0) {
-        h += `<div class="sb-tip-fixed-row">池前置: ${resolveNames(def.poolPrerequisite)}</div>`;
-      }
-    }
-    inner.innerHTML = h;
-  }
-
-  // 入场动画 + 定位
-  tip.classList.add('sb-tip-visible');
-  tip.classList.remove('sb-tip-hiding');
-  const gap = 10;
-  let left = e.clientX + gap;
-  let top = e.clientY + gap;
-  tip.style.display = 'block';
-  const rect = tip.getBoundingClientRect();
-  if (left + rect.width > window.innerWidth - 10) left = e.clientX - rect.width - gap;
-  if (top + rect.height > window.innerHeight - 10) top = e.clientY - rect.height - gap;
-  tip.style.left = Math.max(5, left) + 'px';
-  tip.style.top = Math.max(5, top) + 'px';
-}
-
-function hideSimTooltip() {
-  tipShowTimer = setTimeout(() => {
-    if (tooltipEl) {
-      tooltipEl.classList.add('sb-tip-hiding');
-      tooltipEl.classList.remove('sb-tip-visible');
-    }
-  }, 50);
-}
 
   // ============================================================
   // Toast
@@ -892,32 +471,6 @@ function hideSimTooltip() {
       el.classList.add('sb-toast-out');
       el.classList.remove('sb-toast-visible');
     }, 2000);
-  }
-
-  // ============================================================
-  // 物品池筛选
-  // ============================================================
-
-  function buildPoolItemList(): { entities: EntityDef[]; affixes: AffixDef[] } {
-    const q = state.poolSearch.toLowerCase();
-    let entities = ENTITY_DEFS.slice();
-    let affixes = AFFIX_DEFS.slice();
-
-    // 搜索过滤
-    if (q) {
-      entities = entities.filter(e => e.name.toLowerCase().includes(q) || e.id.toLowerCase().includes(q));
-      affixes = affixes.filter(a => a.name.toLowerCase().includes(q) || a.id.toLowerCase().includes(q) || a.effect.toLowerCase().includes(q));
-    }
-
-    // 类别过滤
-    if (state.entityCatFilter !== 'all') {
-      entities = entities.filter(e => getEntityCategory(e).includes(state.entityCatFilter));
-    }
-    if (state.affixCatFilter !== 'all') {
-      affixes = affixes.filter(a => a.category === state.affixCatFilter);
-    }
-
-    return { entities, affixes };
   }
 
   // ============================================================
@@ -984,113 +537,8 @@ function hideSimTooltip() {
     `;
   }
 
-  // 只生成筛选区 HTML（分类按钮 + 搜索框），筛选/折叠变化时需要重绘以更新 active/折叠状态
-  function renderPoolFilters(): string {
-    const ecats = getEntityCategoryFilters();
-    const aCatObjs = getAffixFilterCategories();
-
-    let h = '<div id="sb-pool-filters">';
-    // 实体类别筛选
-    h += '<div class="filter-row">';
-    for (const c of ecats) {
-      h += `<button class="sb-filter-btn${state.entityCatFilter === c ? ' active' : ''}" data-ecat="${c}">${c === 'all' ? '全部实体' : c}</button>`;
-    }
-    h += '</div>';
-    // 词条类别筛选
-    h += '<div class="filter-row">';
-    h += `<button class="sb-filter-btn${state.affixCatFilter === 'all' ? ' active' : ''}" data-acat="all">全部词条</button>`;
-    for (const c of aCatObjs) {
-      h += `<button class="sb-filter-btn${state.affixCatFilter === c.id ? ' active' : ''}" data-acat="${c.id}">${c.name}</button>`;
-    }
-    h += '</div>';
-    // 搜索：搜索触发时只更新列表区，不重建输入框，因此 value 只负责首次/筛选触发时的回显
-    h += `<input id="sb-pool-search" type="text" placeholder="搜索名称/ID/效果..." value="${escHtml(state.poolSearch)}">`;
-    h += '</div>';
-    return h;
-  }
-
-  // 只生成物品列表区 HTML（实体/词条两大区块），搜索触发时单独更新此区域避免销毁搜索输入框
-  function renderPoolItemList(): string {
-    const { entities, affixes } = buildPoolItemList();
-    const cs = state.collapsedPoolSections;
-
-    let h = '<div id="sb-item-list">';
-
-    // ── 实体区块 ──
-    const entitySecCollapsed = cs.has('section:entity');
-    h += `<div class="sb-pool-sec-header" data-toggle-section="section:entity">${entitySecCollapsed ? '▸' : '▾'} 实体 <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${entities.length}</span></div>`;
-    if (!entitySecCollapsed) {
-      if (entities.length === 0) {
-        h += '<div class="sb-pool-empty">无匹配实体</div>';
-      } else {
-        // 按实体分类分组
-        const grouped = new Map<string, EntityDef[]>();
-        for (const e of entities) {
-          const cat = getEntityCategory(e)[0] || '未知';
-          if (!grouped.has(cat)) grouped.set(cat, []);
-          grouped.get(cat)!.push(e);
-        }
-        for (const [cat, items] of grouped) {
-          const catKey = `cat:entity:${cat}`;
-          const catCollapsed = cs.has(catKey);
-          h += `<div class="sb-pool-cat-header" data-toggle-section="${catKey}">${catCollapsed ? '▸' : '▾'} ${cat} <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${items.length}</span></div>`;
-          if (!catCollapsed) {
-            for (const e of items) {
-              h += renderPoolEntityRow(e);
-            }
-          }
-        }
-      }
-    }
-
-    // ── 词条区块 ──
-    const affixSecCollapsed = cs.has('section:affix');
-    h += `<div class="sb-pool-sec-header" data-toggle-section="section:affix">${affixSecCollapsed ? '▸' : '▾'} 词条 <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${affixes.length}</span></div>`;
-    if (!affixSecCollapsed) {
-      if (affixes.length === 0) {
-        h += '<div class="sb-pool-empty">无匹配词条</div>';
-      } else {
-        // 按词条分类分组
-        const affixGrouped = new Map<string, AffixDef[]>();
-        for (const a of affixes) {
-          const catName = getCategoryName(a.category);
-          if (!affixGrouped.has(catName)) affixGrouped.set(catName, []);
-          affixGrouped.get(catName)!.push(a);
-        }
-        for (const [catName, items] of affixGrouped) {
-          const catKey = `cat:affix:${catName}`;
-          const catCollapsed = cs.has(catKey);
-          h += `<div class="sb-pool-cat-header" data-toggle-section="${catKey}">${catCollapsed ? '▸' : '▾'} ${catName} <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${items.length}</span></div>`;
-          if (!catCollapsed) {
-            for (const a of items) {
-              h += renderPoolAffixRow(a);
-            }
-          }
-        }
-      }
-    }
-
-    h += '</div>';
-    return h;
-  }
-
-  // 完整池子内容（筛选区 + 列表区），用于筛选/折叠变化时的完整重绘
   function renderPoolContent(): string {
-    return renderPoolFilters() + renderPoolItemList();
-  }
-
-  function renderPoolEntityRow(e: EntityDef): string {
-    return `<div class="sb-pool-item" data-defid="${e.id}" data-type="entity" data-source="pool">
-      <span class="item-name">${e.name}</span>
-      <span class="item-stat">价${e.value}  槽耗${e.slotCost}</span>
-    </div>`;
-  }
-
-  function renderPoolAffixRow(a: AffixDef): string {
-    return `<div class="sb-pool-item" data-defid="${a.id}" data-type="affix" data-source="pool">
-      <span class="item-name">${a.name}</span>
-      <span class="item-stat">价${Math.abs(a.costValue)}  槽耗${a.slotCost}</span>
-    </div>`;
+    return renderPoolFiltersHtml(getPoolFilterState()) + renderPoolItemListHtml(getPoolFilterState());
   }
 
   function renderDeployArea(side: 'player' | 'enemy'): string {
@@ -1115,328 +563,10 @@ function hideSimTooltip() {
       const slot = slots[si];
       const edef = getEntityDef(slot.entity.defId);
       if (!edef) continue;
-      h += renderEntityCard(slot.entity, 0, side, 'build');
+      h += renderEntityCard(slot.entity, 0, side, 'build', getCollapse());
     }
 
     h += '</div>';
-    return h;
-  }
-
-  // ---- 统一实体卡片渲染 ----
-
-  /** 返回实体一行关键信息（折叠视图用）。battle 模式下包含 cu-* span 以支持实时更新 */
-  function renderCardKeyInfo(item: ItemInstance, mode: 'build' | 'battle', combatUnit?: CombatUnitRuntime | null, sideFirst?: string): string {
-    const edef = getEntityDef(item.defId);
-    if (!edef) return item.defId;
-    const isSt = isStarter(edef);
-    const isActive = edef.isActive;
-
-    if (isSt) {
-      const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${edef.hp}/${edef.hp}`;
-      const stam = combatUnit ? `${Math.floor(combatUnit.currentStamina)}/${combatUnit.maxStamina}` : `${edef.maxStamina}/${edef.maxStamina}`;
-      let s: string;
-      if (mode === 'battle' && combatUnit && sideFirst) {
-        s = `${edef.name}  HP:<span id="cu-hp-${sideFirst}-${item.instanceId}">${hp}</span>  耐力:<span id="cu-sta-${sideFirst}-${item.instanceId}">${stam}</span>`;
-      } else {
-        s = `${edef.name}  HP:${hp}  耐力:${stam}`;
-      }
-      if (combatUnit?.isOverloaded) s += '  超重';
-      if (combatUnit && combatUnit.currentHp <= 0) s += '  阵亡';
-
-      // 启动端自身有主动动作时，追加动作信息
-      const effIsActive = edef ? Boolean(getEffectiveValue(item, 'isActive') ?? edef.isActive) : false;
-      if (effIsActive && edef) {
-        let dmg: number, time: string, order: string;
-        if (mode === 'battle' && combatUnit) {
-          const sw = combatUnit.weapons[0]; // 启动端武器始终在 index 0
-          if (sw && sw.name === edef.name) {
-            dmg = sw.damage;
-            time = sideFirst
-              ? `倒计时:<span id="cu-cd-${sideFirst}-${combatUnit.instanceId}-0">${(Math.max(sw.remainingTime, 0) / 1000).toFixed(1)}s</span>`
-              : `倒计时:${(Math.max(sw.remainingTime, 0) / 1000).toFixed(1)}s`;
-            order = sw.targetOrder;
-          } else {
-            dmg = Number(getEffectiveValue(item, 'damage') ?? 0);
-            time = `耗时:${(Number(getEffectiveValue(item, 'actionTime') ?? 0) / 1000).toFixed(1)}s`;
-            order = String((getEffectiveValue(item, 'targetOrder') ?? edef.targetOrder) || '');
-          }
-        } else {
-          dmg = Number(getEffectiveValue(item, 'damage') ?? 0);
-          time = `耗时:${(Number(getEffectiveValue(item, 'actionTime') ?? 0) / 1000).toFixed(1)}s`;
-          order = String((getEffectiveValue(item, 'targetOrder') ?? edef.targetOrder) || '');
-        }
-        s += `  伤:${dmg}  ${time}  顺序:${order}`;
-        if (edef.priorityTarget) s += ' 优先' + edef.priorityTarget;
-      }
-
-      return s;
-    } else if (isActive) {
-      let dmg: number, time: string, order: string;
-      if (mode === 'battle' && combatUnit) {
-        const matched = combatUnit.weapons.find(w => w.name === edef.name);
-        if (matched) {
-          dmg = matched.damage;
-          if (sideFirst) {
-            const wIdx = combatUnit.weapons.indexOf(matched);
-            time = `倒计时:<span id="cu-cd-${sideFirst}-${combatUnit.instanceId}-${wIdx}">${(Math.max(matched.remainingTime, 0) / 1000).toFixed(1)}s</span>`;
-          } else {
-            time = `倒计时:${(Math.max(matched.remainingTime, 0) / 1000).toFixed(1)}s`;
-          }
-          order = matched.targetOrder;
-        } else {
-          dmg = edef.damage;
-          time = `耗时:${(edef.actionTime / 1000).toFixed(1)}s`;
-          order = edef.targetOrder || '';
-        }
-      } else {
-        dmg = edef.damage;
-        time = `耗时:${(edef.actionTime / 1000).toFixed(1)}s`;
-        order = edef.targetOrder || '';
-      }
-      return `${edef.name}  伤:${dmg}  ${time}  顺序:${order}${edef.priorityTarget ? ' 优先' + edef.priorityTarget : ''}`;
-    } else {
-      const cat = getEntityCategory(edef).join(' / ');
-      return `${edef.name}  HP:${edef.hp}  重:${formatWeightG(edef.weight)}  ${cat}`;
-    }
-  }
-
-  /** 折叠状态下递归渲染子实体缩进树 */
-  function renderCollapsedChildTree(
-    item: ItemInstance, depth: number, side: string,
-    mode: 'build' | 'battle', combatUnit?: CombatUnitRuntime | null,
-    sideFirst?: string,
-  ): string {
-    const edef = getEntityDef(item.defId);
-    if (!edef) return '';
-    const ml = `margin-left:${Math.min(depth, 5) * 16}px;`;
-    let h = `<div class="sb-collapsed-child" style="${ml}">`;
-    h += renderCardKeyInfo(item, mode, combatUnit, sideFirst);
-    h += '</div>';
-    const entityChildren = (item.children || []).filter(c => c.type === 'entity');
-    for (const child of entityChildren) {
-      h += renderCollapsedChildTree(child, depth + 1, side, mode, combatUnit, sideFirst);
-    }
-    return h;
-  }
-
-  function renderEntityCard(
-    item: ItemInstance,
-    depth: number,
-    side: 'player' | 'enemy',
-    mode: 'build' | 'battle',
-    combatUnit?: CombatUnitRuntime | null,
-  ): string {
-    const isEntity = item.type === 'entity';
-    const def = isEntity ? getEntityDef(item.defId) : getAffixDef(item.defId) as AffixDef | undefined;
-    if (!def) return '';
-
-    const instanceId = item.instanceId;
-    const sideFirst = side === 'player' ? 'p' : 'e';
-    const ml = depth > 0 ? `margin-left:${Math.min(depth, 3) * 16}px;` : '';
-    const cardCollapsed = state.collapsedCards.has(instanceId);
-    const affixBlockCollapsed = state.collapsedAffixBlocks.has(instanceId);
-    const childBlockCollapsed = state.collapsedChildBlocks.has(instanceId);
-    const isSt = isEntity && isStarter(def as EntityDef);
-    const isActive = isEntity && (def as EntityDef).isActive;
-    const edef = isEntity ? (def as EntityDef) : null;
-    const starterHasActive = isSt && edef ? Boolean(getEffectiveValue(item, 'isActive') ?? edef.isActive) : false;
-
-    const deadClass = (combatUnit && combatUnit.currentHp <= 0) ? ' dead' : '';
-    const collapsedClass = cardCollapsed ? ' sb-card-collapsed' : '';
-    const sortItemAttr = (mode === 'build' && isEntity)
-      ? ` data-sort-item="entity" data-instance="${instanceId}" data-side="${side}"`
-      : '';
-    let h = `<div class="sb-card${deadClass}${collapsedClass}" style="${ml}" data-depth="${depth}" data-side="${side}" data-mode="${mode}"${sortItemAttr}>`;
-
-    // ── 卡片标题行（始终渲染名称和关键信息，CSS 控制显隐）──
-    const dragHandleAttr = mode === 'build'
-      ? ` data-drag-handle data-instance="${instanceId}" data-side="${side}" data-kind="${isEntity ? 'entity' : 'affix'}" data-defid="${isEntity ? edef!.id : (def as AffixDef).id}"`
-      : '';
-    const collapseLabel = cardCollapsed ? '展开' : '收起';
-    h += `<div class="sb-card-header" data-cardtoggle="${instanceId}" data-defid="${isEntity ? edef!.id : ''}"${dragHandleAttr} style="cursor:pointer;">`;
-    h += `<span class="sb-card-header-name">${isEntity ? edef!.name : (def as AffixDef).name}</span>`;
-    h += '<span class="sb-card-header-keyinfo sb-card-keyinfo">';
-    h += renderCardKeyInfo(item, mode, combatUnit, sideFirst);
-    h += '</span>';
-    h += ` <span class="sb-card-collapse-btn">${collapseLabel}</span></div>`;
-
-    // ── 展开态内容 ──
-    h += '<div class="sb-card-body-expanded">';
-
-    // Block 1: 属性
-    h += '<div class="sb-card-block">';
-    h += '<div class="sb-block-title">属性</div>';
-    if (isSt) {
-      const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${edef!.hp}/${edef!.hp}`;
-      const stam = combatUnit ? `${Math.floor(combatUnit.currentStamina)}/${combatUnit.maxStamina}` : `${edef!.maxStamina}/${edef!.maxStamina}`;
-      const sRegen = combatUnit ? combatUnit.staminaRegen : edef!.staminaRegen;
-      const hRegen = combatUnit ? combatUnit.hpRegeneration : (edef!.hpRegen || 0);
-      h += '<div class="sb-card-stats">';
-      h += `HP: <span id="cu-hp-${sideFirst}-${item.instanceId}">${hp}</span>`;
-      h += `  耐力: <span id="cu-sta-${sideFirst}-${item.instanceId}">${stam}</span>`;
-      h += `  耐力恢复: ${sRegen}/s`;
-      h += `  生命恢复: ${hRegen}/s`;
-      h += '</div>';
-      h += '<div class="sb-card-stats">';
-      h += `负重: ${formatWeightG(edef!.maxLoad)}  槽耗: ${edef!.slotCost}`;
-      if (mode === 'build') h += `  价值: ${edef!.value}`;
-      h += `<span id="cu-ov-${sideFirst}-${item.instanceId}" style="${combatUnit?.isOverloaded ? '' : 'display:none'}">  超重</span>`;
-      h += `<span id="cu-dead-${sideFirst}-${item.instanceId}" style="${combatUnit && combatUnit.currentHp <= 0 ? '' : 'display:none'}">  阵亡</span>`;
-      h += '</div>';
-    } else if (isEntity && edef) {
-      h += '<div class="sb-card-stats">';
-      // 非启动端子实体无独立 combatUnit，统一显示 EntityDef HP
-      h += `HP: ${edef.hp}  `;
-      h += `槽耗: ${edef.slotCost}  重: ${formatWeightG(edef.weight)}`;
-      if (mode === 'build') h += `  价值: ${edef.value}`;
-      h += '</div>';
-    }
-    // 被动加成
-    if (edef && hasPassive(edef)) {
-      h += '<div class="sb-card-stats">';
-      if (edef.damageBonus) h += `伤害加成: ${edef.damageBonus > 0 ? '+' : ''}${edef.damageBonus}  `;
-      if (edef.hpBonus) h += `生命加成: ${edef.hpBonus > 0 ? '+' : ''}${edef.hpBonus}  `;
-      if (edef.hpRegenerationBonus) h += `生命恢复: +${edef.hpRegenerationBonus}/s  `;
-      if (edef.staminaBonus) h += `耐力加成: +${edef.staminaBonus}  `;
-      if (edef.staminaRegenerationBonus) h += `耐力恢复: +${edef.staminaRegenerationBonus}/s  `;
-      if (edef.loadBonus) h += `负重加成: ${formatWeightBonusG(edef.loadBonus)}`;
-      h += '</div>';
-    }
-    h += '</div>';
-
-    // Block 2: 主动动作
-    if ((isActive || starterHasActive) && edef) {
-      h += '<div class="sb-card-block">';
-      h += '<div class="sb-block-title">主动动作</div>';
-      h += '<div class="sb-card-stats">';
-      if (mode === 'battle' && combatUnit) {
-        const matched = combatUnit.weapons.find(w => w.name === edef.name);
-        if (matched) {
-          const wIdx = combatUnit.weapons.indexOf(matched);
-          h += `伤:${matched.damage}  倒计时:<span id="cu-cd-${sideFirst}-${combatUnit!.instanceId}-${wIdx}">${(Math.max(matched.remainingTime, 0) / 1000).toFixed(1)}s</span>  耐耗:${matched.staminaCost}  ${matched.targetType}${matched.priorityTarget ? ' 优先' + matched.priorityTarget : ''}`;
-        } else {
-          h += `伤:${edef.damage}  耗时:${(edef.actionTime / 1000).toFixed(1)}s  耐耗:${edef.staminaCost}  ${edef.targetType || ''}${edef.priorityTarget ? ' 优先' + edef.priorityTarget : ''}`;
-        }
-      } else {
-        h += `伤:${edef.damage}  耗时:${(edef.actionTime / 1000).toFixed(1)}s  耐耗:${edef.staminaCost}  ${edef.targetType || ''}${edef.priorityTarget ? ' 优先' + edef.priorityTarget : ''}`;
-      }
-      h += '</div></div>';
-    }
-
-    // Block 3: 词条
-    const dynAffixList = (item.children || []).filter(c => c.type === 'affix');
-    const dynAffixCount = dynAffixList.length;
-    const usedAffixSlots = countUsedAffixSlots(item);
-    const hasAffixBlock = (edef && edef.dynamicAffixSlots > 0) || dynAffixCount > 0 || (edef && edef.fixedAffixes.length > 0)
-      || (edef && edef.poolPrerequisite.length > 0)
-      || (edef && edef.preloadedDynamicAffixes && edef.preloadedDynamicAffixes.length > 0);
-    if (hasAffixBlock) {
-      h += '<div class="sb-card-block">';
-      const affixSlots = edef ? edef.dynamicAffixSlots : 0;
-      h += `<div class="sb-block-title" data-affixblocktoggle="${instanceId}" style="cursor:pointer;">`;
-      h += `词条 · ${usedAffixSlots}/${affixSlots} 槽位 <span style="font-weight:400;color:var(--sb-text-muted,inherit);margin-left:2px;">${affixBlockCollapsed ? '展开' : '收起'}</span></div>`;
-      h += `<div class="sb-foldable${affixBlockCollapsed ? ' sb-folded' : ''}">`;
-      // 前置词条
-      if (edef && edef.poolPrerequisite.length > 0) {
-        h += `<div class="sb-card-stats">前置词条: ${resolveNames(edef.poolPrerequisite)}</div>`;
-      }
-      // 预装动态词条
-      if (edef && edef.preloadedDynamicAffixes && edef.preloadedDynamicAffixes.length > 0) {
-        h += `<div class="sb-card-stats">预装动态词条: ${resolveNames(edef.preloadedDynamicAffixes)}</div>`;
-      }
-      // 固定词条
-      if (edef && edef.fixedAffixes.length > 0) {
-        const fixCollapsed = state.collapsedFixedAffixRows.has(instanceId);
-        const fnames = edef.fixedAffixes.map(a => getAffixDef(a)?.name || a).join('、');
-        h += `<div class="sb-card-stats" data-fixtoggle="${instanceId}" style="cursor:pointer;">`;
-        h += `固定词条 (${edef.fixedAffixes.length}) <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${fixCollapsed ? '展开' : '收起'}</span>`;
-        if (fixCollapsed) h += ` ${fnames}`;
-        h += '</div>';
-        if (!fixCollapsed) {
-          for (const fa of edef.fixedAffixes) {
-            const fd = getAffixDef(fa);
-            if (fd) h += `<div class="sb-card-stats" style="margin-left:12px;" data-defid="${fa}" data-type="affix">${fd.name}  效果:${fd.effect}</div>`;
-          }
-        }
-      }
-      // 动态词条
-      if (affixSlots > 0) {
-        const dynCollapsed = state.collapsedDynAffixRows.has(instanceId);
-        const dnames = dynAffixCount > 0
-          ? dynAffixList.map(c => { const ad = getAffixDef(c.defId); return ad ? ad.name : c.defId; }).join('、')
-          : '';
-        h += `<div class="sb-card-stats" data-dyntoggle="${instanceId}" style="cursor:pointer;">`;
-        h += `动态词条 (${dynAffixCount}条, 已用${usedAffixSlots}槽) <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${dynCollapsed ? '展开' : '收起'}</span>`;
-        if (dynCollapsed && dynAffixCount > 0) h += ` ${dnames}`;
-        h += '</div>';
-        if (!dynCollapsed) {
-          if (mode === 'build') {
-            h += `<div data-sort-list="affix" data-accept="affix" data-instance="${instanceId}" data-side="${side}">`;
-          }
-          for (const ac of dynAffixList) {
-            const ad = getAffixDef(ac.defId);
-            if (ad) {
-              const handle = mode === 'build'
-                ? ` data-drag-handle data-sort-item="affix" data-instance="${ac.instanceId}" data-defid="${ac.defId}" data-type="affix" data-kind="affix" data-side="${side}"`
-                : ` data-instance="${ac.instanceId}" data-defid="${ac.defId}" data-type="affix"`;
-              h += `<div class="sb-card-stats" style="margin-left:12px;"${handle}>${ad.name}  槽耗${ad.slotCost}  效果:${ad.effect}</div>`;
-            }
-          }
-          if (mode === 'build') {
-            const remaining = Math.max(0, affixSlots - usedAffixSlots);
-            for (let i = 0; i < remaining; i++) {
-              h += `<div class="sb-empty-slot" data-dropzone="affix" data-instance="${instanceId}" data-side="${side}" style="margin-left:12px;">空槽位, 拖入词条</div>`;
-            }
-            h += '</div>';
-          }
-        }
-      }
-      h += '</div>'; // sb-foldable
-      h += '</div>';
-    }
-
-    // Block 4: 子实体
-    const effSlots = edef ? getEffectiveEntitySlots(edef) : 0;
-    const usedSlots = edef ? countUsedSlots(item) : 0;
-    const entityChildren = (item.children || []).filter(c => c.type === 'entity');
-    const hasChildBlock = (effSlots > 0) || entityChildren.length > 0;
-    if (hasChildBlock) {
-      h += '<div class="sb-card-block">';
-      h += `<div class="sb-block-title" data-childblocktoggle="${instanceId}" style="cursor:pointer;">`;
-      h += `子实体 · ${usedSlots}/${effSlots} 槽位 <span style="font-weight:400;color:var(--sb-text-muted,inherit);margin-left:2px;">${childBlockCollapsed ? '展开' : '收起'}</span></div>`;
-      // 收起态名称预览始终在 DOM
-      h += `<div class="sb-card-stats sb-foldable-child-preview" style="${childBlockCollapsed ? '' : 'display:none'}">${entityChildren.map(c => (getEntityDef(c.defId) || { name: c.defId }).name).join(', ')}</div>`;
-      h += `<div class="sb-foldable${childBlockCollapsed ? ' sb-folded' : ''}">`;
-      if (mode === 'build') {
-        h += `<div class="sb-child-area" data-sort-list="child" data-accept="entity" data-instance="${instanceId}" data-side="${side}">`;
-      } else {
-        h += '<div class="sb-child-area">';
-      }
-      for (const child of entityChildren) {
-        h += renderEntityCard(child, depth + 1, side, mode, combatUnit);
-      }
-      if (mode === 'build') {
-        const remaining = effSlots - usedSlots;
-        for (let i = 0; i < remaining; i++) {
-          h += `<div class="sb-empty-slot" data-dropzone="child" data-instance="${instanceId}" data-side="${side}" style="margin-left:${Math.min(depth + 1, 3) * 16}px;">空槽位, 拖入实体</div>`;
-        }
-      }
-      h += '</div>'; // sb-child-area
-      h += '</div>'; // sb-foldable
-      h += '</div>';
-    }
-
-    h += '</div>'; // sb-card-body-expanded
-
-    // ── 折叠态内容（CSS 默认隐藏）──
-    h += '<div class="sb-card-body-collapsed">';
-    const foldedEntityChildren = (item.children || []).filter(c => c.type === 'entity');
-    for (const child of foldedEntityChildren) {
-      h += renderCollapsedChildTree(child, depth + 1, side, mode, combatUnit, sideFirst);
-    }
-    h += '</div>'; // sb-card-body-collapsed
-
-    h += '</div>'; // sb-card
     return h;
   }
 
@@ -1456,7 +586,7 @@ function hideSimTooltip() {
       const edef = getEntityDef(slot.entity.defId);
       if (!edef) continue;
       const unit = units?.find(u => u.instanceId === slot.entity.instanceId);
-      h += renderEntityCard(slot.entity, 0, side, 'battle', unit);
+      h += renderEntityCard(slot.entity, 0, side, 'battle', getCollapse(), unit);
     }
     return h;
   }
@@ -1485,84 +615,27 @@ function hideSimTooltip() {
   // ---- 战斗 Tooltip ----
 
   function bindBattleTooltips() {
-    document.querySelectorAll('#sb-battle-body [data-defid]').forEach(el => {
-      const htmlEl = el as HTMLElement;
-      const defId = htmlEl.dataset.defid!;
-      const type = (htmlEl.dataset.type || 'entity') as 'entity' | 'affix';
-      const instId = htmlEl.dataset.cardtoggle || null;
-      htmlEl.addEventListener('mouseenter', (e) => showSimTooltip(e as MouseEvent, defId, type, instId));
-      htmlEl.addEventListener('mouseleave', hideSimTooltip);
-    });
+    const body = document.getElementById('sb-battle-body');
+    if (body) bindSbTooltips(body, getInstance);
   }
 
   // ---- 动态战斗数值更新（重绘 body 确保所有数值实时） ----
 
-  function patchBattleValues() {
-    // 通过战斗日志增长检测引擎 tick（处理武器复位 actionTime→0→actionTime 漏检）
-    if (state.battleLog.length > state.lastLogCount) {
-      state.lastTickWallTime = Date.now();
-      state.lastLogCount = state.battleLog.length;
-    }
-
-    const pu = getCombatUnits('player');
-    const eu = getCombatUnits('enemy');
-    // 遍历所有 cu-* 动态值 span，只更新变化的 textContent
-    document.querySelectorAll('#sb-battle-body [id^="cu-"]').forEach(el => {
-      const parts = el.id.split('-');
-      if (parts.length < 4) return;
-      const type = parts[1];      // hp | sta | cd | ov | dead
-      const side = parts[2];      // p | e
-      const instId = parts[3];
-      const units = side === 'p' ? pu : eu;
-      if (!units) return;
-      const unit = units.find(u => u.instanceId === instId);
-      if (!unit) return;
-      let newVal = '';
-      if (type === 'hp') newVal = `${Math.round(Math.max(unit.currentHp, 0))}/${unit.totalHp}`;
-      else if (type === 'sta') newVal = `${Math.floor(unit.currentStamina)}/${unit.maxStamina}`;
-      else if (type === 'cd') {
-        const wIdx = parseInt(parts[4] || '0');
-        if (unit.weapons[wIdx]) {
-          const rawRemaining = unit.weapons[wIdx].remainingTime;
-          const spanId = el.id;
-          const prev = weaponPrevRemaining.get(spanId);
-          // 检测引擎 tick：remainingTime 变化时更新时间戳
-          if (prev !== undefined && prev !== rawRemaining) {
-            state.lastTickWallTime = Date.now();
-          }
-          weaponPrevRemaining.set(spanId, rawRemaining);
-          // 实时插值：从上个引擎 tick 起，经过的真实时间
-          const wallElapsed = Date.now() - state.lastTickWallTime;
-          const spd = state.combatSpeed === 'max' ? 50 : state.combatSpeed;
-          const displayMs = Math.max(rawRemaining - wallElapsed * spd, 0);
-          newVal = `${(displayMs / 1000).toFixed(1)}s`;
-        }
-      } else if (type === 'ov') {
-        (el as HTMLElement).style.display = unit.isOverloaded ? '' : 'none';
-        return;
-      } else if (type === 'dead') {
-        (el as HTMLElement).style.display = unit.currentHp <= 0 ? '' : 'none';
-        return;
-      }
-      if (el.textContent !== newVal) el.textContent = newVal;
-    });
-    // 更新阵亡卡片的 .dead class
-    document.querySelectorAll('#sb-battle-body .sb-card').forEach(card => {
-      const sideEl = card.closest('.sb-battle-side');
-      if (!sideEl) return;
-      const isPlayer = sideEl.id === 'sb-player-units';
-      const units = isPlayer ? pu : eu;
-      const instId = (card.querySelector('[data-cardtoggle]') as HTMLElement)?.dataset.cardtoggle;
-      if (!instId || !units) return;
-      const unit = units.find(u => u.instanceId === instId);
-      card.classList.toggle('dead', !!(unit && unit.currentHp <= 0));
-    });
-    // 更新时间（从 engine.combatTime 读取实时时间，不依赖日志事件）
-    if (!state.battleFinished) {
-      const simSec = (engine.combatTime / 1000).toFixed(1);
-      const timeSpan = document.querySelector('#sb-battle-header span');
-      if (timeSpan) timeSpan.textContent = `模拟时间: ${simSec}s`;
-    }
+  function doPatchBattleValues() {
+    patchBattleValues(
+      engine,
+      weaponPrevRemaining,
+      { get current() { return state.lastTickWallTime; }, set current(v) { state.lastTickWallTime = v; } },
+      () => state.combatSpeed,
+      { p: 'p', e: 'e' },
+      {
+        battleLogLength: state.battleLog.length,
+        battleFinished: state.battleFinished,
+        playerUnits: getCombatUnits('player'),
+        enemyUnits: getCombatUnits('enemy'),
+        lastLogCountRef: { get current() { return state.lastLogCount; }, set current(v) { state.lastLogCount = v; } },
+      },
+    );
   }
 
   // ============================================================
@@ -1573,53 +646,18 @@ function hideSimTooltip() {
   // 物品池事件（pool zone 更新后调用）
   // ============================================================
 
-  let poolSearchTimer: ReturnType<typeof setTimeout> | null = null;
-
   function bindPoolEvents() {
-    // 实体类别筛选
-    document.querySelectorAll('#sb-pool [data-ecat]').forEach(el => {
-      el.addEventListener('click', () => {
-        state.entityCatFilter = (el as HTMLElement).dataset.ecat!;
+    const poolRoot = document.getElementById('sb-pool');
+    if (!poolRoot) return;
+    bindPoolFilterEvents(poolRoot, getPoolFilterState(), (reason) => {
+      if (reason === 'search') {
+        updateZone('sb-item-list', renderPoolItemListHtml(getPoolFilterState()));
+        bindPoolItemEvents();
+      } else {
         updateZone('sb-pool', renderPoolContent());
         bindPoolEvents();
-      });
+      }
     });
-    // 词条类别筛选
-    document.querySelectorAll('#sb-pool [data-acat]').forEach(el => {
-      el.addEventListener('click', () => {
-        state.affixCatFilter = (el as HTMLElement).dataset.acat!;
-        updateZone('sb-pool', renderPoolContent());
-        bindPoolEvents();
-      });
-    });
-
-    // 折叠/展开（大类 + 子分类）
-    document.querySelectorAll('#sb-pool [data-toggle-section]').forEach(el => {
-      el.addEventListener('click', () => {
-        const key = (el as HTMLElement).dataset['toggleSection']!;
-        if (state.collapsedPoolSections.has(key)) {
-          state.collapsedPoolSections.delete(key);
-        } else {
-          state.collapsedPoolSections.add(key);
-        }
-        updateZone('sb-pool', renderPoolContent());
-        bindPoolEvents();
-      });
-    });
-
-    // 搜索（150ms 防抖）—— 只更新列表区，不销毁搜索输入框，自然保留焦点
-    const searchInput = document.getElementById('sb-pool-search') as HTMLInputElement;
-    if (searchInput) {
-      searchInput.addEventListener('input', () => {
-        if (poolSearchTimer) clearTimeout(poolSearchTimer);
-        poolSearchTimer = setTimeout(() => {
-          state.poolSearch = searchInput.value;
-          updateZone('sb-item-list', renderPoolItemList());
-          bindPoolItemEvents();
-        }, 150);
-      });
-    }
-
     bindPoolItemEvents();
   }
 
@@ -1815,6 +853,7 @@ function hideSimTooltip() {
     }
 
     if (!hit.side) return '无效目标';
+    if (hit.side === 'warehouse') return '无效目标';
     const slots = getSlots(hit.side);
 
     // ── 同列表重排 ──
@@ -1972,15 +1011,10 @@ function hideSimTooltip() {
   }
 
   function bindTooltipEvents() {
-    // BD 树中的实体/词条行 (有 data-defid 属性)
-    document.querySelectorAll('#sb-player-bd [data-defid], #sb-enemy-bd [data-defid]').forEach(el => {
-      const htmlEl = el as HTMLElement;
-      const defId = htmlEl.dataset.defid!;
-      const type = (htmlEl.dataset.type || 'entity') as 'entity' | 'affix';
-      const instId = htmlEl.dataset.instance || htmlEl.dataset.cardtoggle || null;
-      htmlEl.addEventListener('mouseenter', (e) => showSimTooltip(e as MouseEvent, defId, type, instId));
-      htmlEl.addEventListener('mouseleave', hideSimTooltip);
-    });
+    for (const id of ['sb-player-bd', 'sb-enemy-bd'] as const) {
+      const el = document.getElementById(id);
+      if (el) bindSbTooltips(el, getInstance);
+    }
   }
 
   function bindCardCollapseEvents() {
@@ -2082,7 +1116,7 @@ function hideSimTooltip() {
       const units = side === 'player' ? getCombatUnits('player') : getCombatUnits('enemy');
       combatUnit = units?.find(u => u.instanceId === item.instanceId);
     }
-    const newHtml = renderEntityCard(item, depth, side, mode, combatUnit);
+    const newHtml = renderEntityCard(item, depth, side, mode, getCollapse(), combatUnit);
     const temp = document.createElement('div');
     temp.innerHTML = newHtml;
     const newCard = temp.firstElementChild as HTMLElement;
@@ -2167,19 +1201,9 @@ function hideSimTooltip() {
 
   /** 单张卡片（含子树）tooltip 绑定；build / battle 共用 */
   function bindTooltipEventsOnCard(card: HTMLElement) {
-    card.querySelectorAll('[data-defid]').forEach(el => {
-      const hEl = el as HTMLElement;
-      const defId = hEl.dataset.defid!;
-      const type = (hEl.dataset.type || 'entity') as 'entity' | 'affix';
-      const instId = hEl.dataset.instance || hEl.dataset.cardtoggle || null;
-      hEl.addEventListener('mouseenter', (ev) => showSimTooltip(ev as MouseEvent, defId, type, instId));
-      hEl.addEventListener('mouseleave', hideSimTooltip);
-    });
+    bindTooltipOnRoot(card, getInstance);
   }
 
-  function bindBattleTooltipsOnCard(card: HTMLElement) {
-    bindTooltipEventsOnCard(card);
-  }
 
   // ============================================================
   // 战斗
@@ -2276,7 +1300,7 @@ function hideSimTooltip() {
       if (timestamp - lastPatchTime >= 50) {
         lastPatchTime = timestamp;
         if (!state.battlePaused && !state.battleFinished) {
-          patchBattleValues();
+          doPatchBattleValues();
         }
       }
       if (!state.battleFinished) {
@@ -2295,14 +1319,6 @@ function hideSimTooltip() {
         state.battleUpdateTimer = null;
       }
     }
-  }
-
-  // ============================================================
-  // 辅助
-  // ============================================================
-
-  function escHtml(s: string): string {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
   // 初始渲染

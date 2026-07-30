@@ -57,9 +57,9 @@ function showStartScreen() {
       <div id="start-menu">
         <button id="btn-new-game" class="fg-btn-primary">新游戏</button>
         <button id="btn-continue">继续游戏</button>
+        <button id="btn-delete-save" style="display:none;border-color:#c33;color:#933;">删除存档</button>
         <button id="btn-history">历史回顾</button>
         <button id="btn-itempool">全物品池</button>
-        <button id="btn-delete-save" style="display:none;border-color:#c33;color:#933;">删除存档</button>
       </div>
       <div style="margin-top:20px;">
         <button id="btn-logout" style="background:none;border:1px solid #999;color:#888;font-size:12px;padding:4px 16px;cursor:pointer;">退出登录</button>

@@ -266,6 +266,18 @@ export function isStarter(def: EntityDef): boolean {
   return def.fixedAffixes.includes('starter');
 }
 
+/**
+ * 开局默认启动端 ID。
+ * 优先 human（当前模板），否则取任意含 starter 的实体；库空时回退 human。
+ */
+export function getDefaultStarterId(): string {
+  const human = getEntityDef('human');
+  if (human && isStarter(human)) return 'human';
+  const found = ENTITY_DEFS.find(e => isStarter(e));
+  if (found) return found.id;
+  return 'human';
+}
+
 /** 判断是否为可触发动作实体（非启动端且 isActive=true） */
 export function isActiveEquipment(def: EntityDef): boolean {
   return !isStarter(def) && def.isActive;

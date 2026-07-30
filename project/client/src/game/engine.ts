@@ -4,7 +4,7 @@
 
 import {
   EntityDef, ItemInstance, DeploySlot, DefaultChildSpec,
-  getEntityDef, getAffixDef, isStarter, genId,
+  getEntityDef, getAffixDef, isStarter, genId, getDefaultStarterId,
   getEffectiveEntitySlots, countUsedSlots,
   findInTree, removeFromTreeChildren,
   ENTITY_DEFS, AFFIX_DEFS, getEntityCategory,
@@ -99,9 +99,7 @@ export class GameEngine {
       quickWarehouseCollapsed: false, battles: [], maxRound: MAX_ROUND,
     };
     this.rebuildItemPool();
-    // 冒险者自动部署到出场面板（不入仓库）
-    const adv = this.createItem('adventurer', 'entity');
-    this.state.deploySlots.push({ entity: adv, children: [] });
+    // 开局 BD / 仓库皆空，不自动部署默认 starter
     this.rightPanel = null;
     // 进入回合 1 探险：发放探险金 + 生成事件
     this.grantExploreGold();
@@ -368,8 +366,8 @@ export class GameEngine {
     const price = priceOverride ?? (def ? ('costValue' in def ? Math.abs(def.costValue) : (def as EntityDef).value) : 999);
     if (this.state.gold < price) return `金币不足(需${price},有${this.state.gold})`;
     this.state.gold -= price;
-    const ni = this.createItem(item.defId, item.type);
-    return this.moveToDeploy(ni, targetSlotIdx, parentInstanceId);
+    // 使用目录实例本身（与 buyItem 一致），便于 UI 折叠态绑定 instanceId
+    return this.moveToDeploy(item, targetSlotIdx, parentInstanceId);
   }
 
   /** 生成商店物品列表（不限数量，仅价值限制） */
@@ -448,6 +446,7 @@ export class GameEngine {
    */
   enterBattleRound() {
     if (!this.isExplore()) return;
+    this.sanitizeMissingEntityDefs();
     this.state.round += 1;
     this.syncPhaseFromRound();
     this.notify();
@@ -1172,6 +1171,7 @@ export class GameEngine {
     this.syncPhaseFromRound();
     this.state.warehouse = data.warehouse ?? [];
     this.state.deploySlots = data.deploySlots ?? [];
+    this.sanitizeMissingEntityDefs();
     this.state.itemPool = data.itemPool ?? [];
     this.state.seed = data.seed ?? Date.now();
     this.state.growthStacks = data.growthStacks ?? {};
@@ -1186,6 +1186,42 @@ export class GameEngine {
       this.state.currentEvents = [];
     }
     this.notify();
+  }
+
+  /**
+   * 读档后：BD/仓库中 defId 已从模板消失时做迁移。
+   * 典型：旧「adventurer」→ 当前默认 starter（human 等）。
+   */
+  private sanitizeMissingEntityDefs() {
+    const starterId = getDefaultStarterId();
+    const fixItem = (item: ItemInstance): ItemInstance => {
+      if (item.type === 'entity' && !getEntityDef(item.defId)) {
+        // 整棵子树无法解析时，用默认 starter 替换该节点
+        return this.createItem(starterId, 'entity');
+      }
+      if (item.children?.length) {
+        item.children = item.children.map(fixItem);
+      }
+      return item;
+    };
+
+    this.state.deploySlots = this.state.deploySlots.map(slot => {
+      const entity = fixItem(slot.entity);
+      const children = (slot.children || []).map(fixItem);
+      // 启动端本身缺失时 children 已随 createItem 重建，丢弃旧 children
+      if (!getEntityDef(slot.entity.defId)) {
+        return { entity, children: [] };
+      }
+      return { entity, children };
+    }).filter(slot => {
+      const d = getEntityDef(slot.entity.defId);
+      return !!d && isStarter(d);
+    });
+    // 允许空 BD：读档保真，不自动补 starter
+
+    this.state.warehouse = this.state.warehouse
+      .map(fixItem)
+      .filter(item => item.type !== 'entity' || !!getEntityDef(item.defId));
   }
 
   async autoSave() {
