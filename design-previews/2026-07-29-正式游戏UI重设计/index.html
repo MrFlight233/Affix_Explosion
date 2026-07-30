@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>正式游戏 UI 重设计 · 四方向样机</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Literata:opsz,wght@7..72,500;7..72,600&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --shell-bg: #f4f4f5;
+    --shell-text: #18181b;
+    --shell-muted: #71717a;
+    --shell-border: #d4d4d8;
+    --shell-card: #fff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+    background: var(--shell-bg);
+    color: var(--shell-text);
+    line-height: 1.5;
+  }
+  .page {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 24px 20px 80px;
+  }
+  .intro {
+    margin-bottom: 20px;
+    padding: 16px 18px;
+    background: var(--shell-card);
+    border: 1px solid var(--shell-border);
+    border-radius: 10px;
+  }
+  .intro h1 {
+    margin: 0 0 6px;
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .intro p {
+    margin: 0;
+    font-size: 13px;
+    color: var(--shell-muted);
+  }
+  .dials {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin: 16px 0 8px;
+  }
+  .dial {
+    background: #fafafa;
+    border: 1px solid var(--shell-border);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .dial label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .dial output { font-variant-numeric: tabular-nums; color: var(--shell-muted); font-weight: 500; }
+  .dial input[type=range] { width: 100%; }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: 1fr; }
+    .dials { grid-template-columns: 1fr; }
+  }
+  .card {
+    background: var(--shell-card);
+    border: 1px solid var(--shell-border);
+    border-radius: 12px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .card.selected {
+    border-color: #404040;
+    box-shadow: 0 0 0 2px rgba(64,64,64,0.2);
+  }
+  .card-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--shell-border);
+    background: #fafafa;
+  }
+  .card-head h2 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .badge {
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: #e4e4e7;
+    color: #3f3f46;
+  }
+  .badge.rec { background: #404040; color: #fff; }
+  .stage-wrap {
+    position: relative;
+    height: 340px;
+    background: #ececec;
+    overflow: hidden;
+  }
+  .stage {
+    position: absolute;
+    inset: 0;
+    transform-origin: top left;
+  }
+  .meta {
+    width: 100%;
+    padding: 10px 14px 0;
+    font-size: 12px;
+    color: var(--shell-muted);
+    line-height: 1.45;
+    max-width: none;
+  }
+  .pick-row {
+    padding: 12px 14px 14px;
+  }
+  .qmdp-pick-button {
+    width: 100%;
+    border: 1px solid #404040;
+    background: #404040;
+    color: #fff;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .qmdp-pick-button:hover { background: #525252; }
+  .qmdp-pick-button:active { transform: scale(0.98); }
+  .notes {
+    margin-top: 28px;
+    padding: 18px;
+    background: var(--shell-card);
+    border: 1px solid var(--shell-border);
+    border-radius: 12px;
+  }
+  .notes h3 { margin: 0 0 12px; font-size: 14px; }
+  .notes-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  @media (max-width: 900px) { .notes-grid { grid-template-columns: 1fr; } }
+  .note {
+    padding: 12px;
+    border: 1px solid var(--shell-border);
+    border-radius: 8px;
+    font-size: 12px;
+  }
+  .note h4 { margin: 0 0 6px; font-size: 13px; }
+  .note p { margin: 0 0 4px; color: #52525b; }
+  .note strong { color: #18181b; }
+
+  /* ===== Direction A: Print Ledger ===== */
+  .dir-a {
+    width: 720px; height: 440px;
+    background: #f7f6f2;
+    color: #1c1917;
+    font-family: "IBM Plex Mono", "Cascadia Code", ui-monospace, monospace;
+    font-size: 11px;
+    border: 1px solid #a8a29e;
+    display: grid;
+    grid-template-rows: 28px 1fr 22px;
+  }
+  .dir-a .top {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 10px; border-bottom: 1px solid #a8a29e; background: #efece6;
+    font-weight: 600; letter-spacing: 0.04em;
+  }
+  .dir-a .body {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr auto 64px;
+    min-height: 0;
+  }
+  .dir-a .deploy {
+    grid-row: 1 / 3; border-right: 1px solid #a8a29e; padding: 8px; overflow: hidden;
+  }
+  .dir-a .right { padding: 8px; border-bottom: 1px solid #a8a29e; }
+  .dir-a .sell {
+    grid-column: 2; padding: 6px 8px; background: #efece6; font-size: 10px;
+  }
+  .dir-a .wh {
+    grid-column: 1; border-right: 1px solid #a8a29e; border-top: 1px solid #a8a29e;
+    padding: 4px 8px; background: #faf8f4;
+  }
+  .dir-a .btns {
+    grid-column: 1; border-right: 1px solid #a8a29e; border-top: 1px solid #a8a29e;
+    padding: 4px 8px; display: flex; gap: 4px; align-items: center;
+  }
+  .dir-a .btns span {
+    border: 1px solid #78716c; padding: 2px 6px; background: #fff;
+  }
+  .dir-a .row { margin: 2px 0; }
+  .dir-a .ind { padding-left: 12px; color: #57534e; }
+  .dir-a .evt {
+    border: 1px solid #a8a29e; padding: 6px; margin-bottom: 6px; background: #fff;
+  }
+  .dir-a .evt.active { outline: 2px solid #44403c; }
+  .dir-a .foot {
+    border-top: 1px solid #a8a29e; display: flex; align-items: center;
+    justify-content: space-between; padding: 0 10px; background: #efece6;
+  }
+
+  /* ===== Direction B: Workbench (recommended) ===== */
+  .dir-b {
+    width: 720px; height: 440px;
+    background: #fafafa;
+    color: #262626;
+    font-family: "IBM Plex Sans", -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 12px;
+    border: 1px solid #e5e5e5;
+    display: grid;
+    grid-template-rows: 40px 1fr 36px;
+  }
+  .dir-b .hud {
+    display: flex; align-items: center; gap: 16px;
+    padding: 0 12px; border-bottom: 1px solid #e5e5e5; background: #fff;
+  }
+  .dir-b .brand { font-weight: 600; font-size: 13px; letter-spacing: -0.02em; }
+  .dir-b .pill {
+    font-size: 11px; color: #737373; background: #ececec;
+    padding: 3px 8px; border-radius: 4px; font-variant-numeric: tabular-nums;
+  }
+  .dir-b .pill strong { color: #262626; font-weight: 600; }
+  .dir-b .spacer { flex: 1; }
+  .dir-b .btn {
+    border: 1px solid #e5e5e5; background: #fff; border-radius: 6px;
+    padding: 4px 10px; font-size: 11px; color: #404040;
+  }
+  .dir-b .btn.primary { background: #404040; color: #fff; border-color: #404040; }
+  .dir-b .main {
+    display: grid; grid-template-columns: 280px 1fr; min-height: 0;
+  }
+  .dir-b .left {
+    border-right: 1px solid #e5e5e5; background: #fff; display: flex; flex-direction: column;
+  }
+  .dir-b .sec {
+    padding: 8px 10px; font-size: 11px; font-weight: 600; color: #737373;
+    border-bottom: 1px solid #e5e5e5; background: #fafafa;
+  }
+  .dir-b .tree { padding: 8px 10px; flex: 1; }
+  .dir-b .item {
+    padding: 5px 8px; border-radius: 6px; margin-bottom: 2px;
+    display: flex; justify-content: space-between; gap: 8px;
+  }
+  .dir-b .item:hover { background: #e8e8e8; }
+  .dir-b .item.sel { background: #d4d4d4; box-shadow: inset 3px 0 0 #404040; }
+  .dir-b .child { padding-left: 18px; color: #737373; font-size: 11px; }
+  .dir-b .whmini {
+    border-top: 1px solid #e5e5e5; padding: 6px 10px; font-size: 11px; color: #737373;
+  }
+  .dir-b .right { display: flex; flex-direction: column; background: #fff; min-width: 0; }
+  .dir-b .tabs { display: flex; gap: 0; border-bottom: 1px solid #e5e5e5; }
+  .dir-b .tab {
+    padding: 8px 14px; font-size: 12px; color: #737373; border-bottom: 2px solid transparent;
+  }
+  .dir-b .tab.on { color: #262626; font-weight: 600; border-bottom-color: #404040; }
+  .dir-b .panel { padding: 12px; flex: 1; }
+  .dir-b .event {
+    border: 1px solid #e5e5e5; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;
+    background: #fff;
+  }
+  .dir-b .event.on { border-color: #404040; background: #f5f5f5; }
+  .dir-b .dock {
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 12px; border-top: 1px solid #e5e5e5; background: #fff;
+    font-size: 11px; color: #737373;
+  }
+  .dir-b .drop {
+    flex: 1; border: 1px dashed #d4d4d4; border-radius: 6px; padding: 6px 10px;
+    text-align: center;
+  }
+
+  /* ===== Direction C: War Report Editorial ===== */
+  .dir-c {
+    width: 720px; height: 440px;
+    background: #f3efe6;
+    color: #1a1a1a;
+    font-family: "Source Serif 4", "Songti SC", "SimSun", serif;
+    font-size: 13px;
+    border: 2px solid #1a1a1a;
+    display: grid;
+    grid-template-columns: 1fr 160px;
+  }
+  .dir-c .sheet {
+    padding: 14px 16px; border-right: 1px solid #1a1a1a; overflow: hidden;
+  }
+  .dir-c .mast {
+    font-family: Literata, "Source Serif 4", serif;
+    font-size: 22px; font-weight: 600; letter-spacing: 0.08em;
+    border-bottom: 3px double #1a1a1a; padding-bottom: 6px; margin-bottom: 8px;
+  }
+  .dir-c .rule {
+    display: flex; justify-content: space-between; font-size: 11px;
+    border-bottom: 1px solid #1a1a1a; padding-bottom: 4px; margin-bottom: 10px;
+    font-variant-numeric: tabular-nums;
+  }
+  .dir-c .col2 { display: grid; grid-template-columns: 1.2fr 1fr; gap: 12px; }
+  .dir-c h5 {
+    margin: 0 0 6px; font-size: 11px; letter-spacing: 0.12em;
+    border-bottom: 1px solid #1a1a1a; padding-bottom: 2px;
+  }
+  .dir-c .bdline { margin: 3px 0; font-size: 12px; }
+  .dir-c .bdline.sub { padding-left: 1em; color: #444; }
+  .dir-c .clip {
+    border: 1px solid #1a1a1a; padding: 6px 8px; margin-bottom: 6px; background: #faf7f0;
+  }
+  .dir-c .margin {
+    padding: 10px 8px; background: #ebe6da; font-size: 11px; line-height: 1.55;
+  }
+  .dir-c .margin .stamp {
+    display: inline-block; border: 2px solid #b91c1c; color: #b91c1c;
+    padding: 2px 6px; font-weight: 600; letter-spacing: 0.1em; margin-bottom: 10px;
+  }
+  .dir-c .act {
+    margin-top: 12px; border-top: 1px solid #1a1a1a; padding-top: 8px;
+    font-family: "IBM Plex Mono", monospace; font-size: 10px;
+  }
+
+  /* ===== Direction D: Dark Duel Deck ===== */
+  .dir-d {
+    width: 720px; height: 440px;
+    background: #18181b;
+    color: #e4e4e7;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11px;
+    border: 1px solid #3f3f46;
+    display: grid;
+    grid-template-rows: 32px 1fr 28px;
+  }
+  .dir-d .bar {
+    display: flex; align-items: center; gap: 12px; padding: 0 10px;
+    border-bottom: 1px solid #3f3f46; background: #09090b;
+  }
+  .dir-d .bar .t { font-weight: 600; color: #fafafa; }
+  .dir-d .bar .m { color: #a1a1aa; }
+  .dir-d .ok { color: #4ade80; }
+  .dir-d .bad { color: #f87171; }
+  .dir-d .arena {
+    display: grid; grid-template-columns: 1fr 1.1fr 1fr; min-height: 0;
+  }
+  .dir-d .side {
+    padding: 8px; border-right: 1px solid #3f3f46; overflow: hidden;
+  }
+  .dir-d .side:last-child { border-right: none; border-left: 1px solid #3f3f46; }
+  .dir-d .side h6 {
+    margin: 0 0 8px; font-size: 10px; letter-spacing: 0.14em; color: #a1a1aa; font-weight: 500;
+  }
+  .dir-d .unit {
+    border: 1px solid #3f3f46; border-radius: 4px; padding: 6px; margin-bottom: 6px;
+    background: #27272a;
+  }
+  .dir-d .hp {
+    height: 4px; background: #3f3f46; margin-top: 4px; border-radius: 2px; overflow: hidden;
+  }
+  .dir-d .hp > i { display: block; height: 100%; background: #4ade80; width: 72%; }
+  .dir-d .log {
+    padding: 8px; background: #09090b; font-size: 10px; color: #a1a1aa; line-height: 1.6;
+  }
+  .dir-d .log .hl { color: #e4e4e7; }
+  .dir-d .endbanner {
+    margin-top: 10px; border: 1px solid #52525b; background: #27272a; padding: 8px;
+    text-align: center;
+  }
+  .dir-d .endbanner strong { display: block; color: #fafafa; margin-bottom: 4px; }
+  .dir-d .ctrl {
+    display: flex; align-items: center; gap: 6px; padding: 0 10px;
+    border-top: 1px solid #3f3f46; background: #09090b;
+  }
+  .dir-d .chip {
+    border: 1px solid #52525b; padding: 2px 8px; border-radius: 3px; color: #d4d4d8;
+  }
+  .dir-d .chip.on { background: #3f3f46; color: #fff; }
+</style>
+</head>
+<body>
+  <div class="page">
+    <div class="intro">
+      <h1>正式游戏 UI 重设计 · 方向样机</h1>
+      <p>用于选择视觉与交互气质，不是最终 App / 最终页面。选定后才进入正式设计文档与实现。快捷键 1–4。</p>
+      <div class="dials" data-qmdp-dials>
+        <div class="dial">
+          <label>视觉冒险度 <output data-qmdp-output="variance">5</output></label>
+          <input type="range" min="1" max="10" value="5" data-qmdp-dial="variance" />
+        </div>
+        <div class="dial">
+          <label>动效强度 <output data-qmdp-output="motion">4</output></label>
+          <input type="range" min="1" max="10" value="4" data-qmdp-dial="motion" />
+        </div>
+        <div class="dial">
+          <label>信息密度 <output data-qmdp-output="density">7</output></label>
+          <input type="range" min="1" max="10" value="7" data-qmdp-dial="density" />
+        </div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <!-- A -->
+      <article class="card option" data-design-option="A" data-name="印刷台账四区" data-option="A">
+        <div class="card-head">
+          <h2>A · 印刷台账四区</h2>
+          <span class="badge">亮色 · 保留骨架</span>
+        </div>
+        <div class="stage-wrap">
+          <div class="stage dir-a" style="transform: scale(0.72);">
+            <div class="top">
+              <span>AFFIX EXPLOSION / 局内台账</span>
+              <span>回合 3 · 探险 · 金 118 · 槽 2/2</span>
+            </div>
+            <div class="body">
+              <div class="deploy">
+                <div class="row">[0] 冒险者  HP70  耐100  负重9/30g</div>
+                <div class="row ind">短剑  dmg5  2000ms</div>
+                <div class="row ind">皮甲  hp+12</div>
+                <div class="row">[1] 木桩  HP40</div>
+              </div>
+              <div class="right">
+                <div class="evt active">事件 · 折扣商人<br/>6 件 · 半价</div>
+                <div class="evt">事件 · 抽奖</div>
+                <div class="evt">事件 · 好物商人</div>
+              </div>
+              <div class="wh">仓库：力量戒指 · 匕首 · 治疗杖</div>
+              <div class="sell">出售区 · 拖入即售 · floor(价值/2)</div>
+              <div class="btns"><span>仓库</span><span>商人</span><span>物品池</span><span>存档</span></div>
+            </div>
+            <div class="foot"><span>开始战斗</span><span>网络：正常</span></div>
+          </div>
+        </div>
+        <div class="meta">细线报表感；四区骨架进化；适合「改动最小」。记忆点：等宽数字台账。</div>
+        <div class="pick-row">
+          <button type="button" class="qmdp-pick-button" data-design-option="A">选择 A · 印刷台账四区</button>
+        </div>
+      </article>
+
+      <!-- B -->
+      <article class="card option" data-design-option="B" data-name="工作台统一" data-option="B">
+        <div class="card-head">
+          <h2>B · 工作台统一</h2>
+          <span class="badge rec">推荐</span>
+        </div>
+        <div class="stage-wrap">
+          <div class="stage dir-b" style="transform: scale(0.72);">
+            <div class="hud">
+              <span class="brand">词条爆炸</span>
+              <span class="pill">回合 <strong>3</strong> · 探险</span>
+              <span class="pill">金币 <strong>118</strong></span>
+              <span class="pill">第一层槽 <strong>2/2</strong></span>
+              <span class="spacer"></span>
+              <span class="btn">存档</span>
+              <span class="btn primary">开始战斗</span>
+            </div>
+            <div class="main">
+              <div class="left">
+                <div class="sec">出场 BD</div>
+                <div class="tree">
+                  <div class="item sel"><span>冒险者</span><span>70 HP</span></div>
+                  <div class="item child"><span>短剑</span><span>5</span></div>
+                  <div class="item child"><span>皮甲</span><span>+12</span></div>
+                  <div class="item"><span>弓箭手</span><span>24 HP</span></div>
+                </div>
+                <div class="whmini">仓库简视 · 力量戒指 · 匕首 · …</div>
+              </div>
+              <div class="right">
+                <div class="tabs">
+                  <div class="tab on">事件</div>
+                  <div class="tab">商人</div>
+                  <div class="tab">仓库</div>
+                  <div class="tab">物品池</div>
+                </div>
+                <div class="panel">
+                  <div class="event on"><strong>折扣商人</strong><br/><span style="color:#737373;font-size:11px">6 件 · 半价 · 点击触发</span></div>
+                  <div class="event"><strong>抽奖</strong><br/><span style="color:#737373;font-size:11px">免费选 1</span></div>
+                  <div class="event"><strong>好物商人</strong></div>
+                </div>
+              </div>
+            </div>
+            <div class="dock">
+              <span>情境坞</span>
+              <div class="drop">拖入此处出售 · 售价 floor(价值/2)</div>
+              <span class="btn">仓库</span>
+              <span class="btn">商人</span>
+            </div>
+          </div>
+        </div>
+        <div class="meta">与模拟战 DESIGN.md 同源；顶栏 HUD + 左树右情景 + 底情境坞。记忆点：工具感一致性。</div>
+        <div class="pick-row">
+          <button type="button" class="qmdp-pick-button" data-design-option="B">选择 B · 工作台统一</button>
+        </div>
+      </article>
+
+      <!-- C -->
+      <article class="card option" data-design-option="C" data-name="战报印刷物" data-option="C">
+        <div class="card-head">
+          <h2>C · 战报印刷物</h2>
+          <span class="badge">编辑式 · 非数字时代</span>
+        </div>
+        <div class="stage-wrap">
+          <div class="stage dir-c" style="transform: scale(0.72);">
+            <div class="sheet">
+              <div class="mast">第 3 回合 · 探险报</div>
+              <div class="rule"><span>金币 118</span><span>槽位 2/2</span><span>种子 #48291</span></div>
+              <div class="col2">
+                <div>
+                  <h5>出场编制</h5>
+                  <div class="bdline">一、冒险者 — 生命 70 · 耐力 100</div>
+                  <div class="bdline sub">短剑 · 伤害 5 · 耗时 2000ms</div>
+                  <div class="bdline sub">皮甲 · 生命加成 +12</div>
+                  <div class="bdline">二、弓箭手 — 生命 24</div>
+                  <h5 style="margin-top:12px">仓库摘录</h5>
+                  <div class="bdline">力量戒指 · 匕首 · 治疗杖</div>
+                </div>
+                <div>
+                  <h5>本日事件（三选一）</h5>
+                  <div class="clip"><strong>折扣商人</strong> — 半价六件</div>
+                  <div class="clip">抽奖 — 免费择一</div>
+                  <div class="clip">好物商人</div>
+                </div>
+              </div>
+              <div class="act">[存档]  [商人]  [物品池]  …………  [开始战斗 →]</div>
+            </div>
+            <div class="margin">
+              <div class="stamp">探险中</div>
+              <div>侧栏批注：失败不中断本局，仅战斗奖励为 0。</div>
+              <div style="margin-top:10px">结束态 / 结算将以「附页」形式装订在报末。</div>
+              <div style="margin-top:10px">异常：网络不通时盖「延后开战」章，留在本页。</div>
+            </div>
+          </div>
+        </div>
+        <div class="meta">报纸/战报气质；竖向阅读优先。记忆点：刊头双线 + 侧栏朱印状态。</div>
+        <div class="pick-row">
+          <button type="button" class="qmdp-pick-button" data-design-option="C">选择 C · 战报印刷物</button>
+        </div>
+      </article>
+
+      <!-- D -->
+      <article class="card option" data-design-option="D" data-name="暗色对阵台" data-option="D">
+        <div class="card-head">
+          <h2>D · 暗色对阵台</h2>
+          <span class="badge">暗色 · 战斗优先</span>
+        </div>
+        <div class="stage-wrap">
+          <div class="stage dir-d" style="transform: scale(0.72);">
+            <div class="bar">
+              <span class="t">回合 4 · 战斗</span>
+              <span class="m">金币 123</span>
+              <span class="m">槽 2/2</span>
+              <span class="spacer" style="flex:1"></span>
+              <span class="ok">匹配成功</span>
+            </div>
+            <div class="arena">
+              <div class="side">
+                <h6>我方</h6>
+                <div class="unit">冒险者<div class="hp"><i></i></div></div>
+                <div class="unit">弓箭手<div class="hp"><i style="width:40%"></i></div></div>
+              </div>
+              <div class="log">
+                <div><span class="hl">[1200ms]</span> 短剑 → 重装步兵 · 5</div>
+                <div><span class="hl">[2000ms]</span> 弓箭手 → 哥布林 · 6</div>
+                <div><span class="hl">[3400ms]</span> 短剑 → 重装步兵 · 5</div>
+                <div class="endbanner">
+                  <strong>战斗胜利 · +5 金</strong>
+                  <span>结束态 · 点继续进入回合 5 探险</span>
+                </div>
+              </div>
+              <div class="side">
+                <h6>敌方</h6>
+                <div class="unit">重装步兵<div class="hp"><i style="width:10%;background:#f87171"></i></div></div>
+                <div class="unit">哥布林弓手<div class="hp"><i style="width:0%;background:#f87171"></i></div></div>
+              </div>
+            </div>
+            <div class="ctrl">
+              <span class="chip">暂停</span>
+              <span class="chip">1x</span>
+              <span class="chip on">2x</span>
+              <span class="chip">4x</span>
+              <span class="chip">Max</span>
+              <span style="flex:1"></span>
+              <span class="chip on">继续 →</span>
+            </div>
+          </div>
+        </div>
+        <div class="meta">战斗/结束态为第一公民；探险可降级为列表。记忆点：三栏对阵 + 中央日志。</div>
+        <div class="pick-row">
+          <button type="button" class="qmdp-pick-button" data-design-option="D">选择 D · 暗色对阵台</button>
+        </div>
+      </article>
+    </div>
+
+    <section class="notes">
+      <h3>方向说明（样机区分开）</h3>
+      <div class="notes-grid">
+        <div class="note">
+          <h4>A · 印刷台账四区</h4>
+          <p><strong>气质：</strong>像会计报表 / 印刷规则线。</p>
+          <p><strong>字体：</strong>IBM Plex Mono 主导。</p>
+          <p><strong>布局：</strong>保留经典四区，精修密度与顶栏。</p>
+          <p><strong>互斥约束：</strong>必须亮色印刷质感。</p>
+          <p><strong>代价：</strong>与模拟战工具风仍分裂；结算/历史需另套「报表附页」。</p>
+        </div>
+        <div class="note">
+          <h4>B · 工作台统一（推荐）</h4>
+          <p><strong>气质：</strong>像 Linear / Notion 生产力工具，与现有模拟战 DESIGN.md 同源。</p>
+          <p><strong>字体：</strong>IBM Plex Sans + 系统中文栈。</p>
+          <p><strong>布局：</strong>顶 HUD · 左 BD 树 · 右情景 Tab · 底情境坞（出售/阶段动作）。</p>
+          <p><strong>互斥约束：</strong>必须像高效专业工具而非游戏皮肤。</p>
+          <p><strong>推荐理由：</strong>正式局缺口页（结束态/结算/历史/异常）最容易用同一套组件长出来；开发与学习成本最低。</p>
+        </div>
+        <div class="note">
+          <h4>C · 战报印刷物</h4>
+          <p><strong>气质：</strong>像旧报纸战报 / 桌游说明书。</p>
+          <p><strong>字体：</strong>Source Serif 4 / Literata 刊头 + 正文衬线。</p>
+          <p><strong>布局：</strong>整页「报面」+ 右缘批注栏；拖拽权重下降、阅读权重上升。</p>
+          <p><strong>互斥约束：</strong>必须借非数字时代视觉语言。</p>
+          <p><strong>代价：</strong>拖拽组 BD 效率可能变差；与 Admin/模拟战反差大。</p>
+        </div>
+        <div class="note">
+          <h4>D · 暗色对阵台</h4>
+          <p><strong>气质：</strong>像 IDE / 对战观战台。</p>
+          <p><strong>字体：</strong>IBM Plex Mono。</p>
+          <p><strong>布局：</strong>我方 | 日志/结束态 | 敌方；探险为次级模式。</p>
+          <p><strong>互斥约束：</strong>必须暗色高密度、战斗优先。</p>
+          <p><strong>代价：</strong>违背原「白底黑字」总纲，需正式修订视觉原则；探险构筑空间被挤压。</p>
+        </div>
+      </div>
+      <p style="margin:16px 0 0;font-size:12px;color:#71717a">
+        也可混搭：例如「要 B 的壳 + D 的战斗三栏 + A 的数字台账感」。在确认弹层建议框或对话里说明即可。
+      </p>
+    </section>
+  </div>
+
+  <script>
+    document.querySelectorAll('[data-qmdp-dial]').forEach((input) => {
+      const key = input.getAttribute('data-qmdp-dial');
+      const out = document.querySelector(`[data-qmdp-output="${key}"]`);
+      const sync = () => { if (out) out.textContent = input.value; };
+      input.addEventListener('input', sync);
+      sync();
+    });
+  </script>
+</body>
+</html>

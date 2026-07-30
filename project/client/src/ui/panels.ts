@@ -10,13 +10,25 @@ import {
 import { makeDraggable, makeDropZone, DragPayload } from './dragDrop';
 import { showTooltip, hideTooltip } from './tooltip';
 import { renderPlaybackControlsHtml } from './playbackControls';
+import { bindSplitters, applySplit, loadSplit } from './splitters';
 
 export class UIManager {
   engine: GameEngine;
-  rightPanel: string | null = null;
+  /** 右栏情景 Tab：事件 | 商人（仓库在右下常驻，不进 Tab） */
+  rightPanel: 'event' | 'shop' = 'event';
 
   // 商店筛选状态
   shopFilter: 'all' | 'entity' | 'affix' = 'all';
+
+  /**
+   * 商人/事件奖励等「尚未入账」的临时实例。
+   * findItem 只查仓库与 BD，拖拽购买必须走此表。
+   */
+  catalogItems: Map<string, ItemInstance> = new Map();
+  /** 目录价覆盖（折扣/免费事件）；无则用物品默认价值 */
+  catalogPrices: Map<string, number> = new Map();
+  /** 正在展示的事件奖励（购买成功后关闭） */
+  activeEventId: string | null = null;
 
   // 词条展开/收起状态（纯 UI，不入引擎）
   collapsedAffixRows: Set<string> = new Set();
@@ -25,6 +37,7 @@ export class UIManager {
   combatEnemies: CombatUnitSnapshot[] = [];
   combatLog: CombatEvent[] = [];
   combatFinished: boolean = false;
+  combatResultSummary: { win: boolean; gold: number; autoWin: boolean } | null = null;
   combatUpdateTimer: any = null;
   lastTickWallTime: number = 0;
   weaponPrevRemaining: Map<string, number> = new Map();
@@ -32,6 +45,8 @@ export class UIManager {
   pendingEnemySlots: DeploySlot[] | null = null;
   pendingAutoWin = false;
   combatPaused = false;
+  /** 通关结算页 */
+  showingSettlement = false;
 
   constructor(engine: GameEngine) {
     this.engine = engine;
@@ -46,44 +61,145 @@ export class UIManager {
     setTimeout(() => toast.classList.remove('show'), 2000);
   }
 
+  /** 注册商人/事件目录物品（覆盖同批） */
+  private setCatalog(items: ItemInstance[], prices?: Map<string, number>) {
+    this.catalogItems.clear();
+    this.catalogPrices.clear();
+    for (const it of items) this.catalogItems.set(it.instanceId, it);
+    if (prices) {
+      for (const [id, p] of prices) this.catalogPrices.set(id, p);
+    }
+  }
+
+  /** 购买成功后：若来自事件则关闭事件 */
+  private afterCatalogPurchase(instanceId: string) {
+    this.catalogItems.delete(instanceId);
+    this.catalogPrices.delete(instanceId);
+    if (this.activeEventId) {
+      this.engine.state.visitedEventMerchants.push(this.activeEventId);
+      this.engine.state.currentEvents = [];
+      this.activeEventId = null;
+      this.catalogItems.clear();
+      this.catalogPrices.clear();
+      this.rightPanel = 'event';
+      this.render();
+    }
+  }
+
+  /** 解析拖拽物：已拥有（仓库/BD）或目录（商人/事件） */
+  private resolveDragItem(p: DragPayload): ItemInstance | undefined {
+    return this.engine.findItem(p.instanceId) ?? this.catalogItems.get(p.instanceId);
+  }
+
+  /** 商店/事件 → 购买并入库；其它来源 → 卸到仓库 */
+  private dropToWarehouse(p: DragPayload): string | null {
+    const item = this.resolveDragItem(p);
+    if (!item) return '物品不存在';
+    if (p.source === 'shop') {
+      const override = this.catalogPrices.get(item.instanceId);
+      const err = this.engine.buyItem(item, override);
+      if (!err) {
+        this.afterCatalogPurchase(item.instanceId);
+        this.showToast('已购买并入库');
+      }
+      return err;
+    }
+    if (p.source === 'deploy-top' || p.source === 'deploy-slot') {
+      this.engine.moveToWarehouse(item);
+      return null;
+    }
+    return '无法放入仓库';
+  }
+
+  /** 商店/事件 → 购买并装备；其它 → 移入 BD */
+  private dropToDeploy(p: DragPayload, slotIdx?: number, parentInstanceId?: string | null): string | null {
+    const item = this.resolveDragItem(p);
+    if (!item) return '物品不存在';
+    if (p.source === 'shop') {
+      const override = this.catalogPrices.get(item.instanceId);
+      const err = this.engine.buyAndEquip(item, slotIdx, parentInstanceId, override);
+      if (!err) {
+        this.afterCatalogPurchase(item.instanceId);
+        this.showToast('已购买并装备');
+      }
+      return err;
+    }
+    return this.engine.moveToDeploy(item, slotIdx, parentInstanceId);
+  }
+
   // ======================== 主渲染 ========================
   render() {
+    if (this.showingSettlement) {
+      this.renderSettlement();
+      return;
+    }
+
     const app = document.getElementById('app')!;
     if (!document.getElementById('hud')) {
       app.innerHTML = `
         <div id="hud"></div>
-        <div id="main-layout">
+        <div id="main-layout" class="fg-layout">
           <div id="left-zone">
             <div id="deploy-area"></div>
-            <div id="quick-warehouse">
-              <div class="qw-header" id="qw-toggle">仓库简视 [展开]</div>
-              <div class="qw-body" id="qw-body"></div>
-            </div>
-            <div id="left-btns"></div>
+          </div>
+          <div id="v-split" class="fg-split-v" title="拖动调整宽度"></div>
+          <div id="center-zone" style="display:none">
+            <div id="combat-center"></div>
           </div>
           <div id="right-zone">
-            <div id="event-area"></div>
-            <div id="sell-zone"></div>
+            <div id="right-top">
+              <div id="right-tabs"></div>
+              <div id="event-area"></div>
+            </div>
+            <div id="h-split" class="fg-split-h" title="拖动调整高度"></div>
+            <div id="warehouse-area"></div>
           </div>
         </div>
       `;
-      document.getElementById('qw-toggle')!.addEventListener('click', () => {
-        this.engine.state.quickWarehouseCollapsed = !this.engine.state.quickWarehouseCollapsed;
-        this.render();
-      });
+      const layoutEl = document.getElementById('main-layout')!;
+      applySplit(layoutEl, loadSplit());
+      bindSplitters(layoutEl);
     }
 
-    const isCombat = this.engine.state.phase === 2;
+    const inCombatShell = this.engine.isBattlePhase();
+    const center = document.getElementById('center-zone')!;
+    const rightTop = document.getElementById('right-top')!;
+    const warehouseArea = document.getElementById('warehouse-area')!;
+    const vSplit = document.getElementById('v-split')!;
+    const hSplit = document.getElementById('h-split')!;
+    const layout = document.getElementById('main-layout')!;
+
+    if (inCombatShell) {
+      center.style.display = '';
+      rightTop.style.display = '';
+      warehouseArea.style.display = 'none';
+      vSplit.style.display = 'none';
+      hSplit.style.display = 'none';
+      const tabs = document.getElementById('right-tabs');
+      if (tabs) tabs.style.display = 'none';
+      layout.classList.add('fg-combat');
+    } else {
+      center.style.display = 'none';
+      rightTop.style.display = '';
+      warehouseArea.style.display = '';
+      vSplit.style.display = '';
+      hSplit.style.display = '';
+      const tabs = document.getElementById('right-tabs');
+      if (tabs) tabs.style.display = '';
+      layout.classList.remove('fg-combat');
+      applySplit(layout, loadSplit());
+    }
+
     this.renderHUD();
-    if (isCombat) {
+    if (inCombatShell) {
       this.renderPlayerCombatPanel();
+      this.renderCombatCenter();
       this.renderEnemyCombatPanel();
-      this.renderCombatLogPanel();
     } else {
       this.renderDeploy(false);
-      this.renderQuickWarehouse();
-      this.renderLeftButtons(false);
+      this.renderRightTabs();
       this.renderRightPanels();
+      this.renderWarehouse(warehouseArea);
     }
   }
 
@@ -91,37 +207,49 @@ export class UIManager {
   renderHUD() {
     const hud = document.getElementById('hud')!;
     const g = this.engine.state;
-    const canSave = g.phase === 1;
+    const exploring = this.engine.isExplore();
+    const inBattle = this.engine.isBattlePhase();
 
     let rightHtml = '';
     if (this.combatFinished) {
-      rightHtml = '<button id="btn-continue-combat">继续</button>';
-    } else if (g.phase === 2) {
+      rightHtml = '<button id="btn-continue-combat" class="fg-btn-primary">继续</button>';
+    } else if (inBattle) {
       rightHtml = `<span id="hud-playback">${renderPlaybackControlsHtml({
         speed: this.engine.combatSpeed,
         paused: this.combatPaused,
       }, 'hud-btn-pause')}</span>`;
     } else {
-      rightHtml = [
-        canSave ? '<button id="btn-save">存档</button>' : '',
-        `<button id="btn-next">${g.phase === 1 && g.deploySlots.length > 0 ? '开始战斗' : '下一阶段'}</button>`,
-      ].filter(Boolean).join('');
+      rightHtml = `
+        <div class="fg-more-wrap">
+          <button id="btn-more">更多</button>
+          <div id="fg-more-menu" class="fg-more-menu" style="display:none">
+            <button id="btn-save">手动存档</button>
+            <button id="btn-return-menu">返回主菜单</button>
+          </div>
+        </div>
+        <button id="btn-next" class="fg-btn-primary">开始战斗</button>
+      `;
     }
 
     const firstLayerUsed = g.deploySlots.reduce((s, sl) => { const d = getEntityDef(sl.entity.defId); return s + (d?.slotCost || 0); }, 0);
     const firstLayerMax = this.engine.getFirstLayerSlots();
     hud.innerHTML = `
       <div class="hud-item"><span class="hud-label">金币</span><span class="hud-value">${g.gold}</span></div>
-      <div class="hud-item"><span class="hud-label">回合</span><span class="hud-value">${g.round}</span></div>
+      <div class="hud-item"><span class="hud-label">回合</span><span class="hud-value">${g.round}/${g.maxRound}</span></div>
       <div class="hud-item"><span class="hud-label">阶段</span><span class="hud-value">${this.engine.getPhaseLabel()}</span></div>
       <div class="hud-item"><span class="hud-label">一层槽位</span><span class="hud-value">${firstLayerUsed}/${firstLayerMax}</span></div>
-      <div class="hud-right">
-        <button id="btn-return-menu">返回主菜单</button>
-        ${rightHtml}
-      </div>
+      <div class="hud-right">${rightHtml}</div>
     `;
 
-    // 返回主菜单
+    const btnMore = document.getElementById('btn-more');
+    const moreMenu = document.getElementById('fg-more-menu');
+    if (btnMore && moreMenu) {
+      btnMore.onclick = (e) => {
+        e.stopPropagation();
+        moreMenu.style.display = moreMenu.style.display === 'none' ? 'block' : 'none';
+      };
+    }
+
     const btnReturn = document.getElementById('btn-return-menu');
     if (btnReturn) {
       btnReturn.onclick = async () => {
@@ -133,13 +261,16 @@ export class UIManager {
       };
     }
 
-    if (canSave) {
-      const btnSave = document.getElementById('btn-save');
-      if (btnSave) btnSave.onclick = () => this.showSavePanel();
+    const btnSave = document.getElementById('btn-save');
+    if (btnSave) {
+      btnSave.onclick = async () => {
+        try { await this.engine.manualSave(); this.showToast('存档成功'); }
+        catch (e: any) { this.showToast('存档失败: ' + e.message); }
+        if (moreMenu) moreMenu.style.display = 'none';
+      };
     }
 
-    // 战斗中：倍速 / 暂停
-    if (g.phase === 2 && !this.combatFinished) {
+    if (inBattle && !this.combatFinished) {
       document.querySelectorAll('#hud-playback [data-speed]').forEach(el => {
         (el as HTMLElement).onclick = () => {
           const raw = (el as HTMLElement).dataset.speed!;
@@ -157,23 +288,32 @@ export class UIManager {
         };
       }
     }
+
     const btnContinue = document.getElementById('btn-continue-combat');
     if (btnContinue) {
       btnContinue.onclick = () => {
         if (this.combatUpdateTimer) { clearInterval(this.combatUpdateTimer); this.combatUpdateTimer = null; }
         this.combatFinished = false;
+        this.combatResultSummary = null;
         this.combatEnemies = [];
         this.combatLog = [];
-        this.engine.nextPhase();
+        const next = this.engine.continueAfterBattle();
+        if (next === 'settlement') {
+          this.showingSettlement = true;
+          this.renderSettlement();
+          return;
+        }
+        this.rightPanel = 'event';
         this.render();
       };
     }
+
     const btnNext = document.getElementById('btn-next');
     if (btnNext) {
       btnNext.onclick = () => {
-        if (g.phase === 1 && g.deploySlots.length === 0) { this.showToast('请先配置出场 BD'); return; }
-        if (g.phase === 1) { this.startCombat(); }
-        else { this.engine.nextPhase(); }
+        if (!exploring) return;
+        if (g.deploySlots.length === 0) { this.showToast('请先配置出场 BD'); return; }
+        this.startCombat();
       };
     }
   }
@@ -284,7 +424,7 @@ export class UIManager {
     siblings: NodeListOf<Element>,
     event: DragEvent,
   ): string | null {
-    const item = this.engine.findItem(payload.instanceId);
+    const item = this.resolveDragItem(payload);
     if (!item) return '物品不存在';
 
     const dropY = event.clientY;
@@ -332,11 +472,7 @@ export class UIManager {
 
     // 顶层 drop zone（新增启动端）
     const top = document.getElementById('deploy-top-drop');
-    if (top) makeDropZone(top, 'deploy-top', undefined, (p) => {
-      const item = this.engine.findItem(p.instanceId); if (!item) return '物品不存在';
-      if (p.source === 'shop') return this.engine.buyAndEquip(item, undefined);
-      return this.engine.moveToDeploy(item, undefined);
-    });
+    if (top) makeDropZone(top, 'deploy-top', undefined, (p) => this.dropToDeploy(p, undefined));
 
     // 递归遍历所有 deploySlots 及其子树
     const bindRecursive = (item: ItemInstance, slotIdx: number, parentId: string | null, source: string) => {
@@ -357,12 +493,8 @@ export class UIManager {
       if (def && hasEntitySlots(def)) {
         const dz = document.getElementById(`dz-${item.instanceId}`);
         if (dz) {
-          makeDropZone(dz, 'deploy-slot', slotIdx, (p, _z, tgt) => {
-            const dragItem = this.engine.findItem(p.instanceId);
-            if (!dragItem) return '物品不存在';
-            if (p.source === 'shop') return this.engine.buyAndEquip(dragItem, tgt, item.instanceId);
-            return this.engine.moveToDeploy(dragItem, tgt, item.instanceId);
-          });
+          makeDropZone(dz, 'deploy-slot', slotIdx, (p, _z, tgt) =>
+            this.dropToDeploy(p, tgt, item.instanceId));
         }
       }
 
@@ -394,12 +526,8 @@ export class UIManager {
       if (edef && hasEntitySlots(edef)) {
         const dz = document.getElementById(`dz-${slot.entity.instanceId}`);
         if (dz) {
-          makeDropZone(dz, 'deploy-slot', si, (p, _z, tgt) => {
-            const dragItem = this.engine.findItem(p.instanceId);
-            if (!dragItem) return '物品不存在';
-            if (p.source === 'shop') return this.engine.buyAndEquip(dragItem, tgt, slot.entity.instanceId);
-            return this.engine.moveToDeploy(dragItem, tgt, slot.entity.instanceId);
-          });
+          makeDropZone(dz, 'deploy-slot', si, (p, _z, tgt) =>
+            this.dropToDeploy(p, tgt, slot.entity.instanceId));
         }
       }
 
@@ -451,14 +579,14 @@ export class UIManager {
       for (let si = 0; si < g.deploySlots.length; si++) {
         const el = document.getElementById(`deploy-slot-${si}`);
         if (el) makeDropZone(el, 'deploy-slot', si, (p, _z, tgt, e) => {
-          const item = this.engine.findItem(p.instanceId); if (!item) return '物品不存在';
           // 检测同父区域 → reorder
           if (p.parentInstanceId === null && p.slotIdx === si && p.source !== 'shop') {
+            const item = this.resolveDragItem(p);
+            if (!item) return '物品不存在';
             const siblings = el.querySelectorAll(':scope > .item-row, :scope > .drop-zone');
             return this.handleReorderDrop(p, si, null, siblings, e as DragEvent);
           }
-          if (p.source === 'shop') return this.engine.buyAndEquip(item, tgt);
-          return this.engine.moveToDeploy(item, tgt);
+          return this.dropToDeploy(p, tgt);
         });
       }
       this.bindDeployDragEvents();
@@ -481,92 +609,51 @@ export class UIManager {
     this.bindTooltips();
   }
 
-  // ======================== 仓库简视 ========================
-  renderQuickWarehouse() {
-    const g = this.engine.state;
-    const qw = document.getElementById('quick-warehouse')!;
-    const body = document.getElementById('qw-body')!;
-    const toggle = document.getElementById('qw-toggle')!;
-    if (g.quickWarehouseCollapsed) { qw.classList.add('collapsed'); toggle.textContent = '仓库简视 [展开]'; }
-    else { qw.classList.remove('collapsed'); toggle.textContent = `仓库简视 [${g.warehouse.length}件] [收起]`; }
-
-    let html = g.warehouse.length === 0 ? '<span style="color:var(--text-dim);font-size:12px;">仓库为空</span>' : '';
-    for (let wi = 0; wi < g.warehouse.length; wi++) {
-      const item = g.warehouse[wi];
-      const def = item.type === 'entity' ? getEntityDef(item.defId) : getAffixDef(item.defId);
-      if (!def) continue;
-      html += `<div class="item-row" id="qw-item-${item.instanceId}"><span class="item-name" data-defid="${item.defId}" data-type="${item.type}">${def.name}</span></div>`;
-    }
-    body.innerHTML = html;
-    makeDropZone(body, 'quick-warehouse', undefined, (p) => {
-      const item = this.engine.findItem(p.instanceId); if (!item) return '物品不存在';
-      if (p.source === 'shop') return this.engine.buyItem(item);
-      if (p.source === 'deploy-top' || p.source === 'deploy-slot') { this.engine.moveToWarehouse(item); return null; }
-      return '无法放入';
+  // ======================== 右栏情景 Tab ========================
+  renderRightTabs() {
+    const el = document.getElementById('right-tabs')!;
+    const tabs: Array<{ id: 'event' | 'shop'; label: string }> = [
+      { id: 'event', label: '事件' },
+      { id: 'shop', label: '商人' },
+    ];
+    el.innerHTML = tabs.map(t =>
+      `<button class="fg-tab ${this.rightPanel === t.id ? 'active' : ''}" data-tab="${t.id}">${t.label}</button>`
+    ).join('');
+    el.querySelectorAll('.fg-tab').forEach(btn => {
+      (btn as HTMLElement).onclick = () => {
+        this.rightPanel = (btn as HTMLElement).dataset.tab as 'event' | 'shop';
+        this.render();
+      };
     });
-    for (let wi = 0; wi < g.warehouse.length; wi++) {
-      const row = document.getElementById(`qw-item-${g.warehouse[wi].instanceId}`);
-      if (row) { row.draggable = true; makeDraggable(row, { instanceId: g.warehouse[wi].instanceId, source: 'warehouse', warehouseIdx: wi }); }
-    }
-    this.bindTooltips();
   }
 
-  // ======================== 按钮 ========================
-  renderLeftButtons(isCombat: boolean) {
-    const area = document.getElementById('left-btns')!;
-    if (isCombat) {
-      area.innerHTML = ``;
-      return;
-    }
-
-    const rp = this.rightPanel;
-    area.innerHTML = `
-      <button class="btn ${rp === 'warehouse' ? 'active' : ''}" id="btn-warehouse">仓库</button>
-      <button class="btn ${rp === 'shop' ? 'active' : ''}" id="btn-shop">商人</button>
-      <button class="btn ${rp === 'itemPool' ? 'active' : ''}" id="btn-itempool">物品池</button>
-    `;
-    document.getElementById('btn-warehouse')!.onclick = () => this.togglePanel('warehouse');
-    document.getElementById('btn-shop')!.onclick = () => this.togglePanel('shop');
-    document.getElementById('btn-itempool')!.onclick = () => this.togglePanel('itemPool');
-  }
-
-  togglePanel(p: string) { this.rightPanel = this.rightPanel === p ? null : p; this.render(); }
-
-  // ======================== 右侧面板（非战斗） ========================
+  // ======================== 右侧情景面板（非战斗） ========================
   renderRightPanels() {
     const area = document.getElementById('event-area')!;
-    const sellZone = document.getElementById('sell-zone')!;
-    // 出售面板常驻
-    sellZone.innerHTML = `<div class="panel"><div class="panel-title">出售（售价 = 原价 50%，不可撤销）</div>
-      <div class="drop-zone" id="sell-drop" style="min-height:40px;"><span style="color:var(--text-dim);font-size:12px;">拖拽物品到此处出售</span></div></div>`;
-    const sd = document.getElementById('sell-drop')!;
-    makeDropZone(sd, 'sell', undefined, (p) => {
-      const item = this.engine.findItem(p.instanceId); if (!item) return '物品不存在';
-      if (p.source === 'shop') return '不能出售商店物品';
-      const price = this.engine.sellItem(item);
-      if (price === null) return '出售失败';
-      this.showToast(`出售: +${price}金币`); return null;
-    });
-
-    if (!this.rightPanel) { this.renderEventPanel(area); return; }
-    switch (this.rightPanel) {
-      case 'warehouse': this.renderWarehouse(area); break;
-      case 'shop': this.renderShopFiltered(area); break;
-      case 'itemPool': this.renderItemPool(area); break;
-    }
+    if (this.rightPanel === 'shop') this.renderShopFiltered(area);
+    else this.renderEventPanel(area);
   }
 
   // ---- 事件 ----
   renderEventPanel(c: HTMLElement) {
+    // 事件奖励态由 triggerEvent 写 DOM；整页 render 时勿冲掉
+    if (this.activeEventId) {
+      if (document.getElementById('event-items')) return;
+      // DOM 已丢则退出奖励态
+      this.activeEventId = null;
+      this.catalogItems.clear();
+      this.catalogPrices.clear();
+    }
     const g = this.engine.state;
-    if (g.phase !== 1 || g.currentEvents.length === 0) {
-      c.innerHTML = '<div class="panel"><div class="panel-title">事件</div><p style="color:var(--text-dim);">探险阶段可查看事件</p></div>';
+    this.catalogItems.clear();
+    this.catalogPrices.clear();
+    if (!this.engine.isExplore() || g.currentEvents.length === 0) {
+      c.innerHTML = '<div class="panel"><div class="panel-title">事件</div><p style="color:var(--fg-text-muted,var(--text-dim));">探险阶段可查看事件</p></div>';
       return;
     }
-    // 过滤已访问的商人事件
     const activeEvents = g.currentEvents.filter(eid => !g.visitedEventMerchants.includes(eid));
     if (activeEvents.length === 0) {
-      c.innerHTML = '<div class="panel"><div class="panel-title">探险事件</div><p style="color:var(--text-dim);">本层事件已全部访问</p></div>';
+      c.innerHTML = '<div class="panel"><div class="panel-title">探险事件</div><p style="color:var(--fg-text-muted,var(--text-dim));">本回合事件已全部访问</p></div>';
       return;
     }
     let h = '<div class="panel"><div class="panel-title">探险事件（选择 1 个）</div>';
@@ -624,8 +711,20 @@ export class UIManager {
     }
 
     const area = document.getElementById('event-area')!;
-    area.innerHTML = `<div class="panel"><div class="panel-title">${this.engine.getEventName(eid)}</div><div id="event-items"></div><button class="btn" id="btn-close-ev" style="margin-top:6px;">关闭</button></div>`;
+    area.innerHTML = `<div class="panel"><div class="panel-title">${this.engine.getEventName(eid)}</div>
+      <p class="fg-sell-hint">拖到出场 BD 或下方仓库获取</p>
+      <div id="event-items"></div><button class="btn" id="btn-close-ev" style="margin-top:6px;">关闭</button></div>`;
     const itemsDiv = document.getElementById('event-items')!;
+    this.activeEventId = eid;
+    const prices = new Map<string, number>();
+    for (const item of items) {
+      const def = item.type === 'entity' ? getEntityDef(item.defId) : getAffixDef(item.defId);
+      if (!def) continue;
+      const basePrice = 'costValue' in def ? Math.abs(def.costValue) : (def as EntityDef).value;
+      const price = eid === 'discount_merchant' ? Math.floor(basePrice / 2) : eid === 'lottery' ? 0 : basePrice;
+      prices.set(item.instanceId, price);
+    }
+    this.setCatalog(items, prices);
 
     if (items.length === 0) {
       itemsDiv.innerHTML = '<p style="color:var(--text-dim);">当前无可购买的物品</p>';
@@ -634,24 +733,18 @@ export class UIManager {
     items.forEach(item => {
       const def = item.type === 'entity' ? getEntityDef(item.defId) : getAffixDef(item.defId);
       if (!def) return;
-      const basePrice = 'costValue' in def ? Math.abs(def.costValue) : (def as any).value;
-      const price = eid === 'discount_merchant' ? Math.floor(basePrice / 2) : eid === 'lottery' ? 0 : basePrice;
-      const row = document.createElement('div'); row.className = 'item-row'; row.draggable = true;
-      row.innerHTML = `<span class="item-name" data-defid="${item.defId}" data-type="${item.type}">${def.name}</span><span class="item-stat">${'effect' in def ? def.effect : (getEntityCategory(def as EntityDef)).join(' / ')}</span><span style="margin-left:auto;margin-right:6px;font-size:12px;${eid === 'lottery' ? '免费' : price + '金'}</span><button class="btn btn-small">购买</button>`;
+      const price = prices.get(item.instanceId) ?? 0;
+      const row = document.createElement('div'); row.className = 'item-row shop-drag'; row.draggable = true;
+      row.innerHTML = `<span class="item-name" data-defid="${item.defId}" data-type="${item.type}">${def.name}</span><span class="item-stat">${'effect' in def ? def.effect : (getEntityCategory(def as EntityDef)).join(' / ')}</span><span style="margin-left:auto;font-size:12px;">${eid === 'lottery' ? '免费' : price + '金'}</span>`;
       makeDraggable(row, { instanceId: item.instanceId, source: 'shop' });
-      row.querySelector('button')!.addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        if (eid === 'lottery') { this.engine.addToWarehouse(item); this.showToast(`免费获得: ${def.name}`); }
-        else { const err = this.engine.buyItem(item); if (err) this.showToast(err); else this.showToast(`购买: ${def.name}`); }
-        this.engine.rightPanel = null; this.engine.state.currentEvents = [];
-        this.engine.state.visitedEventMerchants.push(eid);
-        this.render();
-      });
       itemsDiv.appendChild(row);
     });
     document.getElementById('btn-close-ev')!.onclick = () => {
       this.engine.state.visitedEventMerchants.push(eid);
-      this.engine.rightPanel = null;
+      this.activeEventId = null;
+      this.rightPanel = 'event';
+      this.catalogItems.clear();
+      this.catalogPrices.clear();
       this.render();
     };
     this.bindTooltips();
@@ -671,11 +764,11 @@ export class UIManager {
     return items;
   }
 
-  // ---- 仓库面板 ----
+  // ---- 仓库面板（右下常驻） ----
   renderWarehouse(c: HTMLElement) {
     const g = this.engine.state;
-    let h = '<div class="panel"><div class="panel-title">仓库</div>';
-    if (g.warehouse.length === 0) h += '<p style="color:var(--text-dim);">仓库为空</p>';
+    let h = '<div class="panel" id="warehouse-panel"><div class="panel-title">仓库</div>';
+    if (g.warehouse.length === 0) h += '<p style="color:var(--fg-text-muted,var(--text-dim));">仓库为空 · 可从 BD 或商人拖入</p>';
     else for (let wi = 0; wi < g.warehouse.length; wi++) {
       const item = g.warehouse[wi]; const def = item.type === 'entity' ? getEntityDef(item.defId) : getAffixDef(item.defId);
       if (!def) continue;
@@ -686,6 +779,8 @@ export class UIManager {
       h += '</div>';
     }
     h += '</div>'; c.innerHTML = h;
+    const panel = document.getElementById('warehouse-panel')!;
+    makeDropZone(panel, 'warehouse', undefined, (p) => this.dropToWarehouse(p));
     for (let wi = 0; wi < g.warehouse.length; wi++) {
       const row = document.getElementById(`wh-item-${g.warehouse[wi].instanceId}`);
       if (row) { row.draggable = true; makeDraggable(row, { instanceId: g.warehouse[wi].instanceId, source: 'warehouse', warehouseIdx: wi }); }
@@ -693,16 +788,18 @@ export class UIManager {
     this.bindTooltips();
   }
 
-  /** 固定商人：不限数量，仅价值限制，支持筛选 */
+  /** 固定商人：拖到 BD=购买装备；拖到仓库=购买入库；拖入本面板=出售 */
   renderShopFiltered(c: HTMLElement) {
     const cap = this.engine.getMerchantValueCap();
     const items = this.engine.generateShopItems(this.shopFilter);
+    this.activeEventId = null;
+    this.setCatalog(items);
 
-    // 筛选按钮行
     const filters = ['all', 'entity', 'affix'] as const;
     const filterLabels: Record<string, string> = { all: '全部', entity: '实体', affix: '词条' };
 
-    let h = `<div class="panel"><div class="panel-title">固定商人（价值上限: ${cap}）</div>`;
+    let h = `<div class="panel fg-merchant" id="merchant-panel"><div class="panel-title">固定商人（价值上限: ${cap}）</div>`;
+    h += '<p class="fg-sell-hint">拖到左侧出场 BD：购买并装备 · 拖到下方仓库：购买并入库 · 拖入本面板：半价出售</p>';
     h += '<div class="filter-row">';
     for (const f of filters) {
       h += `<button class="btn btn-small ${this.shopFilter === f ? 'active' : ''}" id="shop-flt-${f}">${filterLabels[f]}</button>`;
@@ -710,50 +807,43 @@ export class UIManager {
     h += `</div><div id="shop-items">`;
 
     if (items.length === 0) {
-      h += '<p style="color:var(--text-dim);">当前筛选无可用物品</p>';
+      h += '<p style="color:var(--fg-text-muted,var(--text-dim));">当前筛选无可用物品</p>';
     } else {
       for (const item of items) {
         const def = item.type === 'entity' ? getEntityDef(item.defId) : getAffixDef(item.defId);
         if (!def) continue;
         const price = 'costValue' in def ? Math.abs(def.costValue) : (def as any).value;
-        h += `<div class="item-row" id="shop-item-${item.instanceId}"><span class="item-name" data-defid="${item.defId}" data-type="${item.type}">${def.name}</span>
+        h += `<div class="item-row shop-drag" id="shop-item-${item.instanceId}" title="拖到 BD 或仓库">
+          <span class="item-name" data-defid="${item.defId}" data-type="${item.type}">${def.name}</span>
           <span class="item-stat">${'effect' in def ? def.effect : (getEntityCategory(def as EntityDef)).join(' / ')}</span>
-          <span style="margin-left:auto;margin-right:6px;">${price}金</span><button class="btn btn-small">购买</button></div>`;
+          <span class="item-value" style="margin-left:auto;">${price}金</span></div>`;
       }
     }
     h += '</div></div>';
     c.innerHTML = h;
 
-    // 筛选按钮事件
+    const panel = document.getElementById('merchant-panel')!;
+    makeDropZone(panel, 'sell', undefined, (p) => {
+      const item = this.resolveDragItem(p); if (!item) return '物品不存在';
+      if (p.source === 'shop') return '请拖到出场 BD 或下方仓库购买';
+      const price = this.engine.sellItem(item);
+      if (price === null) return '出售失败';
+      this.showToast(`已出售 · +${price} 金`);
+      return null;
+    });
+
     for (const f of filters) {
       const btn = document.getElementById(`shop-flt-${f}`);
       if (btn) btn.onclick = () => { this.shopFilter = f; this.render(); };
     }
 
-    // 拖拽 + 购买事件
     items.forEach(item => {
       const row = document.getElementById(`shop-item-${item.instanceId}`);
-      if (!row) return; row.draggable = true;
+      if (!row) return;
+      row.draggable = true;
       makeDraggable(row, { instanceId: item.instanceId, source: 'shop' });
-      const btn = row.querySelector('button');
-      if (btn) btn.addEventListener('click', (e) => { e.stopPropagation(); const err = this.engine.buyItem(item); if (err) this.showToast(err); else this.showToast('购买成功'); });
     });
     this.bindTooltips();
-  }
-
-  // ---- 物品池 ----
-  renderItemPool(c: HTMLElement) {
-    let h = '<div class="panel"><div class="panel-title">物品池</div><div class="filter-row">';
-    h += '<button class="btn btn-small active" id="f-all">全部</button><button class="btn btn-small" id="f-entities">实体</button><button class="btn btn-small" id="f-affixes">词条</button></div><div id="ip-list"></div></div>';
-    c.innerHTML = h;
-    const show = (f: string) => { const l = document.getElementById('ip-list')!; let h2 = '';
-      for (const did of this.engine.state.itemPool) { const ed = getEntityDef(did); const ad = getAffixDef(did); if (f === 'entities' && !ed) continue; if (f === 'affixes' && !ad) continue; const d = ed || ad; if (!d) continue;
-        h2 += `<div class="item-row" style="cursor:default;"><span class="item-name" data-defid="${did}" data-type="${ed ? 'entity' : 'affix'}">${d.name}</span><span class="item-stat">${d.id}</span></div>`; }
-      l.innerHTML = h2; this.bindTooltips(); };
-    document.getElementById('f-all')!.onclick = () => show('all');
-    document.getElementById('f-entities')!.onclick = () => show('entities');
-    document.getElementById('f-affixes')!.onclick = () => show('affixes');
-    show('all');
   }
 
   /** 更新战斗中动态值（HP/耐力/倒计时），只操作 DOM 文本节点，不 re-render。倒计时使用 wall-clock 插值实现平滑递减 */
@@ -830,12 +920,18 @@ export class UIManager {
     area.innerHTML = h;
   }
 
-  /** 右上：敌人战斗状态面板 */
+  /** 右栏：敌人战斗状态面板 */
   renderEnemyCombatPanel() {
     const area = document.getElementById('event-area')!;
     const eu = this.engine.combatEnemyUnits;
+
+    if (this.combatFinished && this.combatResultSummary?.autoWin) {
+      area.innerHTML = '<div class="panel"><div class="panel-title">敌方单位</div><p style="color:var(--fg-text-muted,var(--text-dim));">对战池无对手 · 自动获胜</p></div>';
+      return;
+    }
+
     if (!eu || eu.length === 0) {
-      area.innerHTML = '<div class="panel"><div class="panel-title">敌方单位</div><p style="color:var(--text-dim);">准备战斗...</p></div>';
+      area.innerHTML = '<div class="panel"><div class="panel-title">敌方单位</div><p style="color:var(--fg-text-muted,var(--text-dim));">准备战斗...</p></div>';
       return;
     }
 
@@ -865,17 +961,29 @@ export class UIManager {
     area.innerHTML = h;
   }
 
-  // 右下：战斗日志
-  renderCombatLogPanel() {
-    const zone = document.getElementById('sell-zone')!;
-    let h = '<div class="panel"><div class="panel-title">战斗日志</div>';
-    h += '<div id="combat-log-scroll" style="max-height:calc(30vh - 50px);overflow-y:auto;font-size:12px;">';
+  // 中栏：战斗日志 + 结束态
+  renderCombatCenter() {
+    const zone = document.getElementById('combat-center')!;
+    let h = '<div class="panel fg-combat-center"><div class="panel-title">战斗</div>';
+
+    if (this.combatFinished && this.combatResultSummary) {
+      const s = this.combatResultSummary;
+      const title = s.autoWin ? '对战池无对手 · 自动获胜' : (s.win ? '战斗胜利' : '战斗失败');
+      h += `<div class="fg-battle-summary">
+        <div class="fg-summary-title">${title}</div>
+        <div class="fg-summary-gold">本场金币 +${s.gold}</div>
+        <button id="btn-continue-combat-center" class="fg-btn-primary">继续</button>
+      </div>`;
+    }
+
+    h += '<div class="panel-title" style="margin-top:8px;">战斗日志</div>';
+    h += '<div id="combat-log-scroll" class="fg-combat-log">';
     if (this.combatLog.length === 0) {
-      h += '<span style="color:var(--text-dim);">等待战斗开始...</span>';
+      h += '<span style="color:var(--fg-text-muted,var(--text-dim));">等待战斗开始...</span>';
     }
     h += '</div></div>';
     zone.innerHTML = h;
-    // 重新填充日志
+
     const scroll = document.getElementById('combat-log-scroll');
     if (scroll && this.combatLog.length > 0) {
       let logHtml = '';
@@ -883,10 +991,9 @@ export class UIManager {
         if (evt.effects.includes('击杀')) {
           logHtml += `<div class="combat-event">[${evt.time}ms] <b>${evt.targetName} 被击杀!</b></div>`;
         } else if (!evt.actorName) {
-          // 系统事件（如"战斗开始"）— 只显示 targetName
           logHtml += `<div class="combat-event">[${evt.time}ms] ${evt.targetName}</div>`;
         } else {
-          const tl = evt.targetingLabel ? ` <span style="color:var(--text-dim)">[${evt.targetingLabel}]</span>` : '';
+          const tl = evt.targetingLabel ? ` <span style="color:var(--fg-text-muted,var(--text-dim))">[${evt.targetingLabel}]</span>` : '';
           logHtml += `<div class="combat-event">[${evt.time}ms] ${evt.actorName}·${evt.weaponName}${tl} → ${evt.targetName} ${evt.damage}伤害 (HP:${evt.targetHpAfter}/${evt.targetMaxHp})</div>`;
           for (const eff of evt.effects) {
             if (eff !== '击杀') {
@@ -898,56 +1005,99 @@ export class UIManager {
       scroll.innerHTML = logHtml;
       scroll.scrollTop = scroll.scrollHeight;
     }
+
+    const btn = document.getElementById('btn-continue-combat-center');
+    if (btn) {
+      btn.onclick = () => {
+        const topBtn = document.getElementById('btn-continue-combat');
+        if (topBtn) topBtn.click();
+        else {
+          this.combatFinished = false;
+          this.combatResultSummary = null;
+          this.combatLog = [];
+          const next = this.engine.continueAfterBattle();
+          if (next === 'settlement') {
+            this.showingSettlement = true;
+            this.renderSettlement();
+          } else {
+            this.rightPanel = 'event';
+            this.render();
+          }
+        }
+      };
+    }
+  }
+
+  /** @deprecated 日志已迁入 renderCombatCenter */
+  renderCombatLogPanel() {
+    this.renderCombatCenter();
   }
 
   // ======================== 开战 ========================
 
-  /** 正式战：先抽池，再立即开战（不再二次抽池） */
+  /** 正式战：进入战斗回合 → 匹配 → 开战；网络异常则退回探险 */
   async startCombat() {
+    if (!this.engine.isExplore()) return;
+    if (this.engine.state.deploySlots.length === 0) {
+      this.showToast('请先配置出场 BD');
+      return;
+    }
+
+    this.engine.enterBattleRound();
     this.showToast('正在匹配对手…');
-    try {
-      const prep = await this.engine.prepareOfficialBattle();
-      this.pendingAutoWin = prep.autoWin;
-      this.pendingEnemySlots = prep.enemySlots;
-      await this._doStartCombat();
-    } catch (e: any) {
-      this.showToast('匹配失败：' + (e?.message || e));
+
+    const prep = await this.engine.prepareOfficialBattle();
+    if (prep.networkError) {
+      this.engine.rollbackBattleToExplore();
+      this.showToast(prep.errorMessage || '网络异常，可重试开始战斗');
       this.pendingEnemySlots = null;
       this.pendingAutoWin = false;
+      this.render();
+      return;
     }
+
+    this.pendingAutoWin = prep.autoWin;
+    this.pendingEnemySlots = prep.enemySlots;
+    await this.engine.autoSave();
+    await this._doStartCombat();
   }
 
   /** 匹配完成后开战 */
   private async _doStartCombat() {
     this.combatLog = [];
     this.combatFinished = false;
+    this.combatResultSummary = null;
     this.combatPaused = false;
     this.engine.combatSpeed = 1;
 
     const onEvent = (evt: CombatEvent) => {
       this.combatLog.push(evt);
-      this.renderCombatLogPanel();
+      this.renderCombatCenter();
       this.lastTickWallTime = Date.now();
     };
     const onEnd = (win: boolean, gold: number) => {
-      if (win) this.showToast(`战斗胜利！+${gold}金币`);
+      if (win) this.showToast(this.pendingAutoWin ? `空池自动获胜 · +${gold}金币` : `战斗胜利！+${gold}金币`);
       else this.showToast('战斗失败');
       this.combatFinished = true;
+      this.combatResultSummary = { win, gold, autoWin: this.pendingAutoWin };
+      // 回填完整战斗日志到最近一条记录
+      const battles = this.engine.state.battles;
+      if (battles.length > 0 && this.combatLog.length > 0) {
+        battles[battles.length - 1].log = [...this.combatLog];
+        this.engine.autoSave();
+      }
       this.pendingEnemySlots = null;
       this.pendingAutoWin = false;
       this.render();
     };
 
-    // 空池：直接结算，进入战斗结束态（仍 phase=2 以便点继续）
     if (this.pendingAutoWin || !this.pendingEnemySlots) {
-      this.engine.state.phase = 2;
-      this.engine.settleOfficialAutoWin(onEnd);
+      this.render();
+      this.engine.settleOfficialAutoWin(onEnd, this.combatLog);
       return;
     }
 
-    this.engine.state.phase = 2;
     this.render();
-
     await new Promise(r => setTimeout(r, 300));
 
     this.lastTickWallTime = Date.now();
@@ -974,15 +1124,48 @@ export class UIManager {
     }
   }
 
-  // ======================== 存档（单存档） ========================
-  showSavePanel() {
-    const area = document.getElementById('event-area')!;
-    area.innerHTML = `<div class="panel"><div class="panel-title">保存存档</div>
-      <p style="margin:8px 0;font-size:13px;">当前进度将覆盖已有存档</p>
-      <button class="btn" id="btn-do-save">确认保存</button></div>`;
-    document.getElementById('btn-do-save')!.onclick = async () => {
-      try { await this.engine.manualSave(); this.showToast('存档成功'); this.rightPanel = null; this.render(); }
-      catch (e: any) { this.showToast('存档失败: ' + e.message); }
+  // ======================== 通关结算 ========================
+  async renderSettlement() {
+    const app = document.getElementById('app')!;
+    const g = this.engine.state;
+    const wins = g.battles.filter(b => b.result === 'win' || b.result === 'auto_win').length;
+    const losses = g.battles.filter(b => b.result === 'loss').length;
+
+    app.innerHTML = `
+      <div id="settlement-screen" class="fg-settlement">
+        <h1>通关结算</h1>
+        <p class="fg-settlement-sub">完成 ${g.maxRound} 回合 · 金币 ${g.gold}</p>
+        <div class="fg-settlement-stats">胜 ${wins} · 负 ${losses} · 场次 ${g.battles.length}</div>
+        <div id="settlement-status" style="color:var(--fg-text-muted,var(--text-dim));margin:12px 0;min-height:20px;">正在归档本局…</div>
+        <button id="btn-settlement-home" class="fg-btn-primary" disabled>返回主菜单</button>
+      </div>
+    `;
+
+    const status = document.getElementById('settlement-status')!;
+    const homeBtn = document.getElementById('btn-settlement-home') as HTMLButtonElement;
+
+    try {
+      const { history, saves } = await import('../api/client');
+      await history.archive({
+        maxRound: g.maxRound,
+        gold: g.gold,
+        battles: g.battles,
+        seed: g.seed,
+        deploySlots: g.deploySlots,
+        warehouse: g.warehouse,
+        finishedAt: new Date().toISOString(),
+      });
+      await saves.del();
+      status.textContent = '已归档至历史，进行中存档已清除';
+    } catch (e: any) {
+      status.textContent = '归档失败：' + (e?.message || e) + '（仍可返回主菜单）';
+    }
+
+    homeBtn.disabled = false;
+    homeBtn.onclick = async () => {
+      this.showingSettlement = false;
+      const { navigateToStart } = await import('../main');
+      navigateToStart();
     };
   }
 

@@ -99,6 +99,15 @@ export function initTables(): void {
 
     CREATE INDEX IF NOT EXISTS idx_battle_pool_round ON battle_pool(round);
 
+    CREATE TABLE IF NOT EXISTS run_history (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id     INTEGER NOT NULL REFERENCES users(id),
+      run_json    TEXT NOT NULL,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_run_history_user ON run_history(user_id);
+
     CREATE TABLE IF NOT EXISTS categories (
       id              TEXT PRIMARY KEY,
       name            TEXT NOT NULL,

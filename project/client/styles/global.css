@@ -19,7 +19,28 @@
   --drop-hover: #e8f0e8;
   --drop-invalid: #ffe8e8;
   --tooltip-bg: #fffff0;
-  font-family: 'Microsoft YaHei', 'SimHei', sans-serif;
+
+  /* 正式局工作台 (--fg-*) */
+  --fg-bg: #fafafa;
+  --fg-surface: #fff;
+  --fg-border: #e5e5e5;
+  --fg-border-hover: #d4d4d4;
+  --fg-text: #262626;
+  --fg-text-secondary: #737373;
+  --fg-text-muted: #a3a3a3;
+  --fg-accent: #525252;
+  --fg-accent-subtle: #ececec;
+  --fg-hover: #e8e8e8;
+  --fg-selected: #d4d4d4;
+  --fg-indicator: #404040;
+  --fg-focus-ring: rgba(38, 38, 38, 0.28);
+  --fg-drag-over-bg: rgba(64, 64, 64, 0.14);
+  --fg-drag-over-border: #404040;
+  --fg-danger: #dc2626;
+  --fg-success: #16a34a;
+  --fg-warning: #ca8a04;
+
+  font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
   font-size: 14px;
   color: var(--text);
   line-height: 1.5;
@@ -79,18 +100,217 @@ body {
   flex: 1;
   height: calc(100vh - 32px);
   overflow: hidden;
+  --fg-left-pct: 48%;
+  --fg-top-pct: 55%;
 }
 #left-zone {
   width: 50%;
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border);
+  min-width: 0;
+  min-height: 0;
 }
 #right-zone {
   width: 50%;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  min-height: 0;
 }
+
+/* 正式局方案 B：左 BD + 右上下（情景/仓库）+ 可调分界线 */
+.fg-layout #left-zone {
+  width: var(--fg-left-pct);
+  flex: 0 0 var(--fg-left-pct);
+  border-right: none;
+}
+.fg-layout #right-zone {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 320px;
+}
+.fg-layout #right-top {
+  flex: 0 0 var(--fg-top-pct);
+  height: var(--fg-top-pct);
+  max-height: var(--fg-top-pct);
+  display: flex;
+  flex-direction: column;
+  min-height: 120px;
+  overflow: hidden;
+}
+.fg-layout #warehouse-area {
+  flex: 1 1 auto;
+  min-height: 120px;
+  overflow: auto;
+  padding: 6px;
+  border-top: none;
+}
+.fg-layout #event-area {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px;
+}
+.fg-split-v {
+  flex: 0 0 6px;
+  width: 6px;
+  cursor: col-resize;
+  background: var(--fg-border);
+  position: relative;
+  z-index: 5;
+}
+.fg-split-v:hover,
+body.fg-resizing-col .fg-split-v {
+  background: var(--fg-indicator);
+}
+.fg-split-h {
+  flex: 0 0 6px;
+  height: 6px;
+  cursor: row-resize;
+  background: var(--fg-border);
+  position: relative;
+  z-index: 5;
+}
+.fg-split-h:hover,
+body.fg-resizing-row .fg-split-h {
+  background: var(--fg-indicator);
+}
+body.fg-resizing-col { cursor: col-resize !important; user-select: none; }
+body.fg-resizing-row { cursor: row-resize !important; user-select: none; }
+
+/* 战斗壳三栏：左我 | 中日志 | 右敌 */
+.fg-layout.fg-combat #left-zone {
+  width: 26%;
+  flex: 0 0 26%;
+}
+.fg-layout.fg-combat #right-zone {
+  width: 26%;
+  flex: 0 0 26%;
+  min-width: 0;
+}
+.fg-layout.fg-combat #right-top {
+  flex: 1;
+  height: auto;
+  max-height: none;
+}
+.fg-layout.fg-combat #center-zone {
+  flex: 1;
+}
+#center-zone {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--fg-border);
+  padding: 6px;
+  overflow: hidden;
+}
+#right-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--fg-border);
+  padding: 0 8px;
+  flex-shrink: 0;
+  background: var(--fg-surface);
+}
+.fg-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--fg-text-secondary);
+  cursor: pointer;
+}
+.fg-tab:hover { color: var(--fg-text); background: var(--fg-hover); }
+.fg-tab.active {
+  color: var(--fg-text);
+  font-weight: 600;
+  border-bottom-color: var(--fg-indicator);
+}
+.fg-btn-primary {
+  background: #404040 !important;
+  color: #fff !important;
+  border-color: #404040 !important;
+}
+.fg-btn-primary:hover { background: #525252 !important; }
+.fg-btn-primary:active { transform: scale(0.98); }
+.fg-more-wrap { position: relative; display: inline-block; }
+.fg-more-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 40;
+  background: var(--fg-surface);
+  border: 1px solid var(--fg-border);
+  border-radius: 6px;
+  min-width: 140px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  padding: 4px;
+}
+.fg-more-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.fg-more-menu button:hover { background: var(--fg-hover); }
+.fg-sell-hint {
+  font-size: 11px;
+  color: var(--fg-text-muted);
+  margin: 0 0 8px;
+}
+.shop-drag {
+  cursor: grab;
+}
+.shop-drag.dragging {
+  cursor: grabbing;
+  opacity: 0.55;
+}
+.fg-merchant.drag-over,
+#merchant-panel.drag-over,
+#warehouse-panel.drag-over {
+  outline: 2px solid var(--fg-drag-over-border);
+  background: var(--fg-drag-over-bg);
+}
+.fg-combat-log {
+  flex: 1;
+  max-height: calc(100vh - 220px);
+  overflow-y: auto;
+  font-size: 11px;
+  font-family: ui-monospace, 'SF Mono', 'Cascadia Code', 'IBM Plex Mono', monospace;
+}
+.fg-battle-summary {
+  padding: 12px;
+  background: var(--fg-accent-subtle);
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+.fg-summary-title { font-weight: 600; margin-bottom: 4px; }
+.fg-summary-gold { font-size: 12px; color: var(--fg-text-secondary); margin-bottom: 8px; }
+.fg-settlement {
+  max-width: 420px;
+  margin: 10vh auto;
+  text-align: center;
+  padding: 24px;
+}
+.fg-settlement h1 { font-size: 22px; margin-bottom: 8px; }
+.fg-settlement-sub { color: var(--fg-text-secondary); }
+.fg-settlement-stats { margin-top: 12px; font-variant-numeric: tabular-nums; }
+#hud .hud-item {
+  background: var(--fg-accent-subtle);
+  border-radius: 4px;
+  padding: 3px 8px;
+}
+#hud .hud-value { font-variant-numeric: tabular-nums; }
 
 /* 左上半区：出场 */
 #deploy-area {

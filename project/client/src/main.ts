@@ -51,14 +51,15 @@ async function main() {
 
 function showStartScreen() {
   app.innerHTML = `
-    <div id="start-screen">
+    <div id="start-screen" class="fg-start">
       <h1>词 条 爆 炸</h1>
       <div class="subtitle">Affix Explosion</div>
       <div id="start-menu">
-        <button id="btn-new-game">新游戏</button>
+        <button id="btn-new-game" class="fg-btn-primary">新游戏</button>
         <button id="btn-continue">继续游戏</button>
-        <button id="btn-delete-save" style="display:none;border-color:#c33;color:#933;">删除存档</button>
+        <button id="btn-history">历史回顾</button>
         <button id="btn-itempool">全物品池</button>
+        <button id="btn-delete-save" style="display:none;border-color:#c33;color:#933;">删除存档</button>
       </div>
       <div style="margin-top:20px;">
         <button id="btn-logout" style="background:none;border:1px solid #999;color:#888;font-size:12px;padding:4px 16px;cursor:pointer;">退出登录</button>
@@ -74,8 +75,8 @@ function showStartScreen() {
   btnContinue.addEventListener('click', () => startGame(false));
   btnDeleteSave.addEventListener('click', () => deleteSave(btnContinue, btnDeleteSave));
   document.getElementById('btn-itempool')!.addEventListener('click', () => showFullItemPool(() => showStartScreen()));
+  document.getElementById('btn-history')!.addEventListener('click', () => showHistoryScreen());
 
-  // 退出登录
   document.getElementById('btn-logout')!.addEventListener('click', async () => {
     const { setToken, resetAdminCache } = await import('./api/client');
     setToken(null);
@@ -83,7 +84,6 @@ function showStartScreen() {
     showLoginPage();
   });
 
-  // 异步检查管理员状态，添加"制作物品"按钮
   (async () => {
     const { checkAdmin } = await import('./api/client');
     if (await checkAdmin()) {
@@ -97,7 +97,6 @@ function showStartScreen() {
       });
       menu.appendChild(btn);
 
-      // "模拟对战"按钮
       const btnSim = document.createElement('button');
       btnSim.id = 'btn-sim-battle';
       btnSim.textContent = '模拟对战';
@@ -109,6 +108,35 @@ function showStartScreen() {
       menu.appendChild(btnSim);
     }
   })();
+}
+
+async function showHistoryScreen() {
+  app.innerHTML = `
+    <div id="history-screen" class="fg-settlement">
+      <h1>历史回顾</h1>
+      <div id="history-list" style="margin:16px 0;max-height:60vh;overflow:auto;text-align:left;"></div>
+      <button id="btn-history-back">返回</button>
+    </div>
+  `;
+  document.getElementById('btn-history-back')!.onclick = () => showStartScreen();
+  const list = document.getElementById('history-list')!;
+  list.innerHTML = '<p style="color:var(--text-dim);">加载中…</p>';
+  try {
+    const { history } = await import('./api/client');
+    const data = await history.list();
+    if (!data.runs.length) {
+      list.innerHTML = '<p style="color:var(--text-dim);">暂无通关记录</p>';
+      return;
+    }
+    list.innerHTML = data.runs.map(r =>
+      `<div class="event-card" style="margin-bottom:8px;">
+        <div>#${r.id} · ${r.created_at}</div>
+        <div style="font-size:12px;color:var(--text-dim);">回合上限 ${r.maxRound ?? '-'} · 战斗 ${r.battles} · 金币 ${r.gold ?? '-'}</div>
+      </div>`
+    ).join('');
+  } catch (e: any) {
+    list.innerHTML = `<p style="color:var(--warn);">加载失败：${e?.message || e}</p>`;
+  }
 }
 
 async function checkSaveAvailability(btn: HTMLButtonElement, btnDelete?: HTMLButtonElement) {

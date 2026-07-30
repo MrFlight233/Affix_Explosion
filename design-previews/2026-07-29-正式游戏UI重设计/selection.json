@@ -1,0 +1,14 @@
+{
+  "id": "B",
+  "label": "B: 工作台统一",
+  "name": "工作台统一",
+  "notes": "",
+  "dials": {
+    "variance": 5,
+    "motion": 4,
+    "density": 7
+  },
+  "adjustments": "",
+  "source": "click",
+  "receivedAt": "2026-07-29T09:05:10.525Z"
+}

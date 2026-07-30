@@ -11,3 +11,4 @@ export { affixRepo } from './repositories/affixRepo';
 export { saveRepo } from './repositories/saveRepo';
 export { battleRepo } from './repositories/battleRepo';
 export { categoryRepo } from './repositories/categoryRepo';
+export { historyRepo } from './repositories/historyRepo';

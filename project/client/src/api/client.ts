@@ -147,4 +147,13 @@ export const saves = {
   del: () => request<{ok:boolean}>('/saves', {method:'DELETE'}),
 };
 
-export default { auth, data, saves };
+export const history = {
+  list: () => request<{runs: Array<{id:number;created_at:string;maxRound?:number;battles:number;gold?:number}>}>('/history'),
+  get: (id: number) => request<{id:number;created_at:string;run:any}>(`/history/${id}`),
+  archive: (run: any) =>
+    request<{ok:boolean;id:number}>('/history', {
+      method: 'POST', body: JSON.stringify({ run }),
+    }),
+};
+
+export default { auth, data, saves, history };

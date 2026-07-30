@@ -23,13 +23,33 @@ export type {
   CombatWeaponRuntime, OnHitContext, PlaybackSpeed,
 } from './battle';
 
+/** 兼容旧存档：1=探险 2=战斗；正式语义以 round 奇偶为准 */
 export type GamePhase = 1 | 2;
+
+/** 默认最大设计回合（可配置） */
+export const MAX_ROUND = 10;
+
+/** 本局一场战斗归档记录 */
+export interface BattleRecord {
+  round: number;
+  result: 'win' | 'loss' | 'auto_win';
+  rewardGold: number;
+  playerBd: DeploySlot[];
+  enemyBd: DeploySlot[] | null;
+  opponentName?: string;
+  combatSeed?: number;
+  durationMs?: number;
+  endedBy?: string;
+  log: CombatEvent[];
+}
 
 // ---- 游戏状态 ----
 
 export interface GameState {
   gold: number;
+  /** 设计回合 1..MAX_ROUND：奇数=探险，偶数=战斗 */
   round: number;
+  /** 与 round 奇偶同步，便于旧 UI/存档 */
   phase: GamePhase;
   warehouse: ItemInstance[];
   deploySlots: DeploySlot[];
@@ -37,8 +57,12 @@ export interface GameState {
   seed: number;
   currentEvents: string[];
   visitedEventMerchants: string[];
+  /** @deprecated 设计已取消成长，仅兼容旧存档 */
   growthStacks: Record<string, number>;
   quickWarehouseCollapsed: boolean;
+  /** 本局已完成的战斗回顾 */
+  battles: BattleRecord[];
+  maxRound: number;
 }
 
 function seededRandom(seed: number): () => number {
@@ -71,14 +95,36 @@ export class GameEngine {
     this.state = {
       gold: 90, round: 1, phase: 1,
       warehouse: [], deploySlots: [], itemPool: [], seed: Date.now(),
-      currentEvents: [], visitedEventMerchants: [], growthStacks: {}, quickWarehouseCollapsed: false,
+      currentEvents: [], visitedEventMerchants: [], growthStacks: {},
+      quickWarehouseCollapsed: false, battles: [], maxRound: MAX_ROUND,
     };
     this.rebuildItemPool();
     // 冒险者自动部署到出场面板（不入仓库）
     const adv = this.createItem('adventurer', 'entity');
     this.state.deploySlots.push({ entity: adv, children: [] });
     this.rightPanel = null;
+    // 进入回合 1 探险：发放探险金 + 生成事件
+    this.grantExploreGold();
+    this.generateEvents();
     this.notify();
+  }
+
+  /** 是否探险阶段（奇数回合） */
+  isExplore(): boolean { return this.state.round % 2 === 1; }
+  /** 是否战斗阶段（偶数回合） */
+  isBattlePhase(): boolean { return this.state.round % 2 === 0; }
+  syncPhaseFromRound() { this.state.phase = this.isExplore() ? 1 : 2; }
+
+  /** 探险发金：floor((round+1)/2)×10 */
+  grantExploreGold(): number {
+    const amount = Math.floor((this.state.round + 1) / 2) * 10;
+    this.state.gold += amount;
+    return amount;
+  }
+
+  /** 战斗获胜金：floor((round+1)/2)×5 */
+  getBattleWinGold(): number {
+    return Math.floor((this.state.round + 1) / 2) * 5;
   }
 
   rebuildItemPool() {
@@ -311,15 +357,15 @@ export class GameEngine {
     if (r) { this.state.gold += price; this.notify(); return price; }
     return null;
   }
-  buyItem(item: ItemInstance): string | null {
+  buyItem(item: ItemInstance, priceOverride?: number): string | null {
     const def = this.getDef(item);
-    const price = def ? ('costValue' in def ? Math.abs(def.costValue) : (def as EntityDef).value) : 999;
+    const price = priceOverride ?? (def ? ('costValue' in def ? Math.abs(def.costValue) : (def as EntityDef).value) : 999);
     if (this.state.gold < price) return `金币不足(需${price},有${this.state.gold})`;
     this.state.gold -= price; this.addToWarehouse(item); return null;
   }
-  buyAndEquip(item: ItemInstance, targetSlotIdx?: number, parentInstanceId?: string | null): string | null {
+  buyAndEquip(item: ItemInstance, targetSlotIdx?: number, parentInstanceId?: string | null, priceOverride?: number): string | null {
     const def = this.getDef(item);
-    const price = def ? ('costValue' in def ? Math.abs(def.costValue) : (def as EntityDef).value) : 999;
+    const price = priceOverride ?? (def ? ('costValue' in def ? Math.abs(def.costValue) : (def as EntityDef).value) : 999);
     if (this.state.gold < price) return `金币不足(需${price},有${this.state.gold})`;
     this.state.gold -= price;
     const ni = this.createItem(item.defId, item.type);
@@ -390,29 +436,56 @@ export class GameEngine {
 
   // ---- 阶段 ----
   getPhaseLabel(): string {
-    const p = ['', '探险', '战斗'];
-    return `回合${this.state.round} ${p[this.state.phase]}阶段`;
+    return `回合${this.state.round} ${this.isExplore() ? '探险' : '战斗'}阶段`;
   }
   getMerchantValueCap(): number { return this.state.round * 10; }
-  /** 获取第一层槽位上限 */
-  getFirstLayerSlots(): number { return this.state.round; }
+  /** 第一层槽位 = floor((round+1)/2) */
+  getFirstLayerSlots(): number { return Math.floor((this.state.round + 1) / 2); }
 
-  nextPhase() {
-    if (this.state.phase === 1) {
-      // 探险 → 战斗
-      this.state.phase = 2;
-    } else {
-      // 战斗 → 下一轮探险
-      this.state.round++;
-      this.state.phase = 1;
-      this.state.visitedEventMerchants = [];
-      this.generateEvents();
-      // 探险阶段金币
-      const exploreGold = Math.floor((this.state.round + 1) / 2) * 10;
-      this.state.gold += exploreGold;
-      this.autoSave();
-    }
+  /**
+   * 从探险进入战斗回合（round 奇数 → 偶数）。
+   * 不开战、不发奖；由 UI 再调 prepareOfficialBattle。
+   */
+  enterBattleRound() {
+    if (!this.isExplore()) return;
+    this.state.round += 1;
+    this.syncPhaseFromRound();
     this.notify();
+  }
+
+  /**
+   * 网络异常时从战斗回合退回探险（round 偶数 → 奇数），便于重试开战。
+   */
+  rollbackBattleToExplore() {
+    if (!this.isBattlePhase()) return;
+    this.state.round -= 1;
+    this.syncPhaseFromRound();
+    this.notify();
+  }
+
+  /**
+   * 战斗结束态点「继续」：
+   * - 已达 maxRound → 返回 'settlement'
+   * - 否则进入下一探险回合并发金、生成事件、自动存档
+   */
+  continueAfterBattle(): 'explore' | 'settlement' {
+    if (this.state.round >= this.state.maxRound) {
+      return 'settlement';
+    }
+    this.state.round += 1;
+    this.syncPhaseFromRound();
+    this.state.visitedEventMerchants = [];
+    this.generateEvents();
+    this.grantExploreGold();
+    this.autoSave();
+    this.notify();
+    return 'explore';
+  }
+
+  /** @deprecated 使用 enterBattleRound / continueAfterBattle */
+  nextPhase() {
+    if (this.isExplore()) this.enterBattleRound();
+    else this.continueAfterBattle();
   }
 
   // ---- 事件 ----
@@ -864,67 +937,84 @@ export class GameEngine {
     });
   }
 
-  /** 应用胜利结算：金币 + growth 叠层 */
+  /** 应用胜利结算：仅满额战斗金（无 growth） */
   private applyCombatVictoryRewards(): number {
-    const goldReward = 10 + this.state.round * 5 + this.state.deploySlots.length * 2;
-    for (const slot of this.state.deploySlots) {
-      const hasGrowth = this.hasGrowthAffix(slot.children) ||
-        (slot.entity.children && this.hasGrowthAffix(slot.entity.children));
-      if (hasGrowth) {
-        const cur = this.state.growthStacks[slot.entity.instanceId] || 0;
-        if (cur < 10) this.state.growthStacks[slot.entity.instanceId] = cur + 1;
-      }
-    }
+    const goldReward = this.getBattleWinGold();
     this.state.gold += goldReward;
     this.notify();
     return goldReward;
   }
 
+  /** 记录本场战斗并自动存档（结束态） */
+  recordBattle(rec: BattleRecord) {
+    this.state.battles.push(rec);
+    this.autoSave();
+  }
+
   /**
    * 正式战准备：上传己方 BD + 从对战池抽取敌方。
-   * 不改变 phase/金币；匹配后开战前调用，避免二次抽池。
+   * networkError=true 时 UI 必须留在探险、不可当自动胜。
    */
   async prepareOfficialBattle(): Promise<{
     playerSlots: DeploySlot[];
     enemySlots: DeploySlot[] | null;
     autoWin: boolean;
+    networkError: boolean;
     opponentName?: string;
+    errorMessage?: string;
   }> {
-    const playerSlots = this.state.deploySlots;
+    const playerSlots = JSON.parse(JSON.stringify(this.state.deploySlots)) as DeploySlot[];
 
     try {
       const r = await dataApi.uploadBD(this.state.round, playerSlots);
       console.log('[prepareOfficialBattle] 上传 BD 成功', { round: this.state.round, id: r.id, slots: playerSlots.length });
     } catch (e) {
       console.error('[prepareOfficialBattle] 上传 BD 失败', e);
+      return {
+        playerSlots, enemySlots: null, autoWin: false, networkError: true,
+        errorMessage: (e as Error)?.message || '上传 BD 失败，请检查网络后重试',
+      };
     }
 
     try {
       const { opponent } = await dataApi.getBattlePool(this.state.round);
       if (opponent && opponent.bd_json && Array.isArray(opponent.bd_json) && opponent.bd_json.length > 0) {
-        console.log('[prepareOfficialBattle] 抽取对手成功', {
-          round: this.state.round,
-          slots: opponent.bd_json.length,
-          opponent: opponent.username,
-        });
         return {
           playerSlots,
           enemySlots: opponent.bd_json as DeploySlot[],
           autoWin: false,
+          networkError: false,
           opponentName: opponent.username,
         };
       }
-      console.log('[prepareOfficialBattle] 池空', { round: this.state.round });
+      return { playerSlots, enemySlots: null, autoWin: true, networkError: false };
     } catch (e) {
       console.error('[prepareOfficialBattle] 抽取对手失败', e);
+      return {
+        playerSlots, enemySlots: null, autoWin: false, networkError: true,
+        errorMessage: (e as Error)?.message || '匹配失败，请检查网络后重试',
+      };
     }
-
-    return { playerSlots, enemySlots: null, autoWin: true };
   }
 
-  /** 空池自动获胜结算（匹配后开战时调用） */
-  settleOfficialAutoWin(onEnd: (win: boolean, gold: number) => void): { win: true; goldReward: number } {
+  /** 空池自动获胜结算 */
+  settleOfficialAutoWin(
+    onEnd: (win: boolean, gold: number) => void,
+    log: CombatEvent[] = [],
+  ): { win: true; goldReward: number } {
     const goldReward = this.applyCombatVictoryRewards();
+    this.recordBattle({
+      round: this.state.round,
+      result: 'auto_win',
+      rewardGold: goldReward,
+      playerBd: JSON.parse(JSON.stringify(this.state.deploySlots)),
+      enemyBd: null,
+      log: log.length ? log : [{
+        time: 0, actorName: '', weaponName: '', targetName: '玩家胜利',
+        damage: 0, targetHpAfter: 0, targetMaxHp: 0, effects: ['空池自动获胜'],
+      }],
+      endedBy: 'empty_pool',
+    });
     onEnd(true, goldReward);
     return { win: true, goldReward };
   }
@@ -972,6 +1062,17 @@ export class GameEngine {
         this.notify();
       }
 
+      this.recordBattle({
+        round: this.state.round,
+        result: result.win ? 'win' : 'loss',
+        rewardGold: goldReward,
+        playerBd: JSON.parse(JSON.stringify(playerSlots)),
+        enemyBd: JSON.parse(JSON.stringify(enemySlots)),
+        durationMs: this.combatTime,
+        log: [], // UI 侧应在调用前通过外层收集完整日志后覆盖；此处保底
+        endedBy: result.win ? 'enemy_down' : 'player_down',
+      });
+
       onEnd(result.win, goldReward);
       return { win: result.win, enemies: enemyUnits, goldReward };
     } finally {
@@ -989,6 +1090,9 @@ export class GameEngine {
     speed?: PlaybackSpeed | (() => PlaybackSpeed),
   ) {
     const prep = await this.prepareOfficialBattle();
+    if (prep.networkError) {
+      throw new Error(prep.errorMessage || '网络异常');
+    }
     if (prep.autoWin || !prep.enemySlots) {
       return this.settleOfficialAutoWin(onEnd);
     }
@@ -1040,22 +1144,47 @@ export class GameEngine {
   // ---- 存档（单存档，无槽位） ----
   toSaveData(): any {
     return {
-      gold: this.state.gold, round: this.state.round,
+      gold: this.state.gold,
+      round: this.state.round,
       phase: this.state.phase,
-      warehouse: this.state.warehouse, deploySlots: this.state.deploySlots,
-      itemPool: this.state.itemPool, seed: this.state.seed,
-      growthStacks: this.state.growthStacks, savedAt: new Date().toISOString(),
+      warehouse: this.state.warehouse,
+      deploySlots: this.state.deploySlots,
+      itemPool: this.state.itemPool,
+      seed: this.state.seed,
+      currentEvents: this.state.currentEvents,
+      visitedEventMerchants: this.state.visitedEventMerchants,
+      battles: this.state.battles,
+      maxRound: this.state.maxRound,
+      savedAt: new Date().toISOString(),
+      saveVersion: 2,
     };
   }
 
   loadSaveData(data: any) {
-    this.state.gold = data.gold ?? 90; this.state.round = data.round ?? 1;
-    this.state.phase = data.phase ?? 1;
-    this.state.warehouse = data.warehouse ?? []; this.state.deploySlots = data.deploySlots ?? [];
-    this.state.itemPool = data.itemPool ?? []; this.state.seed = data.seed ?? Date.now();
-    this.state.growthStacks = data.growthStacks ?? {}; this.state.currentEvents = [];
+    // 旧存档：round+phase 模型 → 设计回合
+    let round = data.round ?? 1;
+    let phase: GamePhase = data.phase ?? 1;
+    if ((data.saveVersion ?? 1) < 2 && data.phase != null) {
+      round = phase === 1 ? round * 2 - 1 : round * 2;
+    }
+    this.state.gold = data.gold ?? 90;
+    this.state.round = round;
+    this.syncPhaseFromRound();
+    this.state.warehouse = data.warehouse ?? [];
+    this.state.deploySlots = data.deploySlots ?? [];
+    this.state.itemPool = data.itemPool ?? [];
+    this.state.seed = data.seed ?? Date.now();
+    this.state.growthStacks = data.growthStacks ?? {};
     this.state.visitedEventMerchants = data.visitedEventMerchants ?? [];
-    if (this.state.phase === 1) this.generateEvents();
+    this.state.battles = data.battles ?? [];
+    this.state.maxRound = data.maxRound ?? MAX_ROUND;
+    if (Array.isArray(data.currentEvents) && data.currentEvents.length > 0) {
+      this.state.currentEvents = data.currentEvents;
+    } else if (this.isExplore()) {
+      this.generateEvents();
+    } else {
+      this.state.currentEvents = [];
+    }
     this.notify();
   }
 

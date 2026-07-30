@@ -281,9 +281,9 @@ export function getEffectiveEntitySlots(def: EntityDef): number {
   return def.entitySlots;
 }
 
-/** 获取第一层实体槽位上限（等于当前回合数） */
+/** 第一层槽位上限 = floor((round+1)/2) */
 export function getFirstLayerSlots(round: number): number {
-  return round;
+  return Math.floor((round + 1) / 2);
 }
 
 /** 计算某父实体的已被占用的槽位（只看直属实体类子项；slotCost=0 不占） */
