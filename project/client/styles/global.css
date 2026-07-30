@@ -159,9 +159,11 @@ body {
 .fg-layout #warehouse-area {
   flex: 1 1 auto;
   min-height: 120px;
-  overflow: auto;
-  padding: 6px;
+  overflow: hidden;
+  padding: 0;
   border-top: none;
+  display: flex;
+  flex-direction: column;
 }
 .fg-layout #event-area {
   flex: 1;
@@ -747,12 +749,14 @@ body.fg-resizing-row { cursor: row-resize !important; user-select: none; }
 }
 #hud .hud-value { font-variant-numeric: tabular-nums; }
 
-/* 左上半区：出场 */
+/* 左栏：出场 BD */
 #deploy-area {
   flex: 1;
-  overflow-y: auto;
-  padding: 6px;
+  overflow: hidden;
+  padding: 0;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* 左中：仓库简视区 */
@@ -1800,10 +1804,51 @@ body.fg-resizing-row { cursor: row-resize !important; user-select: none; }
   font-size: 14px; pointer-events: none; z-index: 100;
 }
 
-/* 正式局探险：BD / 仓库滚动与卸下高亮 */
-#fg-player-bd, #fg-warehouse-area {
-  overflow: auto;
+/* 正式局探险：BD / 仓库高度链、区头、虚线空态、卸下高亮 */
+#fg-player-bd,
+#fg-warehouse-area {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
   height: 100%;
+  overflow: hidden;
+  padding: 8px 10px;
+  box-sizing: border-box;
+}
+.fg-zone-head {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-text-secondary);
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--fg-border);
+  font-variant-numeric: tabular-nums;
+}
+#fg-player-bd > .sb-deploy-area,
+#fg-warehouse-area > .sb-deploy-area {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+.fg-drop-empty {
+  flex: 1;
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 16px;
+  border: 1px dashed var(--fg-border);
+  border-radius: 6px;
+  background: var(--fg-bg, #fafafa);
+  color: var(--fg-text-muted);
+  font-size: 12px;
+  text-align: center;
+  box-sizing: border-box;
 }
 #fg-warehouse-area.remove-target,
 [data-fg-zone="unload"].remove-target {

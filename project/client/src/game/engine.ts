@@ -302,32 +302,45 @@ export class GameEngine {
     return null;
   }
 
-  /** 将物品移动到出场面板指定位置（支持嵌套父实体） */
+  /** 将物品移动到出场面板指定位置（支持嵌套父实体；第一层可为启动端或木桩） */
   moveToDeploy(item: ItemInstance, targetSlotIdx?: number, parentInstanceId?: string | null): string | null {
     const def = this.getDef(item); if (!def) return '未知物品';
     if (item.type === 'entity') {
       const edef = def as EntityDef;
-      if (isStarter(edef)) {
-        if (targetSlotIdx !== undefined) return '启动端只能放在第一层级';
-        this.removeFromWarehouse(item.instanceId); this.removeFromDeploy(item.instanceId);
-        this.state.deploySlots.push({ entity: item, children: [] });
-        this.notify(); return null;
-      } else {
-        if (targetSlotIdx === undefined) return '装备需放入启动端的槽位';
-        const pid = parentInstanceId ?? null;
-        const err = this.canEquipToSlot(targetSlotIdx, pid, edef); if (err) return err;
-        this.removeFromWarehouse(item.instanceId); this.removeFromDeploy(item.instanceId);
-        // 插入到正确的父实体
-        if (pid !== null) {
-          const parentEntity = this.findParentEntity(pid, targetSlotIdx);
-          if (!parentEntity) return '父实体不存在';
-          if (!parentEntity.children) parentEntity.children = [];
-          parentEntity.children.push(item);
-        } else {
-          this.state.deploySlots[targetSlotIdx].children.push(item);
+      const pid = parentInstanceId ?? null;
+
+      // 启动端只能放在第一层
+      if (isStarter(edef) && pid !== null) return '启动端只能放在第一层级';
+
+      if (pid === null) {
+        // 第一层：启动端或木桩，只校验槽位
+        const maxSlots = this.getFirstLayerSlots();
+        let usedSlots = 0;
+        for (const s of this.state.deploySlots) {
+          if (s.entity.instanceId === item.instanceId) continue;
+          const d = getEntityDef(s.entity.defId);
+          if (d) usedSlots += d.slotCost;
         }
-        this.notify(); return null;
+        if (usedSlots + edef.slotCost > maxSlots) {
+          return `第一层槽位不足(剩${maxSlots - usedSlots},需${edef.slotCost})`;
+        }
+        this.removeFromWarehouse(item.instanceId);
+        this.removeFromDeploy(item.instanceId);
+        this.state.deploySlots.push({ entity: item, children: [] });
+        this.notify();
+        return null;
       }
+
+      // 嵌套：放入某实体子树（启动端已在上方拦截）
+      if (targetSlotIdx === undefined) return '装备需放入实体的槽位';
+      const err = this.canEquipToSlot(targetSlotIdx, pid, edef); if (err) return err;
+      this.removeFromWarehouse(item.instanceId); this.removeFromDeploy(item.instanceId);
+      const parentEntity = this.findParentEntity(pid, targetSlotIdx);
+      if (!parentEntity) return '父实体不存在';
+      if (!parentEntity.children) parentEntity.children = [];
+      parentEntity.children.push(item);
+      this.notify();
+      return null;
     }
     if (item.type === 'affix') {
       if (targetSlotIdx === undefined) return '词条需放入实体槽位';
@@ -368,9 +381,12 @@ export class GameEngine {
     const def = this.getDef(item);
     const price = priceOverride ?? (def ? ('costValue' in def ? Math.abs(def.costValue) : (def as EntityDef).value) : 999);
     if (this.state.gold < price) return `金币不足(需${price},有${this.state.gold})`;
+    // 先装备：失败则不扣金（避免槽位不足吞金后 HUD 与引擎不同步）
+    const err = this.moveToDeploy(item, targetSlotIdx, parentInstanceId);
+    if (err) return err;
     this.state.gold -= price;
-    // 使用目录实例本身（与 buyItem 一致），便于 UI 折叠态绑定 instanceId
-    return this.moveToDeploy(item, targetSlotIdx, parentInstanceId);
+    this.notify();
+    return null;
   }
 
   /** 生成商店物品列表（不限数量，仅价值限制） */
@@ -1254,8 +1270,8 @@ export class GameEngine {
       }
       return { entity, children };
     }).filter(slot => {
-      const d = getEntityDef(slot.entity.defId);
-      return !!d && isStarter(d);
+      // 保留第一层启动端与木桩；仅丢掉无法解析的实体
+      return !!getEntityDef(slot.entity.defId);
     });
     // 允许空 BD：读档保真，不自动补 starter
 

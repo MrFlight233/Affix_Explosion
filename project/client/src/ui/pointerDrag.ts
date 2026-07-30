@@ -167,16 +167,19 @@ function onPointerUp(e: PointerEvent): void {
   const err = handlers.onCommit(session, lastHit);
   teardown(false);
   if (err) {
-    const toast = (document.getElementById('sb-toast') || document.getElementById('toast')) as HTMLElement | null;
-    if (toast) {
-      toast.textContent = err;
-      toast.classList.add('show', 'sb-toast-visible');
-      toast.style.display = 'block';
-      setTimeout(() => {
-        toast.classList.remove('show', 'sb-toast-visible');
-        if (toast.id === 'sb-toast') toast.style.display = 'none';
-      }, 2000);
+    let toast = (document.getElementById('sb-toast') || document.getElementById('toast')) as HTMLElement | null;
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'toast';
+      document.body.appendChild(toast);
     }
+    toast.textContent = err;
+    toast.classList.add('show', 'sb-toast-visible');
+    toast.style.display = 'block';
+    setTimeout(() => {
+      toast!.classList.remove('show', 'sb-toast-visible');
+      if (toast!.id === 'sb-toast') toast!.style.display = 'none';
+    }, 2000);
   }
 }
 

@@ -5,7 +5,7 @@
 import { GameEngine } from '../game/engine';
 import {
   ItemInstance, EntityDef, AffixDef,
-  getEntityDef, getAffixDef, isStarter, findInTree,
+  getEntityDef, getAffixDef, findInTree,
 } from '../game/data';
 import { renderEntityCard } from './build/entityCard';
 import {
@@ -56,35 +56,34 @@ export function renderOfficialBdHtml(ctx: OfficialExploreCtx): string {
   }
   const max = ctx.engine.getFirstLayerSlots();
 
-  let h = '<div class="panel"><div class="panel-title">出场面板</div>';
-  h += '<div id="fg-player-bd">';
+  let h = '<div id="fg-player-bd">';
+  h += '<div class="fg-zone-head">出场 BD · 第一层 ' + used + ' / ' + max + '</div>';
   h += '<div class="sb-deploy-area" data-sort-list="top" data-accept="entity" data-side="player">';
-  h += `<div class="sb-slot-header">玩家 BD &nbsp; 第一层 ${used} / ${max} 槽位</div>`;
   if (g.deploySlots.length === 0) {
-    h += '<div style="color:var(--sb-text-muted,#999);font-size:12px;padding:8px;">拖入启动端到第一层</div>';
+    h += '<div class="fg-drop-empty">拖入实体</div>';
   }
   for (const slot of g.deploySlots) {
     const edef = getEntityDef(slot.entity.defId);
-    if (!edef || !isStarter(edef)) continue;
+    if (!edef) continue;
     h += renderEntityCard(slot.entity, 0, 'player', 'build', ctx.collapse);
   }
-  h += '</div></div></div>';
+  h += '</div></div>';
   return h;
 }
 
 export function renderOfficialWarehouseHtml(ctx: OfficialExploreCtx): string {
   const wh = ctx.engine.state.warehouse;
   let h = '<div id="fg-warehouse-area">';
-  h += '<div class="panel"><div class="panel-title">仓库</div>';
+  h += '<div class="fg-zone-head">仓库</div>';
   h += '<div class="sb-deploy-area" data-sort-list="top" data-accept="entity,affix" data-side="warehouse" data-fg-zone="unload">';
   if (wh.length === 0) {
-    h += '<p style="color:var(--fg-text-muted,var(--text-dim));font-size:12px;padding:6px;">仓库为空 · 可从 BD 或商人拖入</p>';
+    h += '<div class="fg-drop-empty">拖入实体或词条</div>';
   } else {
     for (const item of wh) {
       h += renderEntityCard(item, 0, 'warehouse', 'build', ctx.collapse);
     }
   }
-  h += '</div></div></div>';
+  h += '</div></div>';
   return h;
 }
 
@@ -347,13 +346,6 @@ function commitOfficialDrag(ctx: OfficialExploreCtx, session: PointerDragSession
 
     // 词条必须有父
     if (session.kind === 'affix' && parentId == null) return '词条需要放入实体';
-
-    // 顶层实体必须是启动端
-    if (parentId == null && session.kind === 'entity') {
-      const def = getEntityDef(session.defId);
-      if (!def) return '未知实体';
-      if (!isStarter(def)) return '装备需放入启动端的槽位';
-    }
 
     let slotIdx: number | undefined;
     if (parentId != null) {
