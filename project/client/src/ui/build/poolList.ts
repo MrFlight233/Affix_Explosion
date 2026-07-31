@@ -40,10 +40,29 @@ export function filterPoolItems(
 
 export function renderPoolFiltersHtml(
   state: PoolFilterState,
-  opts?: { forShop?: boolean },
+  opts?: {
+    forShop?: boolean;
+    /** 正式局货架实体：有货才显示对应实体分类 Chip */
+    catalogEntities?: EntityDef[];
+    /** 正式局货架词条：有货才显示对应词条分类 Chip */
+    catalogAffixes?: AffixDef[];
+  },
 ): string {
-  const ecats = getEntityCategoryFilters();
-  const aCatObjs = opts?.forShop ? getShopAffixFilterCategories() : getAffixFilterCategories();
+  let ecats = getEntityCategoryFilters();
+  let aCatObjs = opts?.forShop ? getShopAffixFilterCategories() : getAffixFilterCategories();
+
+  // 商店：仅保留货架上实际出现的类型（「全部」始终保留）
+  if (opts?.forShop && opts.catalogEntities) {
+    const present = new Set<string>();
+    for (const e of opts.catalogEntities) {
+      for (const name of getEntityCategory(e)) present.add(name);
+    }
+    ecats = ecats.filter(c => c === 'all' || present.has(c));
+  }
+  if (opts?.forShop && opts.catalogAffixes) {
+    const presentIds = new Set(opts.catalogAffixes.map(a => a.category));
+    aCatObjs = aCatObjs.filter(c => presentIds.has(c.id));
+  }
 
   let h = '<div id="sb-pool-filters">';
   h += '<div class="filter-row">';

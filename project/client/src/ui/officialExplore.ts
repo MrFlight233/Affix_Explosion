@@ -5,7 +5,7 @@
 import { GameEngine } from '../game/engine';
 import {
   ItemInstance, EntityDef, AffixDef,
-  getEntityDef, getAffixDef, findInTree, getShopAffixFilterCategories,
+  getEntityDef, getAffixDef, findInTree, getShopAffixFilterCategories, getEntityCategory,
 } from '../game/data';
 import { renderEntityCard } from './build/entityCard';
 import {
@@ -163,18 +163,39 @@ export function renderOfficialShopItemListHtml(ctx: OfficialExploreCtx): string 
 
 export function renderOfficialShopHtml(ctx: OfficialExploreCtx): string {
   const cap = ctx.engine.getMerchantValueCap();
-  // 若当前词条分类已从商店筛选隐藏，回退到「全部」
-  const shopCats = getShopAffixFilterCategories();
+  const { entities: catalogEntities, affixes: catalogAffixes } = catalogDefs(ctx);
+
+  // 可见实体分类名（货架有货）；「all」始终有效
+  const presentEntityCats = new Set<string>();
+  for (const e of catalogEntities) {
+    for (const name of getEntityCategory(e)) presentEntityCats.add(name);
+  }
+  if (
+    ctx.poolFilter.entityCatFilter !== 'all' &&
+    !presentEntityCats.has(ctx.poolFilter.entityCatFilter)
+  ) {
+    ctx.poolFilter.entityCatFilter = 'all';
+  }
+
+  // 可见词条分类：showInFilter ∩ 货架有货；不可见则回退「全部」
+  const shopCats = getShopAffixFilterCategories().filter(c =>
+    catalogAffixes.some(a => a.category === c.id),
+  );
   if (
     ctx.poolFilter.affixCatFilter !== 'all' &&
     !shopCats.some(c => c.id === ctx.poolFilter.affixCatFilter)
   ) {
     ctx.poolFilter.affixCatFilter = 'all';
   }
+
   let h = `<div class="panel fg-merchant" id="merchant-panel" data-fg-zone="sell">`;
   h += `<div class="panel-title">固定商人（价值上限: ${cap}）</div>`;
   h += '<p class="fg-sell-hint">拖到左侧出场 BD：购买并装备 · 拖到下方仓库：购买并入库 · 拖入本面板：半价出售</p>';
-  h += renderPoolFiltersHtml(ctx.poolFilter, { forShop: true });
+  h += renderPoolFiltersHtml(ctx.poolFilter, {
+    forShop: true,
+    catalogEntities,
+    catalogAffixes,
+  });
   h += renderOfficialShopItemListHtml(ctx);
   h += '</div>';
   return h;
