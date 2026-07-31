@@ -11,6 +11,8 @@ import {
   getEntityCategoryFilters,
   getCategoryName,
   getAffixFilterCategories,
+  getDefPackageTradeValue,
+  getAffixPackageTradeValue,
   type EntityDef,
   type AffixDef,
   type DefaultChildSpec,
@@ -176,7 +178,8 @@ export function showFullItemPool(onBack: () => void): void {
       field('名称', e.name),
       field('占用槽位', e.slotCost),
       field('重量', e.weight),
-      field('价值', e.value),
+      field('价值', getDefPackageTradeValue(e)),
+      field('本体价值', e.value),
     ].join(''));
 
     // 词条关联
@@ -234,7 +237,7 @@ export function showFullItemPool(onBack: () => void): void {
               const name = (cd?.name || defId) + (ov > 0 ? ' (定制)' : '');
               const cat = cd ? getEntityCategory(cd).join(' / ') : '';
               const effect = cd
-                ? `槽耗 ${cd.slotCost} · 价 ${cd.value}${ov > 0 ? ` · 覆写${ov}字段` : ''}`
+                ? `槽耗 ${cd.slotCost} · 价 ${getDefPackageTradeValue(cd)}${ov > 0 ? ` · 覆写${ov}字段` : ''}`
                 : '—';
               return `<div class="ip-ref-row">
                 <span class="ref-name">${esc(name)}</span>
@@ -317,7 +320,7 @@ export function showFullItemPool(onBack: () => void): void {
       field('名称', a.name),
       field('分类', getCategoryName(a.category)),
       field('效果描述', a.effect),
-      field('价值', a.costValue),
+      field('价值', getAffixPackageTradeValue(a)),
       field('槽位消耗', a.slotCost),
       field('可重复', a.repeatable ? '是' : '否'),
     ].join(''));
@@ -475,7 +478,7 @@ export function showFullItemPool(onBack: () => void): void {
         html += `<div class="ip-list-item${s.selectedId === e.id ? ' selected' : ''}" data-id="${esc(e.id)}" role="button" tabindex="0">
           <span class="name">${esc(e.name)}</span>
           <span class="meta">${esc(meta)}</span>
-          <span class="price">价 ${e.value}</span>
+          <span class="price">价 ${getDefPackageTradeValue(e)}</span>
         </div>`;
       }
     } else {
@@ -483,7 +486,7 @@ export function showFullItemPool(onBack: () => void): void {
         html += `<div class="ip-list-item${s.selectedId === a.id ? ' selected' : ''}" data-id="${esc(a.id)}" role="button" tabindex="0">
           <span class="name">${esc(a.name)}</span>
           <span class="meta">${esc(getCategoryName(a.category))}</span>
-          <span class="price">价 ${Math.abs(a.costValue)}</span>
+          <span class="price">价 ${getAffixPackageTradeValue(a)}</span>
         </div>`;
       }
     }

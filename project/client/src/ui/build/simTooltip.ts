@@ -3,6 +3,7 @@ import {
   EntityDef, ItemInstance,
   getEntityDef, getAffixDef, isStarter, getEntityCategory,
   getEffectiveEntitySlots, countUsedSlots, countUsedAffixSlots, getCategoryName,
+  getItemTradeValue, getDefPackageTradeValue, getAffixPackageTradeValue, computeStarterLoad,
 } from '../../game/data';
 import { formatWeightG, formatWeightBonusG } from './format';
 import { hasPassive, resolveNames } from './entityCard';
@@ -17,27 +18,6 @@ function tipSection(title: string): string {
 
 function tipIndent(depth: number): string {
   return `margin-left:${depth * 12}px;`;
-}
-
-/** 递归计算实体总值：自身 + 固定词条 + 动态词条 + 子孙实体 */
-function computeTotalValue(item: ItemInstance): number {
-  const def = getEntityDef(item.defId);
-  let total = def?.value || 0;
-  if (def) {
-    for (const fa of def.fixedAffixes) {
-      const ad = getAffixDef(fa);
-      if (ad) total += Math.abs(ad.costValue);
-    }
-  }
-  for (const c of (item.children || [])) {
-    if (c.type === 'affix') {
-      const ad = getAffixDef(c.defId);
-      if (ad) total += Math.abs(ad.costValue);
-    } else if (c.type === 'entity') {
-      total += computeTotalValue(c);
-    }
-  }
-  return total;
 }
 
 /** 递归渲染实例子树（tooltip 用），depth=0 为顶层 */
@@ -65,7 +45,8 @@ export function renderTooltipTree(
       const hRegen = combatUnit ? combatUnit.hpRegeneration : (def.hpRegen || 0);
       h += tipkv('生命', hp) + tipkv('耐力', stam);
       h += tipkv('耐力恢复', sRegen + '/s') + tipkv('生命恢复', hRegen + '/s');
-      h += tipkv('负重上限', formatWeightG(def.maxLoad));
+      const load = computeStarterLoad(item);
+      h += tipkv('负重', `${formatWeightG(load.current)}/${formatWeightG(load.max)}`);
     }
     h += tipkv('槽位消耗', def.slotCost);
     if (!isSt) h += tipkv('重量', formatWeightG(def.weight));
@@ -219,7 +200,7 @@ export function showSimTooltip(
     if (instanceId && getInstance) {
       inst = getInstance(instanceId);
     }
-    const value = inst ? computeTotalValue(inst) : def.value;
+    const value = inst ? getItemTradeValue(inst) : getDefPackageTradeValue(def);
     let h = `<div class="sb-tip-header"><div class="sb-tip-name">${def.name}</div>`;
     h += `<div class="sb-tip-price">价${value}</div></div>`;
 
@@ -234,7 +215,7 @@ export function showSimTooltip(
       if (isSt) {
         html += tipkv('生命', def.hp) + tipkv('耐力', def.maxStamina);
         html += tipkv('耐力恢复', def.staminaRegen + '/s') + tipkv('生命恢复', (def.hpRegen || 0) + '/s');
-        html += tipkv('负重上限', formatWeightG(def.maxLoad));
+        html += tipkv('负重', `${formatWeightG(0)}/${formatWeightG(def.maxLoad)}`);
       }
       html += tipkv('槽位消耗', def.slotCost);
       if (!isSt) html += tipkv('重量', formatWeightG(def.weight));
@@ -333,7 +314,7 @@ export function showSimTooltip(
     const def = getAffixDef(defId);
     if (!def) return;
     let h = `<div class="sb-tip-header"><div class="sb-tip-name">${def.name}</div>`;
-    h += `<div class="sb-tip-price">价${Math.abs(def.costValue)}</div></div>`;
+    h += `<div class="sb-tip-price">价${getAffixPackageTradeValue(def)}</div></div>`;
     h += `<div class="sb-tip-cat">${getCategoryName(def.category)}</div>`;
     h += tipSection('效果描述');
     h += `<div class="sb-tip-effect">${def.effect}</div>`;

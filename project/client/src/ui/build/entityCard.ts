@@ -3,6 +3,7 @@ import {
   EntityDef, AffixDef, ItemInstance,
   getEntityDef, getAffixDef, isStarter, getEntityCategory, getCategoryName,
   getEffectiveEntitySlots, countUsedSlots, countUsedAffixSlots, getEffectiveValue,
+  getItemTradeValue, computeStarterLoad,
 } from '../../game/data';
 import { formatWeightG, formatWeightBonusG } from './format';
 import type { CardSide, CardMode, CollapseState } from './types';
@@ -51,7 +52,7 @@ export function renderCardKeyInfo(
   if (item.type === 'affix') {
     const adef = getAffixDef(item.defId);
     if (!adef) return item.defId;
-    return `${adef.name}  ${getCategoryName(adef.category)}  槽耗${adef.slotCost}  价${Math.abs(adef.costValue)}`;
+    return `${adef.name}  ${getCategoryName(adef.category)}  槽耗${adef.slotCost}  价${getItemTradeValue(item)}`;
   }
 
   const edef = getEntityDef(item.defId);
@@ -218,7 +219,7 @@ export function renderEntityCard(
     h += '<div class="sb-card-block">';
     h += '<div class="sb-block-title">基本信息</div>';
     h += '<div class="sb-card-stats">';
-    h += `分类: ${getCategoryName(adef.category)}  槽耗: ${adef.slotCost}  价值: ${Math.abs(adef.costValue)}  可重复: ${adef.repeatable ? '是' : '否'}`;
+    h += `分类: ${getCategoryName(adef.category)}  槽耗: ${adef.slotCost}  价值: ${getItemTradeValue(item)}  可重复: ${adef.repeatable ? '是' : '否'}`;
     h += '</div></div>';
 
     if (adef.prerequisite.length > 0 || adef.poolPrerequisite.length > 0) {
@@ -279,8 +280,11 @@ export function renderEntityCard(
     h += `  生命恢复: ${hRegen}/s`;
     h += '</div>';
     h += '<div class="sb-card-stats">';
-    h += `负重: ${formatWeightG(edef!.maxLoad)}  槽耗: ${edef!.slotCost}`;
-    if (mode === 'build') h += `  价值: ${edef!.value}`;
+    {
+      const load = computeStarterLoad(item);
+      h += `负重: ${formatWeightG(load.current)}/${formatWeightG(load.max)}  槽耗: ${edef!.slotCost}`;
+    }
+    if (mode === 'build') h += `  价值: ${getItemTradeValue(item)}`;
     h += `<span id="cu-ov-${sideFirst}-${item.instanceId}" style="${combatUnit?.isOverloaded ? '' : 'display:none'}">  超重</span>`;
     h += `<span id="cu-dead-${sideFirst}-${item.instanceId}" style="${combatUnit && combatUnit.currentHp <= 0 ? '' : 'display:none'}">  阵亡</span>`;
     h += '</div>';
@@ -288,7 +292,7 @@ export function renderEntityCard(
     h += '<div class="sb-card-stats">';
     h += `HP: ${edef.hp}  `;
     h += `槽耗: ${edef.slotCost}  重: ${formatWeightG(edef.weight)}`;
-    if (mode === 'build') h += `  价值: ${edef.value}`;
+    if (mode === 'build') h += `  价值: ${getItemTradeValue(item)}`;
     h += '</div>';
   }
   if (edef && hasPassive(edef)) {

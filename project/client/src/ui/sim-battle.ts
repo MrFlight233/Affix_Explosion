@@ -7,7 +7,7 @@ import {
   EntityDef, ItemInstance, DeploySlot,
   getEntityDef, getAffixDef, isStarter,
   getEffectiveEntitySlots, countUsedSlots, countUsedAffixSlots,
-  canMountAffix, canRemoveAffix,
+  canMountAffix, canRemoveAffix, getFirstLayerSlots,
 } from '../game/data';
 import {
   beginPointerDrag, consumeSuppressNextClick, isPointerDragging,
@@ -18,6 +18,7 @@ import { mountBattleLog, type BattleLogBridge } from './sim/mountBattleLog';
 import { renderPlaybackControlsHtml } from './playbackControls';
 import type { CollapseState } from './build/types';
 import { renderEntityCard } from './build/entityCard';
+import { showAppToast } from './toast';
 import {
   renderPoolFiltersHtml, renderPoolItemListHtml, bindPoolFilterEvents,
   type PoolFilterState,
@@ -32,7 +33,8 @@ import { patchBattleValues } from './build/battlePatch';
 // 状态类型
 // ============================================================
 
-const ODD_ROUNDS = [1, 3, 5, 7, 9];
+/** 仅战斗回合：与正式局对战池 round 一致；槽位 = floor((round+1)/2) */
+const COMBAT_ROUNDS = [2, 4, 6, 8, 10];
 
 interface SimBattleState {
   round: number;
@@ -71,7 +73,7 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
   const engine = new GameEngine();
 
   const state: SimBattleState = {
-    round: 1,
+    round: 2,
     playerSlots: [],
     enemySlots: [],
     poolCollapsed: false,
@@ -299,14 +301,15 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
     if (parentInstanceId != null && isStarter(childDef)) return '启动端实体不能放入其他实体的槽位';
 
     if (parentInstanceId == null) {
-      // 第一层
+      // 第一层：与正式局相同，上限 = floor((round+1)/2)
+      const maxSlots = getFirstLayerSlots(round);
       let usedSlots = 0;
       for (const s of slots) {
         const d = getEntityDef(s.entity.defId);
         if (d) usedSlots += d.slotCost;
       }
-      if (usedSlots + childDef.slotCost > round) {
-        return `第一层槽位不足(剩${round - usedSlots},需${childDef.slotCost})`;
+      if (usedSlots + childDef.slotCost > maxSlots) {
+        return `第一层槽位不足(剩${maxSlots - usedSlots},需${childDef.slotCost})`;
       }
       return null;
     }
@@ -458,20 +461,9 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
   // Toast
   // ============================================================
 
-  let toastTimer: ReturnType<typeof setTimeout> | null = null;
-
   function showToast(msg: string) {
-    const el = document.getElementById('sb-toast');
-    if (!el) return;
     state.toast = msg;
-    el.textContent = msg;
-    el.classList.remove('sb-toast-out');
-    el.classList.add('sb-toast-visible');
-    if (toastTimer) clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => {
-      el.classList.add('sb-toast-out');
-      el.classList.remove('sb-toast-visible');
-    }, 2000);
+    showAppToast(msg, { host: 'sb-toast' });
   }
 
   // ============================================================
@@ -522,7 +514,10 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
       <strong>模拟对战</strong>
       <span>回合:</span>
       <select id="sb-round" style="padding:2px 4px;font-size:13px;">
-        ${ODD_ROUNDS.map(r => `<option value="${r}"${state.round === r ? ' selected' : ''}>回合${r} (探险, 槽位${r})</option>`).join('')}
+        ${COMBAT_ROUNDS.map(r => {
+          const slots = getFirstLayerSlots(r);
+          return `<option value="${r}"${state.round === r ? ' selected' : ''}>回合${r} (战斗, 槽位${slots})</option>`;
+        }).join('')}
       </select>
       <button class="btn" id="sb-btn-start" style="font-weight:bold;">开始模拟战斗</button>
     `;
@@ -552,7 +547,8 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
     }
 
     let h = `<div class="sb-deploy-area" data-sort-list="top" data-accept="entity" data-side="${side}">`;
-    h += `<div class="sb-slot-header">${label} BD &nbsp; 第一层 ${usedSlots} / ${state.round} 槽位`;
+    const maxSlots = getFirstLayerSlots(state.round);
+    h += `<div class="sb-slot-header">${label} BD &nbsp; 第一层 ${usedSlots} / ${maxSlots} 槽位`;
     h += ` <button class="btn sb-draw-pool-btn" data-side="${side}" style="font-size:11px;padding:2px 8px;margin-left:8px;">从对战池抽取</button>`;
     h += `</div>`;
     if (slots.length === 0) {

@@ -2,6 +2,8 @@
 // 拖拽系统 — HTML5 Drag & Drop + 排序支持
 // ============================================================
 
+import { showAppToast } from './toast';
+
 export type DropZoneType = 'deploy-top' | 'deploy-slot' | 'warehouse' | 'quick-warehouse' | 'shop' | 'sell' | 'sim-battle';
 export type DragSource = 'deploy-top' | 'deploy-slot' | 'warehouse' | 'quick-warehouse' | 'shop' | 'sim-battle';
 
@@ -60,14 +62,7 @@ export function makeDropZone(
     el.classList.remove('drag-over');
     if (!currentDrag) return;
     const err = onDrop(currentDrag, zone, slotIdx, e);
-    if (err) {
-      const toast = document.getElementById('toast');
-      if (toast) {
-        toast.textContent = err;
-        toast.classList.add('show');
-        setTimeout(() => toast.classList.remove('show'), 2000);
-      }
-    }
+    if (err) showAppToast(err);
     currentDrag = null;
   });
 }

@@ -6,6 +6,7 @@ import { GameEngine } from '../game/engine';
 import {
   ItemInstance, EntityDef, AffixDef,
   getEntityDef, getAffixDef, findInTree, getShopAffixFilterCategories, getEntityCategory,
+  getItemTradeValue,
 } from '../game/data';
 import { renderEntityCard } from './build/entityCard';
 import {
@@ -104,13 +105,12 @@ function catalogDefs(ctx: OfficialExploreCtx): { entities: EntityDef[]; affixes:
   return { entities, affixes, byDefId };
 }
 
-function priceLabelFor(ctx: OfficialExploreCtx, item: ItemInstance, def: EntityDef | AffixDef): string {
+function priceLabelFor(ctx: OfficialExploreCtx, item: ItemInstance, _def: EntityDef | AffixDef): string {
   const override = ctx.catalogPrices.get(item.instanceId);
   if (override !== undefined) {
     return override === 0 ? '免费' : `${override}金`;
   }
-  const v = 'costValue' in def ? Math.abs(def.costValue) : (def as EntityDef).value;
-  return `${v}金`;
+  return `${getItemTradeValue(item)}金`;
 }
 
 /** 商人/事件列表（不含筛选条） */
@@ -284,7 +284,7 @@ function commitOfficialDrag(ctx: OfficialExploreCtx, session: PointerDragSession
     const price = ctx.engine.sellItem(item);
     if (typeof price === 'string') return price;
     if (price === null) return '出售失败';
-    ctx.showToast(`已出售 · +${price} 金`);
+    ctx.showToast(`已出售 · +${price} 金币`);
     return null;
   }
 

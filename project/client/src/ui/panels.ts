@@ -5,12 +5,13 @@
 import { GameEngine, CombatEvent, CombatUnitSnapshot, CombatUnitRuntime } from '../game/engine';
 import {
   EntityDef, ItemInstance, DeploySlot,
-  getEntityDef, getAffixDef,
+  getEntityDef, getAffixDef, getItemTradeValue,
 } from '../game/data';
 import { renderPlaybackControlsHtml, bindPlaybackControls } from './playbackControls';
 import { bindSplitters, applySplit, loadSplit, applyCombatSplit, loadCombatSplit } from './splitters';
 import { createCollapseState, collapseAllOfficialBuild, collapseItemTree } from './build/types';
 import { PoolFilterState } from './build/poolList';
+import { showAppToast } from './toast';
 import {
   OfficialExploreCtx,
   renderOfficialBdHtml,
@@ -91,10 +92,7 @@ export class UIManager {
   }
 
   showToast(msg: string) {
-    let toast = document.getElementById('toast');
-    if (!toast) { toast = document.createElement('div'); toast.id = 'toast'; document.body.appendChild(toast); }
-    toast.textContent = msg; toast.classList.add('show');
-    setTimeout(() => toast.classList.remove('show'), 2000);
+    showAppToast(msg, { host: 'toast' });
   }
 
   /** 注册商人/事件目录物品（覆盖同批） */
@@ -491,7 +489,7 @@ export class UIManager {
     for (const item of items) {
       const def = item.type === 'entity' ? getEntityDef(item.defId) : getAffixDef(item.defId);
       if (!def) continue;
-      const basePrice = 'costValue' in def ? Math.abs(def.costValue) : (def as EntityDef).value;
+      const basePrice = getItemTradeValue(item);
       const price = eid === 'discount_merchant' ? Math.floor(basePrice / 2) : eid === 'lottery' ? 0 : basePrice;
       prices.set(item.instanceId, price);
     }

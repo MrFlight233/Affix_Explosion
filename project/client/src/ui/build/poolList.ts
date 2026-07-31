@@ -2,6 +2,7 @@ import {
   ENTITY_DEFS, AFFIX_DEFS, EntityDef, AffixDef,
   getEntityCategory, getEntityCategoryFilters, getCategoryName,
   getAffixFilterCategories, getShopAffixFilterCategories,
+  getDefPackageTradeValue, getAffixPackageTradeValue,
 } from '../../game/data';
 
 export interface PoolFilterState {
@@ -82,7 +83,7 @@ export function renderPoolFiltersHtml(
 }
 
 export function renderPoolEntityRow(e: EntityDef, opts?: { priceLabel?: string }): string {
-  const price = opts?.priceLabel ?? `价${e.value}`;
+  const price = opts?.priceLabel ?? `价${getDefPackageTradeValue(e)}`;
   return `<div class="sb-pool-item" data-defid="${e.id}" data-type="entity" data-source="pool">
       <span class="item-name">${e.name}</span>
       <span class="item-stat">${price}  槽耗${e.slotCost}</span>
@@ -90,7 +91,7 @@ export function renderPoolEntityRow(e: EntityDef, opts?: { priceLabel?: string }
 }
 
 export function renderPoolAffixRow(a: AffixDef, opts?: { priceLabel?: string }): string {
-  const price = opts?.priceLabel ?? `价${Math.abs(a.costValue)}`;
+  const price = opts?.priceLabel ?? `价${getAffixPackageTradeValue(a)}`;
   return `<div class="sb-pool-item" data-defid="${a.id}" data-type="affix" data-source="pool">
       <span class="item-name">${a.name}</span>
       <span class="item-stat">${price}  槽耗${a.slotCost}</span>

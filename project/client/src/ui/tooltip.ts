@@ -2,7 +2,7 @@
 // 悬浮提示（v3：统一 EntityDef 渲染，不区分 actionable/equipment 分支）
 // ============================================================
 
-import { getEntityDef, getAffixDef, isStarter, EntityDef, getEntityCategory, getCategoryName } from '../game/data';
+import { getEntityDef, getAffixDef, isStarter, EntityDef, getEntityCategory, getCategoryName, getDefPackageTradeValue, getAffixPackageTradeValue } from '../game/data';
 
 let tooltipEl: HTMLElement | null = null;
 
@@ -38,7 +38,7 @@ function renderEntityTooltip(tip: HTMLElement, def: EntityDef) {
   const hasPsv = !!(def.damageBonus) || !!(def.hpBonus) || !!(def.hpRegenerationBonus) || !!(def.staminaBonus) || !!(def.staminaRegenerationBonus);
 
   // 标题行: 名称(左) + 价格(右)
-  let html = `<div class="tt-name"><span>${def.name}</span><span class="tt-price">价${def.value}</span></div>`;
+  let html = `<div class="tt-name"><span>${def.name}</span><span class="tt-price">价${getDefPackageTradeValue(def)}</span></div>`;
   // 分类
   html += `<div class="tt-cat">${cat}</div>`;
 
@@ -107,7 +107,7 @@ function renderAffixTooltip(tip: HTMLElement, def: any) {
     return ad ? ad.name : id;
   }).join('、') || '无';
 
-  let html = `<div class="tt-name"><span>${def.name}</span><span class="tt-price">价${Math.abs(def.costValue)}</span></div>`;
+  let html = `<div class="tt-name"><span>${def.name}</span><span class="tt-price">价${getAffixPackageTradeValue(def)}</span></div>`;
   html += `<div class="tt-cat">${getCategoryName(def.category)}</div>`;
   html += '<div class="tt-section">效果描述</div>';
   html += `<div class="tt-row"><span class="tt-label">效果:</span>${def.effect}</div>`;

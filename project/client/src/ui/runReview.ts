@@ -3,11 +3,33 @@
 // ============================================================
 
 import { BattleRecord, CombatEvent } from '../game/engine';
-import { DeploySlot } from '../game/data';
+import { DeploySlot, ItemInstance } from '../game/data';
 import { renderEntityCard } from './build/entityCard';
 import { createCollapseState, collapseItemTree, CollapseState } from './build/types';
 import { bindSbTooltips } from './build/simTooltip';
 import { bindRunReviewSplitters } from './splitters';
+
+function collectInstancesFromSlots(
+  slots: DeploySlot[] | null | undefined,
+  map: Map<string, ItemInstance>,
+): void {
+  if (!slots) return;
+  const visit = (item: ItemInstance) => {
+    map.set(item.instanceId, item);
+    for (const c of item.children || []) visit(c);
+  };
+  for (const slot of slots) {
+    visit(slot.entity);
+    for (const c of slot.children || []) visit(c);
+  }
+}
+
+function instanceLookupForBattle(b: BattleRecord): (id: string) => ItemInstance | null {
+  const map = new Map<string, ItemInstance>();
+  collectInstancesFromSlots(b.playerBd, map);
+  collectInstancesFromSlots(b.enemyBd, map);
+  return (id: string) => map.get(id) ?? null;
+}
 
 function resultLabel(r: BattleRecord['result']): string {
   if (r === 'auto_win') return '空池自动胜';
@@ -252,8 +274,8 @@ function bindReviewCardCollapse(host: HTMLElement): void {
   });
 }
 
-function bindDetailPanel(detail: HTMLElement): void {
-  bindSbTooltips(detail);
+function bindDetailPanel(detail: HTMLElement, battle: BattleRecord | null): void {
+  bindSbTooltips(detail, battle ? instanceLookupForBattle(battle) : undefined);
   bindReviewCardCollapse(detail);
 }
 
@@ -266,7 +288,7 @@ export function bindRunReview(root: HTMLElement, battles: BattleRecord[]): void 
   const detail = root.querySelector('#fg-run-detail') as HTMLElement | null;
   if (!detail) return;
 
-  if (battles.length) bindDetailPanel(detail);
+  if (battles.length) bindDetailPanel(detail, battles[0]);
 
   if (!list) return;
   list.addEventListener('click', (e) => {
@@ -278,6 +300,6 @@ export function bindRunReview(root: HTMLElement, battles: BattleRecord[]): void 
     list.querySelectorAll('.fg-run-list-item.is-selected').forEach(el => el.classList.remove('is-selected'));
     btn.classList.add('is-selected');
     detail.innerHTML = renderBattleDetailHtml(battles[idx]);
-    bindDetailPanel(detail);
+    bindDetailPanel(detail, battles[idx]);
   });
 }

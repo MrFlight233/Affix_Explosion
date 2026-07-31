@@ -246,6 +246,134 @@ export function getEffectiveValue(item: ItemInstance, field: keyof EntityDef): a
   return def ? def[field] : undefined;
 }
 
+/** 本体价值：模板字段（实体 value / 词条 abs(costValue)） */
+export function getItemBaseValue(item: ItemInstance): number {
+  if (item.type === 'affix') {
+    const ad = getAffixDef(item.defId);
+    return ad ? Math.abs(ad.costValue) : 0;
+  }
+  const ed = getEntityDef(item.defId);
+  return ed?.value ?? 0;
+}
+
+/** 实例总价值：本体 + 固定词条 + children 递归（买卖/标价/卡片） */
+export function getItemTradeValue(item: ItemInstance): number {
+  if (item.type === 'affix') {
+    return getItemBaseValue(item);
+  }
+  const def = getEntityDef(item.defId);
+  if (!def) return 0;
+  let total = def.value;
+  const fixedIds = (item.overrides?.fixedAffixes ?? def.fixedAffixes) || [];
+  for (const fa of fixedIds) {
+    const ad = getAffixDef(fa);
+    if (ad) total += Math.abs(ad.costValue);
+  }
+  for (const c of item.children || []) {
+    total += getItemTradeValue(c);
+  }
+  return total;
+}
+
+/** 词条模板交付价（无子树 = 本体） */
+export function getAffixPackageTradeValue(def: AffixDef): number {
+  return Math.abs(def.costValue);
+}
+
+/**
+ * 实体模板交付总价值：对齐 createItem 默认结构
+ *（本体 + 固定词条 + 预装动态词条 + defaultChildren，含 spec 的 fixed/preload）
+ */
+export function getDefPackageTradeValue(def: EntityDef): number {
+  return packageEntityValue(def, def.fixedAffixes || [], def.preloadedDynamicAffixes || []);
+}
+
+function packageEntityValue(
+  def: EntityDef,
+  fixedAffixes: string[],
+  preloadedDynamicAffixes: string[],
+  valueOverride?: number,
+): number {
+  let total = valueOverride !== undefined ? valueOverride : def.value;
+  for (const fa of fixedAffixes) {
+    const ad = getAffixDef(fa);
+    if (ad) total += Math.abs(ad.costValue);
+  }
+  for (const aid of preloadedDynamicAffixes) {
+    const ad = getAffixDef(aid);
+    if (ad) total += Math.abs(ad.costValue);
+  }
+  for (const spec of def.defaultChildren || []) {
+    const cid = typeof spec === 'string' ? spec : spec.defId;
+    const childDef = getEntityDef(cid);
+    if (!childDef) continue;
+    let childFixed = childDef.fixedAffixes || [];
+    let childPreload = childDef.preloadedDynamicAffixes || [];
+    let childValueOverride: number | undefined;
+    if (typeof spec !== 'string') {
+      if (spec.fixedAffixes && spec.fixedAffixes.length > 0) {
+        childFixed = [...new Set([...childFixed, ...spec.fixedAffixes])];
+      }
+      if (spec.preloadedDynamicAffixes && spec.preloadedDynamicAffixes.length > 0) {
+        childPreload = [...(childDef.preloadedDynamicAffixes || []), ...spec.preloadedDynamicAffixes];
+      }
+      if (spec.overrides?.value !== undefined) childValueOverride = spec.overrides.value;
+    }
+    total += packageEntityValue(childDef, childFixed, childPreload, childValueOverride);
+  }
+  return total;
+}
+
+/**
+ * 启动端当前负重 / 有效上限（与引擎 collectFromChildren 对齐）。
+ * extraChildren：DeploySlot.children 尚未并入 entity 时传入。
+ */
+export function computeStarterLoad(
+  starter: ItemInstance,
+  extraChildren?: ItemInstance[],
+): { current: number; max: number } {
+  const def = getEntityDef(starter.defId);
+  if (!def) return { current: 0, max: 0 };
+
+  const walk = (children: ItemInstance[]): { load: number; bonus: number } => {
+    let load = 0;
+    let bonus = 0;
+    for (const child of children) {
+      if (child.type === 'entity') {
+        const cdef = getEntityDef(child.defId);
+        if (!cdef) continue;
+        load += Number(getEffectiveValue(child, 'weight') ?? 0);
+        const childHasPB = getEffectiveValue(child, 'hasPassiveBonuses') ?? cdef.hasPassiveBonuses;
+        if (childHasPB) {
+          bonus += Number(getEffectiveValue(child, 'loadBonus') ?? 0);
+        }
+        if (child.children?.length) {
+          const nested = walk(child.children);
+          load += nested.load;
+          bonus += nested.bonus;
+        }
+      } else if (child.type === 'affix') {
+        const adef = getAffixDef(child.defId);
+        if (adef?.hasPassiveBonuses) {
+          bonus += adef.loadBonus ?? 0;
+        }
+      }
+    }
+    return { load, bonus };
+  };
+
+  const merged = [...(starter.children || []), ...(extraChildren || [])];
+  const collected = walk(merged);
+  let loadBonus = collected.bonus;
+  if (def.hasPassiveBonuses) {
+    loadBonus += def.loadBonus ?? 0;
+  }
+  return {
+    current: collected.load,
+    max: def.maxLoad + loadBonus,
+  };
+}
+
 /** 从固定词条推导实体分类（动态：根据 isEntityClass 分类下的词条，返回所有匹配的分类名） */
 export function getEntityCategory(def: EntityDef): string[] {
   const entityClassCatIds = getEntityClassCategoryIds();

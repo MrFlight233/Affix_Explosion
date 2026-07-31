@@ -168,8 +168,25 @@ body {
 .fg-layout #event-area {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   padding: 6px;
+  display: flex;
+  flex-direction: column;
+}
+/* 商人面板撑满右上栏，整区可作为出售落点 */
+.fg-layout #event-area > .fg-merchant,
+.fg-layout #event-area > #merchant-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+.fg-layout #fg-shop-item-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 .fg-split-v {
   flex: 0 0 6px;
@@ -1039,22 +1056,35 @@ body.fg-resizing-row { cursor: row-resize !important; user-select: none; }
 }
 .save-slot .slot-info { color: var(--text-dim); font-size: 12px; }
 
-/* ---- Toast ---- */
-#toast {
+/* ---- Toast（正式局 #toast / 模拟战 #sb-toast 顶中共用） ---- */
+.app-toast,
+#toast,
+#sb-toast {
   position: fixed;
   top: 36px;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, 8px);
   background: var(--bg);
   border: 1px solid var(--border);
   padding: 6px 20px;
   font-size: 13px;
-  z-index: 1000;
+  z-index: 2500;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 0.2s;
+  max-width: min(90vw, 480px);
+  text-align: center;
+  box-sizing: border-box;
+  transition: opacity 0.2s, transform 0.2s;
 }
-#toast.show { opacity: 1; }
+#toast.show,
+#sb-toast.sb-toast-visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+#sb-toast.sb-toast-out {
+  opacity: 0;
+  transform: translate(-50%, -4px);
+}
 
 /* ---- 滚动条 ---- */
 ::-webkit-scrollbar { width: 5px; }
@@ -2192,19 +2222,13 @@ body.sb-pointer-dragging [data-drag-handle] { cursor: grabbing; }
 .sb-tip-entity-name { font-weight: 500; color: var(--sb-text); }
 .sb-tip-muted { color: var(--sb-text-muted); }
 
-/* ── Toast ── */
-#sb-toast {
-  opacity: 0; transform: translateY(8px); pointer-events: none;
-  transition: opacity 200ms var(--sb-ease-out), transform 200ms var(--sb-ease-out);
-}
-#sb-toast.sb-toast-visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
-#sb-toast.sb-toast-out { opacity: 0; transform: translateY(-4px); }
+/* ── Toast 定位见上方 #toast/#sb-toast 共用规则 ── */
 
 /* ── Accessibility ── */
 @media (prefers-reduced-motion: reduce) {
   #sb-pool, #sb-pool-toggle, .sb-drop-placeholder,
   .sb-card-header, .sb-filter-btn, .sb-speed-btn,
-  .sb-foldable, #sb-toast {
+  .sb-foldable, #toast, #sb-toast, .app-toast {
     transition: none !important;
   }
 }

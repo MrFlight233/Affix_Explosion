@@ -9,7 +9,7 @@ import {
   findInTree, removeFromTreeChildren, findParentInTree,
   canMountAffix, canRemoveAffix,
   ENTITY_DEFS, AFFIX_DEFS, getEntityCategory,
-  getEffectiveValue, OnHitEffect, TargetCondition, TargetingModifier,
+  getEffectiveValue, getItemTradeValue, OnHitEffect, TargetCondition, TargetingModifier,
 } from './data';
 import { data as dataApi, saves as savesApi } from '../api/client';
 import {
@@ -461,8 +461,7 @@ export class GameEngine {
         if (err) return err;
       }
     }
-    const bv = 'costValue' in def ? Math.abs(def.costValue) : (def as EntityDef).value;
-    const price = Math.floor(bv / 2);
+    const price = Math.floor(getItemTradeValue(item) / 2);
     const wi = this.state.warehouse.findIndex(i => i.instanceId === item.instanceId);
     if (wi !== -1) { this.state.warehouse.splice(wi, 1); this.state.gold += price; this.notify(); return price; }
     const r = this.removeFromDeploy(item.instanceId);
@@ -475,14 +474,12 @@ export class GameEngine {
     return null;
   }
   buyItem(item: ItemInstance, priceOverride?: number): string | null {
-    const def = this.getDef(item);
-    const price = priceOverride ?? (def ? ('costValue' in def ? Math.abs(def.costValue) : (def as EntityDef).value) : 999);
+    const price = priceOverride ?? getItemTradeValue(item);
     if (this.state.gold < price) return `金币不足(需${price},有${this.state.gold})`;
     this.state.gold -= price; this.addToWarehouse(item); return null;
   }
   buyAndEquip(item: ItemInstance, targetSlotIdx?: number, parentInstanceId?: string | null, priceOverride?: number): string | null {
-    const def = this.getDef(item);
-    const price = priceOverride ?? (def ? ('costValue' in def ? Math.abs(def.costValue) : (def as EntityDef).value) : 999);
+    const price = priceOverride ?? getItemTradeValue(item);
     if (this.state.gold < price) return `金币不足(需${price},有${this.state.gold})`;
     // 先装备：失败则不扣金（避免槽位不足吞金后 HUD 与引擎不同步）
     const err = this.moveToDeploy(item, targetSlotIdx, parentInstanceId);
