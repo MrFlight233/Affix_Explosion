@@ -761,7 +761,7 @@ export class UIManager {
           statusBadge: 'cleared',
           battles: g.battles,
           statusHtml: '<span id="settlement-status" class="fg-settlement-status">正在标记本局已通关…</span>',
-          actionsHtml: '<button id="btn-settlement-home" class="fg-btn-primary" disabled>返回主菜单</button>',
+          leadingHtml: '<button type="button" id="btn-settlement-home" class="btn" disabled>返回主菜单</button>',
         })}
       </div>
     `;

@@ -136,9 +136,9 @@ export interface RunReviewHeaderOpts {
   gold?: number;
   maxRound?: number;
   showGold?: boolean;
-  /** 顶栏左侧额外 HTML（如返回列表） */
+  /** 顶栏左侧 HTML（返回列表 / 返回主菜单等） */
   leadingHtml?: string;
-  /** 顶栏右侧操作 HTML（如返回主菜单） */
+  /** 顶栏右侧操作 HTML */
   actionsHtml?: string;
   /** 顶栏内联状态（如归档中） */
   statusHtml?: string;
