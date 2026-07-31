@@ -7,6 +7,7 @@ import {
   EntityDef, ItemInstance, DeploySlot,
   getEntityDef, getAffixDef, isStarter,
   getEffectiveEntitySlots, countUsedSlots, countUsedAffixSlots,
+  canMountAffix, canRemoveAffix,
 } from '../game/data';
 import {
   beginPointerDrag, consumeSuppressNextClick, isPointerDragging,
@@ -846,6 +847,14 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
     // ── 卸到物品池 ──
     if (hit.action === 'remove') {
       if (session.source !== 'bd') return null;
+      if (session.kind === 'affix') {
+        const parent = findParentOf(state.playerSlots, session.id)
+          || findParentOf(state.enemySlots, session.id);
+        if (parent) {
+          const err = canRemoveAffix(parent, session.id);
+          if (err) return err;
+        }
+      }
       let removed = removeFromSlots(state.playerSlots, session.id);
       if (!removed) removed = removeFromSlots(state.enemySlots, session.id);
       if (removed) refreshDeployUI(['player', 'enemy'], session.source !== 'bd');
@@ -901,15 +910,25 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
           if (used + adef.slotCost > parentDef.dynamicAffixSlots) {
             return `词条槽位不足(剩${parentDef.dynamicAffixSlots - used},需${adef.slotCost})`;
           }
+          const mountErr = canMountAffix(parent, adef.id);
+          if (mountErr) return mountErr;
           item = engine.createItem(session.defId, 'affix');
         } else {
-          // 跨父移动：先检查容量（不含自身若已在该父下）
+          // 跨父移动：先检查原父依赖与目标容量/前置
           const already = (parent.children || []).some(c => c.instanceId === session.id);
+          const oldParent = findParentOf(state.playerSlots, session.id)
+            || findParentOf(state.enemySlots, session.id);
+          if (oldParent && oldParent.instanceId !== parent.instanceId) {
+            const rmErr = canRemoveAffix(oldParent, session.id);
+            if (rmErr) return rmErr;
+          }
           if (!already) {
             const used = countUsedAffixSlots(parent);
             if (used + adef.slotCost > parentDef.dynamicAffixSlots) {
               return `词条槽位不足(剩${parentDef.dynamicAffixSlots - used},需${adef.slotCost})`;
             }
+            const mountErr = canMountAffix(parent, adef.id);
+            if (mountErr) return mountErr;
           }
           const extracted = extractItemFromSlots(state.playerSlots, session.id)
             || extractItemFromSlots(state.enemySlots, session.id);

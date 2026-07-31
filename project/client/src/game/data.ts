@@ -329,6 +329,93 @@ export function countUsedAffixSlots(parent: ItemInstance): number {
     }, 0);
 }
 
+/** 词条显示名（缺模板时回退 id） */
+function affixDisplayName(defId: string): string {
+  return getAffixDef(defId)?.name || defId;
+}
+
+/**
+ * 实体「已有词条」ID 集合：固定（含 overrides）+ 动态子项（children 中 affix）。
+ * extraChildren：额外并入的子项（如 DeploySlot.children 尚未合并进 entity 时）。
+ */
+export function getEntityOwnedAffixIds(
+  entity: ItemInstance,
+  extraChildren?: ItemInstance[],
+): Set<string> {
+  const ids = new Set<string>();
+  const edef = getEntityDef(entity.defId);
+  const fixed = entity.overrides?.fixedAffixes ?? edef?.fixedAffixes ?? [];
+  for (const id of fixed) ids.add(id);
+  for (const c of entity.children || []) {
+    if (c.type === 'affix') ids.add(c.defId);
+  }
+  if (extraChildren) {
+    for (const c of extraChildren) {
+      if (c.type === 'affix') ids.add(c.defId);
+    }
+  }
+  return ids;
+}
+
+/**
+ * 是否可将词条挂到实体上（校验 AffixDef.prerequisite）。
+ * @returns 错误文案；null 表示通过
+ */
+export function canMountAffix(
+  parent: ItemInstance,
+  affixDefId: string,
+  extraChildren?: ItemInstance[],
+): string | null {
+  const adef = getAffixDef(affixDefId);
+  if (!adef) return '未知词条';
+  const prereq = adef.prerequisite || [];
+  if (prereq.length === 0) return null;
+  const owned = getEntityOwnedAffixIds(parent, extraChildren);
+  const missing = prereq.filter(p => !owned.has(p));
+  if (missing.length === 0) return null;
+  return `需要前置词条：${missing.map(affixDisplayName).join('、')}`;
+}
+
+/**
+ * 是否可从实体卸下/迁走某动态词条实例。
+ * 卸下后若仍有其它动态词条前置不满足（固定词条仍可顶替），则拒绝。
+ * @returns 错误文案；null 表示通过
+ */
+export function canRemoveAffix(parent: ItemInstance, affixInstanceId: string): string | null {
+  const children = parent.children || [];
+  const target = children.find(c => c.instanceId === affixInstanceId && c.type === 'affix');
+  if (!target) return null; // 非本父下动态词条（或固定词条）— 不由此函数拦截
+
+  const ownedAfter = new Set<string>();
+  const edef = getEntityDef(parent.defId);
+  const fixed = parent.overrides?.fixedAffixes ?? edef?.fixedAffixes ?? [];
+  for (const id of fixed) ownedAfter.add(id);
+  for (const c of children) {
+    if (c.instanceId === affixInstanceId || c.type !== 'affix') continue;
+    ownedAfter.add(c.defId);
+  }
+
+  const dependents: string[] = [];
+  for (const c of children) {
+    if (c.instanceId === affixInstanceId || c.type !== 'affix') continue;
+    const d = getAffixDef(c.defId);
+    const missing = (d?.prerequisite || []).filter(p => !ownedAfter.has(p));
+    if (missing.length > 0) dependents.push(affixDisplayName(c.defId));
+  }
+  if (dependents.length === 0) return null;
+  return `不可移除「${affixDisplayName(target.defId)}」：${dependents.join('、')} 依赖此词条`;
+}
+
+/** 在 ItemInstance 树中查找 child 的直接父实体；找不到返回 null */
+export function findParentInTree(root: ItemInstance, childId: string): ItemInstance | null {
+  for (const c of root.children || []) {
+    if (c.instanceId === childId) return root;
+    const p = findParentInTree(c, childId);
+    if (p) return p;
+  }
+  return null;
+}
+
 /** 在 ItemInstance 树中递归搜索 */
 export function findInTree(root: ItemInstance, instanceId: string): ItemInstance | null {
   if (root.instanceId === instanceId) return root;

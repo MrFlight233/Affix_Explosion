@@ -6,7 +6,8 @@ import {
   EntityDef, ItemInstance, DeploySlot, DefaultChildSpec,
   getEntityDef, getAffixDef, isStarter, genId, getDefaultStarterId,
   getEffectiveEntitySlots, countUsedSlots,
-  findInTree, removeFromTreeChildren,
+  findInTree, removeFromTreeChildren, findParentInTree,
+  canMountAffix, canRemoveAffix,
   ENTITY_DEFS, AFFIX_DEFS, getEntityCategory,
   getEffectiveValue, OnHitEffect, TargetCondition, TargetingModifier,
 } from './data';
@@ -289,6 +290,28 @@ export class GameEngine {
         const found = findInTree(c, parentInstanceId);
         if (found) return found;
       }
+      const inEnt = findInTree(slot.entity, parentInstanceId);
+      if (inEnt) return inEnt;
+    }
+    return null;
+  }
+
+  /** 查找某实例当前挂载的父实体（仓库树或出场 BD） */
+  findParentOfItem(instanceId: string): ItemInstance | null {
+    for (const w of this.state.warehouse) {
+      if (w.type !== 'entity') continue;
+      const p = findParentInTree(w, instanceId);
+      if (p) return p;
+    }
+    for (const slot of this.state.deploySlots) {
+      if ((slot.entity.children || []).some(c => c.instanceId === instanceId)) return slot.entity;
+      if ((slot.children || []).some(c => c.instanceId === instanceId)) return slot.entity;
+      const p = findParentInTree(slot.entity, instanceId);
+      if (p) return p;
+      for (const c of slot.children || []) {
+        const p2 = findParentInTree(c, instanceId);
+        if (p2) return p2;
+      }
     }
     return null;
   }
@@ -377,30 +400,78 @@ export class GameEngine {
     if (item.type === 'affix') {
       if (targetSlotIdx === undefined) return '词条需放入实体槽位';
       const pid = parentInstanceId ?? null;
-      this.removeFromWarehouse(item.instanceId); this.removeFromDeploy(item.instanceId);
+
+      // 从原父迁走：先校验依赖（目标相同父则仅重挂，不拦）
+      const oldParent = this.findParentOfItem(item.instanceId);
+      const targetParentHint = pid !== null
+        ? (this.findParentEntity(pid, targetSlotIdx) || (this.findItem(pid)?.type === 'entity' ? this.findItem(pid)! : null))
+        : (this.state.deploySlots[targetSlotIdx]?.entity ?? null);
+      if (oldParent && (!targetParentHint || oldParent.instanceId !== targetParentHint.instanceId)) {
+        const rmErr = canRemoveAffix(oldParent, item.instanceId);
+        if (rmErr) return rmErr;
+      }
+
       if (pid !== null) {
-        const parentEntity = this.findParentEntity(pid, targetSlotIdx);
+        const parentEntity = this.findParentEntity(pid, targetSlotIdx)
+          || (this.findItem(pid)?.type === 'entity' ? this.findItem(pid)! : null);
         if (!parentEntity) return '父实体不存在';
+        const mountErr = canMountAffix(parentEntity, item.defId);
+        if (mountErr) return mountErr;
+        this.removeFromWarehouse(item.instanceId); this.removeFromDeploy(item.instanceId);
         if (!parentEntity.children) parentEntity.children = [];
         parentEntity.children.push(item);
       } else {
-        this.state.deploySlots[targetSlotIdx].children.push(item);
+        const slot = this.state.deploySlots[targetSlotIdx];
+        if (!slot) return '槽位不存在';
+        const mountErr = canMountAffix(slot.entity, item.defId, slot.children);
+        if (mountErr) return mountErr;
+        this.removeFromWarehouse(item.instanceId); this.removeFromDeploy(item.instanceId);
+        slot.children.push(item);
       }
       this.notify(); return null;
     }
     return '无法放置';
   }
-  moveToWarehouse(item: ItemInstance) {
-    this.removeFromDeploy(item.instanceId); this.state.warehouse.push(item); this.notify();
+  /** 卸到仓库；挂在实体下的词条若被依赖则拒绝 */
+  moveToWarehouse(item: ItemInstance): string | null {
+    if (item.type === 'affix') {
+      const parent = this.findParentOfItem(item.instanceId);
+      if (parent) {
+        const err = canRemoveAffix(parent, item.instanceId);
+        if (err) return err;
+      }
+    }
+    this.removeFromDeploy(item.instanceId);
+    for (const w of this.state.warehouse) {
+      if (w.type === 'entity') removeFromTreeChildren(w, item.instanceId);
+    }
+    if (!this.state.warehouse.some(i => i.instanceId === item.instanceId)) {
+      this.state.warehouse.push(item);
+    }
+    this.notify();
+    return null;
   }
-  sellItem(item: ItemInstance): number | null {
+  /** @returns 成交价；失败返回错误文案；找不到物品返回 null */
+  sellItem(item: ItemInstance): number | string | null {
     const def = this.getDef(item); if (!def) return null;
+    if (item.type === 'affix') {
+      const parent = this.findParentOfItem(item.instanceId);
+      if (parent) {
+        const err = canRemoveAffix(parent, item.instanceId);
+        if (err) return err;
+      }
+    }
     const bv = 'costValue' in def ? Math.abs(def.costValue) : (def as EntityDef).value;
     const price = Math.floor(bv / 2);
     const wi = this.state.warehouse.findIndex(i => i.instanceId === item.instanceId);
     if (wi !== -1) { this.state.warehouse.splice(wi, 1); this.state.gold += price; this.notify(); return price; }
     const r = this.removeFromDeploy(item.instanceId);
     if (r) { this.state.gold += price; this.notify(); return price; }
+    for (const w of this.state.warehouse) {
+      if (w.type !== 'entity') continue;
+      const removed = removeFromTreeChildren(w, item.instanceId);
+      if (removed) { this.state.gold += price; this.notify(); return price; }
+    }
     return null;
   }
   buyItem(item: ItemInstance, priceOverride?: number): string | null {

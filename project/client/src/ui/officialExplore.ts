@@ -282,6 +282,7 @@ function commitOfficialDrag(ctx: OfficialExploreCtx, session: PointerDragSession
     const item = ctx.engine.findItem(session.id);
     if (!item) return '物品不存在';
     const price = ctx.engine.sellItem(item);
+    if (typeof price === 'string') return price;
     if (price === null) return '出售失败';
     ctx.showToast(`已出售 · +${price} 金`);
     return null;
@@ -293,8 +294,7 @@ function commitOfficialDrag(ctx: OfficialExploreCtx, session: PointerDragSession
     const item = ctx.engine.findItem(session.id);
     if (!item) return '物品不存在';
     collapseItemTree(item, ctx.collapse);
-    ctx.engine.moveToWarehouse(item);
-    return null;
+    return ctx.engine.moveToWarehouse(item);
   }
 
   if (!hit.side) return '无效目标';
@@ -361,8 +361,7 @@ function commitOfficialDrag(ctx: OfficialExploreCtx, session: PointerDragSession
         const item = ctx.engine.findItem(session.id);
         if (!item) return '物品不存在';
         collapseItemTree(item, ctx.collapse);
-        ctx.engine.moveToWarehouse(item);
-        return null;
+        return ctx.engine.moveToWarehouse(item);
       }
       if (session.source === 'warehouse') {
         // 顶层已在仓库，视为重排
