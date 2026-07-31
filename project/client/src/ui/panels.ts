@@ -286,31 +286,42 @@ export class UIManager {
     const exploring = this.engine.isExplore();
     const inBattle = this.engine.isBattlePhase();
 
-    let rightHtml = '';
-    if (this.combatFinished) {
-      rightHtml = '<button id="btn-continue-combat" class="fg-btn-primary">继续</button>';
-    } else if (inBattle) {
-      rightHtml = `
-        <span id="fg-battle-header"><span>战斗时间: ${(this.engine.combatTime / 1000).toFixed(1)}s</span></span>
-        <span id="hud-playback">${renderPlaybackControlsHtml({
-          speed: this.engine.combatSpeed,
-          paused: this.combatPaused,
-        }, 'hud-btn-pause')}</span>`;
-    } else {
-      rightHtml = `
-        <button id="btn-return-menu">返回主菜单</button>
-        <button id="btn-save">手动存档</button>
-        <button id="btn-next" class="fg-btn-primary">开始战斗</button>
-      `;
-    }
-
     const firstLayerUsed = g.deploySlots.reduce((s, sl) => { const d = getEntityDef(sl.entity.defId); return s + (d?.slotCost || 0); }, 0);
     const firstLayerMax = this.engine.getFirstLayerSlots();
-    hud.innerHTML = `
+    const battleTimeSec = (this.engine.combatTime / 1000).toFixed(1);
+
+    let leftHtml = '';
+    let centerExtra = '';
+    let rightHtml = '';
+
+    if (this.combatFinished) {
+      leftHtml = '<button type="button" class="btn hud-btn-primary" id="btn-continue-combat">继续</button>';
+      centerExtra = `<div class="hud-item"><span class="hud-label">战斗时间</span><span class="hud-value" id="fg-battle-header">${battleTimeSec}s</span></div>`;
+    } else if (inBattle) {
+      centerExtra = `<div class="hud-item"><span class="hud-label">战斗时间</span><span class="hud-value" id="fg-battle-header">${battleTimeSec}s</span></div>`;
+      rightHtml = `<span id="hud-playback">${renderPlaybackControlsHtml({
+        speed: this.engine.combatSpeed,
+        paused: this.combatPaused,
+      }, 'hud-btn-pause')}</span>`;
+    } else {
+      leftHtml = `
+        <button type="button" class="btn" id="btn-return-menu">返回主菜单</button>
+        <button type="button" class="btn" id="btn-save">手动存档</button>
+        <button type="button" class="btn hud-btn-primary" id="btn-next">开始战斗</button>
+      `;
+      centerExtra = `<div class="hud-item"><span class="hud-label">一层槽位</span><span class="hud-value">${firstLayerUsed}/${firstLayerMax}</span></div>`;
+    }
+
+    const centerCore = `
       <div class="hud-item"><span class="hud-label">金币</span><span class="hud-value">${g.gold}</span></div>
       <div class="hud-item"><span class="hud-label">回合</span><span class="hud-value">${g.round}/${g.maxRound}</span></div>
       <div class="hud-item"><span class="hud-label">阶段</span><span class="hud-value">${this.engine.getPhaseLabel()}</span></div>
-      <div class="hud-item"><span class="hud-label">一层槽位</span><span class="hud-value">${firstLayerUsed}/${firstLayerMax}</span></div>
+      ${centerExtra}
+    `;
+
+    hud.innerHTML = `
+      <div class="hud-left">${leftHtml}</div>
+      <div class="hud-center">${centerCore}</div>
       <div class="hud-right">${rightHtml}</div>
     `;
 
@@ -340,10 +351,10 @@ export class UIManager {
 
     if (inBattle && !this.combatFinished) {
       if (!this.playbackControlsBound) {
-        const hud = document.getElementById('hud');
-        if (hud) {
+        const hudEl = document.getElementById('hud');
+        if (hudEl) {
           bindPlaybackControls({
-            root: hud,
+            root: hudEl,
             pauseBtnId: 'hud-btn-pause',
             getState: () => ({ speed: this.engine.combatSpeed, paused: this.combatPaused }),
             setSpeed: (spd) => { this.engine.combatSpeed = spd; },
