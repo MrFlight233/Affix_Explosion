@@ -17,6 +17,12 @@ import {
   type AffixDef,
   type DefaultChildSpec,
 } from '../game/data';
+import {
+  formatTargetingSummary,
+  SORT_BY_LABELS,
+  FILTER_LABELS,
+  normalizeFilterBy,
+} from '../game/targetingUtil';
 
 type TabType = 'entities' | 'affixes';
 
@@ -26,19 +32,6 @@ interface TabSession {
   entityCatFilter: string;
   affixCatFilter: string;
 }
-
-const SORT_BY_LABEL: Record<string, string> = {
-  hp_asc: 'HP最低优先',
-  hp_desc: 'HP最高优先',
-  stamina_asc: '耐力最低优先',
-  random: '随机',
-};
-
-const FILTER_BY_LABEL: Record<string, string> = {
-  has_debuff: '有负面状态',
-  most_buffs: 'Buff最多',
-  hp_below_50pct: 'HP低于50%',
-};
 
 const ON_HIT_LABEL: Record<string, string> = {
   life_steal: 'life_steal — 吸血',
@@ -281,12 +274,14 @@ export function showFullItemPool(onBack: () => void): void {
           field('耐力消耗', e.staminaCost),
           field('触发耗时(ms)', e.actionTime),
           field('伤害(负值=恢复)', e.damage),
-          field('针对目标', e.targetFaction),
-          field('针对类型', e.targetType),
-          field('针对顺序', e.targetOrder),
-          field('优先目标', e.priorityTarget == null ? '无' : e.priorityTarget),
-          field('条件排序', tc?.sortBy ? (SORT_BY_LABEL[tc.sortBy] || tc.sortBy) : '无'),
-          field('条件过滤', tc?.filterBy ? (FILTER_BY_LABEL[tc.filterBy] || tc.filterBy) : '无'),
+          field('索敌', formatTargetingSummary({
+            targetFaction: e.targetFaction,
+            sortBy: tc?.sortBy,
+            targetOrder: e.targetOrder,
+            priorityTarget: e.priorityTarget,
+            filterBy: tc?.filterBy,
+            targetCount: e.targetCount ?? tc?.targetCount,
+          })),
         ].join('');
       }
       h += section('可触发动作', body);
@@ -381,32 +376,40 @@ export function showFullItemPool(onBack: () => void): void {
       const tmEnabled = !!(
         tm && (
           tm.targetFaction !== undefined ||
-          tm.targetOrder !== undefined ||
-          tm.priorityTarget !== undefined ||
           tm.sortBy !== undefined ||
-          tm.filterBy !== undefined
+          tm.filterBy !== undefined ||
+          tm.targetCount !== undefined ||
+          tm.targetOrder !== undefined ||
+          tm.priorityTarget !== undefined
         )
       );
       let body = field('覆写模式', tmEnabled ? '修改' : '不修改');
       if (tmEnabled && tm) {
-        const pt =
-          tm.priorityTarget === null ? '无（清除优先位）'
-            : tm.priorityTarget === undefined ? '不修改'
-              : String(tm.priorityTarget);
         const sort =
           tm.sortBy === null ? '无（清除排序）'
             : tm.sortBy === undefined ? '不修改'
-              : (SORT_BY_LABEL[tm.sortBy] || tm.sortBy);
+              : (SORT_BY_LABELS[tm.sortBy] || tm.sortBy);
+        const filters = normalizeFilterBy(tm.filterBy);
         const filter =
           tm.filterBy === null ? '无（清除过滤）'
             : tm.filterBy === undefined ? '不修改'
-              : (FILTER_BY_LABEL[tm.filterBy] || tm.filterBy);
+              : (filters.map(f => FILTER_LABELS[f] || f).join('+') || '—');
+        const count =
+          tm.targetCount === null ? '无（清除）'
+            : tm.targetCount === undefined ? '不修改'
+              : tm.targetCount === 'all' ? '全部' : String(tm.targetCount);
         body += [
-          field('针对目标', tm.targetFaction ?? '不修改'),
-          field('针对顺序', tm.targetOrder ?? '不修改'),
-          field('优先目标', pt),
-          field('条件排序', sort),
-          field('条件过滤', filter),
+          field('统一排序', sort),
+          field('过滤', filter),
+          field('目标数量', count),
+          field('摘要', formatTargetingSummary({
+            targetFaction: tm.targetFaction,
+            sortBy: tm.sortBy,
+            targetOrder: tm.targetOrder,
+            priorityTarget: tm.priorityTarget,
+            filterBy: tm.filterBy,
+            targetCount: tm.targetCount,
+          })),
         ].join('');
       }
       h += section('Targeting 覆写（targeting_modifier）', body);

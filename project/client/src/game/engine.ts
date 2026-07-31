@@ -11,6 +11,9 @@ import {
   ENTITY_DEFS, AFFIX_DEFS, getEntityCategory,
   getEffectiveValue, getItemTradeValue, OnHitEffect, TargetCondition, TargetingModifier,
 } from './data';
+import {
+  mergeFiltersWithLegacyFaction, normalizeTargetCount, resolveSortBy,
+} from './targetingUtil';
 import { data as dataApi, saves as savesApi } from '../api/client';
 import {
   runBattleWithOptionalWorker,
@@ -703,11 +706,7 @@ export class GameEngine {
             actionTime: Number(getEffectiveValue(child, 'actionTime') ?? 0),
             damage: weaponDamage,
             staminaCost: Number(getEffectiveValue(child, 'staminaCost') ?? 0),
-            targetType: String((getEffectiveValue(child, 'targetType') ?? cdef.targetType) || '近战'),
-            targetOrder: this._mergeTargetingField('targetOrder', entityTargetingMods, child, cdef, '从上往下'),
-            priorityTarget: this._mergeTargetingField('priorityTarget', entityTargetingMods, child, cdef, null),
-            targetFaction: this._mergeTargetingField('targetFaction', entityTargetingMods, child, cdef, '敌人'),
-            targetCondition: this._mergeTargetCondition(entityTargetingMods, child, cdef),
+            ...this._resolveWeaponTargeting(entityTargetingMods, child, cdef),
             ownerInstanceId: child.instanceId,
           });
         } else if (childHasPB) {
@@ -756,7 +755,8 @@ export class GameEngine {
       const existing = entityOnHitEffects.get(instanceId) || [];
       entityOnHitEffects.set(instanceId, [...existing, ...effects]);
     };
-    for (const slot of deploySlots) {
+    for (let slotIdx = 0; slotIdx < deploySlots.length; slotIdx++) {
+      const slot = deploySlots[slotIdx];
       const edef = getEntityDef(slot.entity.defId);
       if (!edef) continue;
 
@@ -788,11 +788,7 @@ export class GameEngine {
             actionTime: Number(getEffectiveValue(slot.entity, 'actionTime') ?? 0),
             damage: Number(getEffectiveValue(slot.entity, 'damage') ?? 0) + growthStack,
             staminaCost: Number(getEffectiveValue(slot.entity, 'staminaCost') ?? 0),
-            targetType: String((getEffectiveValue(slot.entity, 'targetType') ?? edef.targetType) || '近战'),
-            targetOrder: this._mergeTargetingField('targetOrder', starterTargetingMods, slot.entity, edef, '从上往下'),
-            priorityTarget: this._mergeTargetingField('priorityTarget', starterTargetingMods, slot.entity, edef, null),
-            targetFaction: this._mergeTargetingField('targetFaction', starterTargetingMods, slot.entity, edef, '敌人'),
-            targetCondition: this._mergeTargetCondition(starterTargetingMods, slot.entity, edef),
+            ...this._resolveWeaponTargeting(starterTargetingMods, slot.entity, edef),
             ownerInstanceId: slot.entity.instanceId,
           });
         }
@@ -875,6 +871,8 @@ export class GameEngine {
         currentLoad: collected.totalLoad,
         maxLoad: effectiveMaxLoad,
         isOverloaded,
+        slotIndex: slotIdx,
+        isStarter: isStarter(edef),
         activeWeapons: collected.weapons,
       });
     }
@@ -888,18 +886,18 @@ export class GameEngine {
     const count = r === 1 ? 1 : r === 2 ? 2 : 3;
 
     const enemyTemplates = [
-      { name: '重装步兵', hpBase: 25, maxStamina:60, staminaRegen:5, maxLoad:25, atk: '近战', ao: '从上往下', pt: 1 as number | null },
-      { name: '哥布林战士', hpBase: 15, maxStamina:50, staminaRegen:8, maxLoad:15, atk: '近战', ao: '从上往下', pt: 1 as number | null },
-      { name: '哥布林弓手', hpBase: 12, maxStamina:55, staminaRegen:7, maxLoad:12, atk: '远程', ao: '从下往上', pt: null as number | null },
-      { name: '骷髅法师', hpBase: 10, maxStamina:70, staminaRegen:6, maxLoad:10, atk: '远程', ao: '从下往上', pt: 2 as number | null },
-      { name: '暗影刺客', hpBase: 14, maxStamina:45, staminaRegen:9, maxLoad:12, atk: '近战', ao: '从上往下', pt: 1 as number | null },
+      { name: '重装步兵', hpBase: 25, maxStamina:60, staminaRegen:5, maxLoad:25, sortBy: '站位1' },
+      { name: '哥布林战士', hpBase: 15, maxStamina:50, staminaRegen:8, maxLoad:15, sortBy: '从上往下' },
+      { name: '哥布林弓手', hpBase: 12, maxStamina:55, staminaRegen:7, maxLoad:12, sortBy: '从下往上' },
+      { name: '骷髅法师', hpBase: 10, maxStamina:70, staminaRegen:6, maxLoad:10, sortBy: '站位2' },
+      { name: '暗影刺客', hpBase: 14, maxStamina:45, staminaRegen:9, maxLoad:12, sortBy: '从上往下' },
     ];
 
     const weaponTemplates = [
-      { name: '生锈短剑', actionTime: 2000, damage: 3, staminaCost: 10, targetType: '近战', targetOrder: '从上往下', priorityTarget: 1 as number | null, targetFaction: '敌人' },
-      { name: '猎弓', actionTime: 2100, damage: 4, staminaCost: 12, targetType: '远程', targetOrder: '从下往上', priorityTarget: null as number | null, targetFaction: '敌人' },
-      { name: '木盾', actionTime: 0, damage: 0, staminaCost: 0, targetType: '近战', targetOrder: '从上往下', priorityTarget: 1 as number | null, targetFaction: '敌人' },
-      { name: '骨杖', actionTime: 2500, damage: 5, staminaCost: 15, targetType: '远程', targetOrder: '从下往上', priorityTarget: 3 as number | null, targetFaction: '敌人' },
+      { name: '生锈短剑', actionTime: 2000, damage: 3, staminaCost: 10, targetCount: 1 as const, targetCondition: { sortBy: '站位1', filterBy: ['敌人'] } },
+      { name: '猎弓', actionTime: 2100, damage: 4, staminaCost: 12, targetCount: 1 as const, targetCondition: { sortBy: '从下往上', filterBy: ['敌人'] } },
+      { name: '木盾', actionTime: 0, damage: 0, staminaCost: 0, targetCount: 1 as const, targetCondition: { sortBy: '从上往下', filterBy: ['敌人'] } },
+      { name: '骨杖', actionTime: 2500, damage: 5, staminaCost: 15, targetCount: 1 as const, targetCondition: { sortBy: '站位3', filterBy: ['敌人'] } },
     ];
 
     const units: CombatUnitSnapshot[] = [];
@@ -910,22 +908,18 @@ export class GameEngine {
       const hp = Math.floor(t.hpBase * mult * (0.8 + rand() * 0.4));
 
       const weapons: CombatUnitSnapshot['activeWeapons'] = [];
-      // 50% 概率装备武器
       if (rand() > 0.5) {
         const wt = weaponTemplates[Math.floor(rand() * weaponTemplates.length)];
         const wdmg = Math.floor(wt.damage * mult * (0.8 + rand() * 0.4));
         weapons.push({ ...wt, damage: wdmg > 0 ? wdmg : wt.damage, ownerInstanceId: `enemy_${i}` });
       } else {
-        // 基础攻击（空手）
         weapons.push({
           name: '基础攻击',
           actionTime: 2000 + Math.floor(rand() * 1500),
           damage: Math.floor((2 + rand() * 3) * mult),
           staminaCost: 8,
-          targetType: t.atk,
-          targetOrder: t.ao,
-          priorityTarget: t.pt,
-          targetFaction: '敌人',
+          targetCount: 1,
+          targetCondition: { sortBy: t.sortBy, filterBy: ['敌人'] },
           ownerInstanceId: `enemy_${i}`,
         });
       }
@@ -944,6 +938,8 @@ export class GameEngine {
         currentLoad: 0,
         maxLoad: t.maxLoad,
         isOverloaded: false,
+        slotIndex: i,
+        isStarter: true,
         activeWeapons: weapons,
       });
     }
@@ -976,30 +972,72 @@ export class GameEngine {
     return (def as any)[field] ?? defaultValue;
   }
 
-  /** 合并 targetCondition（v7）：词条 modifiers > entity override > entityDef */
+  /** 解析武器 targeting（filterBy 含阵营；遗留 targetFaction 并入；无阵营=空池） */
+  private _resolveWeaponTargeting(
+    modifiers: TargetingModifier[],
+    item: ItemInstance,
+    def: EntityDef,
+  ): {
+    targetCount: number | 'all';
+    targetCondition: TargetCondition;
+  } {
+    let sortBy: string | null | undefined;
+    let filterBy: unknown;
+    let targetCount: unknown;
+    let legacyOrder: string | null | undefined;
+    let legacyPriority: number | null | undefined;
+    let legacyFaction: string | null | undefined;
+
+    for (const mod of modifiers) {
+      if (mod.sortBy !== undefined) sortBy = mod.sortBy;
+      if (mod.filterBy !== undefined) filterBy = mod.filterBy;
+      if (mod.targetCount !== undefined) targetCount = mod.targetCount;
+      if (mod.targetOrder !== undefined) legacyOrder = mod.targetOrder;
+      if (mod.priorityTarget !== undefined) legacyPriority = mod.priorityTarget;
+      if (mod.targetFaction !== undefined) legacyFaction = mod.targetFaction;
+    }
+
+    const ovTc = (item.overrides as any)?.targetCondition ?? def.targetCondition;
+    if (sortBy === undefined) sortBy = ovTc?.sortBy;
+    if (filterBy === undefined) filterBy = ovTc?.filterBy;
+    if (targetCount === undefined) {
+      targetCount = (item.overrides as any)?.targetCount ?? def.targetCount ?? ovTc?.targetCount;
+    }
+    if (legacyOrder === undefined) {
+      legacyOrder = this._mergeTargetingField('targetOrder', [], item, def, null);
+    }
+    if (legacyPriority === undefined) {
+      legacyPriority = this._mergeTargetingField('priorityTarget', [], item, def, null);
+    }
+    if (legacyFaction === undefined) {
+      legacyFaction = this._mergeTargetingField('targetFaction', [], item, def, null);
+    }
+
+    const resolvedSort = resolveSortBy({
+      sortBy: sortBy ?? null,
+      targetOrder: legacyOrder ?? null,
+      priorityTarget: legacyPriority ?? null,
+    });
+    const filters = mergeFiltersWithLegacyFaction(filterBy, legacyFaction);
+    const count = normalizeTargetCount(targetCount);
+
+    return {
+      targetCount: count,
+      targetCondition: {
+        sortBy: resolvedSort,
+        filterBy: filters,
+        targetCount: count,
+      },
+    };
+  }
+
+  /** @deprecated 由 _resolveWeaponTargeting 替代 */
   private _mergeTargetCondition(
     modifiers: TargetingModifier[],
     item: ItemInstance,
     def: EntityDef,
   ): TargetCondition | undefined {
-    let sortBy: any = undefined;
-    let filterBy: any = undefined;
-    // ★ children 数组顺序：从前到后
-    for (const mod of modifiers) {
-      if (mod.sortBy !== undefined) sortBy = mod.sortBy;
-      if (mod.filterBy !== undefined) filterBy = mod.filterBy;
-    }
-    // entity override
-    if (sortBy === undefined) {
-      sortBy = (item.overrides as any)?.targetCondition?.sortBy ?? def.targetCondition?.sortBy;
-    }
-    if (filterBy === undefined) {
-      filterBy = (item.overrides as any)?.targetCondition?.filterBy ?? def.targetCondition?.filterBy;
-    }
-    if (sortBy || filterBy) {
-      return { sortBy: sortBy ?? undefined, filterBy: filterBy ?? undefined, fallback: 'targetOrder' };
-    }
-    return undefined;
+    return this._resolveWeaponTargeting(modifiers, item, def).targetCondition;
   }
 
   /** 收集实体直属 affix 子项中的 targeting_modifier（v7） */

@@ -5,7 +5,7 @@ import {
   CombatEvent, CombatUnitRuntime, CombatWeaponRuntime,
   MAX_COMBAT_TIME, PENALTY_START_MS, TICK_MS, round6,
 } from './types';
-import { buildTargetingLabel, selectTarget } from './targeting';
+import { buildTargetingLabel, selectTargets } from './targeting';
 import { resolveOnHitEffects } from './onhit';
 
 type WeaponEntry = { unit: CombatUnitRuntime; weapon: CombatWeaponRuntime; isPlayer: boolean };
@@ -89,45 +89,52 @@ export class BattleSimulator {
 
       unit.currentStamina = round6(unit.currentStamina - effectiveCost);
 
-      const target = selectTarget(weapon, this.playerUnits, this.enemyUnits, isPlayer, this.rng);
-      if (!target) continue;
-
-      const dmg = damage;
-      target.currentHp = round6(Math.min(target.currentHp - dmg, target.totalHp));
+      const targets = selectTargets(weapon, unit, this.playerUnits, this.enemyUnits, isPlayer, this.rng);
+      if (targets.length === 0) {
+        weapon.remainingTime = weapon.actionTime;
+        continue;
+      }
 
       const hitMap = isPlayer ? this.playerOnHitEffects : this.enemyOnHitEffects;
-      const onHitLabels = resolveOnHitEffects(weapon, unit, target, dmg, hitMap);
+      const label = buildTargetingLabel(weapon);
+      const dmg = damage;
 
-      weapon.remainingTime = weapon.actionTime;
+      for (const target of targets) {
+        if (target.currentHp <= 0) continue;
+        target.currentHp = round6(Math.min(target.currentHp - dmg, target.totalHp));
 
-      const effects: string[] = [];
-      if (onHitLabels.length > 0) effects.push(...onHitLabels);
+        const onHitLabels = resolveOnHitEffects(weapon, unit, target, dmg, hitMap);
+        const effects: string[] = [];
+        if (onHitLabels.length > 0) effects.push(...onHitLabels);
 
-      this.emit({
-        time: Math.round(this.combatTime),
-        actorName: unit.entityName,
-        weaponName: weapon.name,
-        targetName: target.entityName,
-        damage: dmg,
-        targetHpAfter: Math.min(Math.max(target.currentHp, 0), target.totalHp),
-        targetMaxHp: target.totalHp,
-        effects,
-        targetingLabel: buildTargetingLabel(weapon),
-      });
-
-      if (target.currentHp <= 0) {
-        this.weaponsDirty = true;
         this.emit({
           time: Math.round(this.combatTime),
-          actorName: '',
-          weaponName: '',
+          actorName: unit.entityName,
+          weaponName: weapon.name,
           targetName: target.entityName,
-          damage: 0,
-          targetHpAfter: 0,
+          damage: dmg,
+          targetHpAfter: Math.min(Math.max(target.currentHp, 0), target.totalHp),
           targetMaxHp: target.totalHp,
-          effects: ['击杀'],
+          effects,
+          targetingLabel: label,
         });
+
+        if (target.currentHp <= 0) {
+          this.weaponsDirty = true;
+          this.emit({
+            time: Math.round(this.combatTime),
+            actorName: '',
+            weaponName: '',
+            targetName: target.entityName,
+            damage: 0,
+            targetHpAfter: 0,
+            targetMaxHp: target.totalHp,
+            effects: ['击杀'],
+          });
+        }
       }
+
+      weapon.remainingTime = weapon.actionTime;
     }
 
     // 软狂暴

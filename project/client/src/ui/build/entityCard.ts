@@ -7,6 +7,31 @@ import {
 } from '../../game/data';
 import { formatWeightG, formatWeightBonusG } from './format';
 import type { CardSide, CardMode, CollapseState } from './types';
+import { formatTargetingSummary } from '../../game/targetingUtil';
+
+function targetingFromWeaponOrDef(
+  weapon: { targetFaction?: string; targetCount?: number | 'all'; targetCondition?: any } | null | undefined,
+  edef: EntityDef,
+  item?: ItemInstance,
+): string {
+  if (weapon) {
+    return formatTargetingSummary({
+      targetFaction: weapon.targetFaction,
+      sortBy: weapon.targetCondition?.sortBy,
+      filterBy: weapon.targetCondition?.filterBy,
+      targetCount: weapon.targetCount ?? weapon.targetCondition?.targetCount,
+    });
+  }
+  const tc = (item ? getEffectiveValue(item, 'targetCondition') : null) ?? edef.targetCondition;
+  return formatTargetingSummary({
+    targetFaction: (item ? getEffectiveValue(item, 'targetFaction') : null) ?? edef.targetFaction,
+    sortBy: tc?.sortBy,
+    targetOrder: edef.targetOrder,
+    priorityTarget: edef.priorityTarget,
+    filterBy: tc?.filterBy,
+    targetCount: (item ? getEffectiveValue(item, 'targetCount') : null) ?? edef.targetCount ?? tc?.targetCount,
+  });
+}
 
 /** 检查实体是否有被动加成（受 hasPassiveBonuses 约束；字段含 loadBonus） */
 export function hasPassive(def: EntityDef): boolean {
@@ -74,7 +99,7 @@ export function renderCardKeyInfo(
 
     const effIsActive = edef ? Boolean(getEffectiveValue(item, 'isActive') ?? edef.isActive) : false;
     if (effIsActive && edef) {
-      let dmg: number, time: string, order: string;
+      let dmg: number, time: string, targeting: string;
       if (mode === 'battle' && combatUnit) {
         const sw = combatUnit.weapons[0];
         if (sw && sw.name === edef.name) {
@@ -82,24 +107,23 @@ export function renderCardKeyInfo(
           time = sideFirst
             ? `倒计时:<span id="cu-cd-${sideFirst}-${combatUnit.instanceId}-0">${(Math.max(sw.remainingTime, 0) / 1000).toFixed(1)}s</span>`
             : `倒计时:${(Math.max(sw.remainingTime, 0) / 1000).toFixed(1)}s`;
-          order = sw.targetOrder;
+          targeting = targetingFromWeaponOrDef(sw, edef, item);
         } else {
           dmg = Number(getEffectiveValue(item, 'damage') ?? 0);
           time = `耗时:${(Number(getEffectiveValue(item, 'actionTime') ?? 0) / 1000).toFixed(1)}s`;
-          order = String((getEffectiveValue(item, 'targetOrder') ?? edef.targetOrder) || '');
+          targeting = targetingFromWeaponOrDef(null, edef, item);
         }
       } else {
         dmg = Number(getEffectiveValue(item, 'damage') ?? 0);
         time = `耗时:${(Number(getEffectiveValue(item, 'actionTime') ?? 0) / 1000).toFixed(1)}s`;
-        order = String((getEffectiveValue(item, 'targetOrder') ?? edef.targetOrder) || '');
+        targeting = targetingFromWeaponOrDef(null, edef, item);
       }
-      s += `  伤:${dmg}  ${time}  顺序:${order}`;
-      if (edef.priorityTarget) s += ' 优先' + edef.priorityTarget;
+      s += `  伤:${dmg}  ${time}  ${targeting}`;
     }
 
     return s;
   } else if (isActive) {
-    let dmg: number, time: string, order: string;
+    let dmg: number, time: string, targeting: string;
     if (mode === 'battle' && combatUnit) {
       const matched = combatUnit.weapons.find(w => w.name === edef.name);
       if (matched) {
@@ -110,18 +134,18 @@ export function renderCardKeyInfo(
         } else {
           time = `倒计时:${(Math.max(matched.remainingTime, 0) / 1000).toFixed(1)}s`;
         }
-        order = matched.targetOrder;
+        targeting = targetingFromWeaponOrDef(matched, edef);
       } else {
         dmg = edef.damage;
         time = `耗时:${(edef.actionTime / 1000).toFixed(1)}s`;
-        order = edef.targetOrder || '';
+        targeting = targetingFromWeaponOrDef(null, edef);
       }
     } else {
       dmg = edef.damage;
       time = `耗时:${(edef.actionTime / 1000).toFixed(1)}s`;
-      order = edef.targetOrder || '';
+      targeting = targetingFromWeaponOrDef(null, edef);
     }
-    return `${edef.name}  伤:${dmg}  ${time}  顺序:${order}${edef.priorityTarget ? ' 优先' + edef.priorityTarget : ''}`;
+    return `${edef.name}  伤:${dmg}  ${time}  ${targeting}`;
   } else {
     const cat = getEntityCategory(edef).join(' / ');
     return `${edef.name}  HP:${edef.hp}  重:${formatWeightG(edef.weight)}  ${cat}`;
@@ -246,18 +270,18 @@ export function renderEntityCard(
 
     if (adef.targetingModifier) {
       const tm = adef.targetingModifier;
-      const parts: string[] = [];
-      if (tm.targetFaction != null) parts.push(`阵营:${tm.targetFaction}`);
-      if (tm.targetOrder != null) parts.push(`顺序:${tm.targetOrder}`);
-      if (tm.priorityTarget != null) parts.push(`优先:${tm.priorityTarget}`);
-      if (tm.sortBy != null) parts.push(`排序:${tm.sortBy}`);
-      if (tm.filterBy != null) parts.push(`过滤:${tm.filterBy}`);
-      if (parts.length > 0) {
-        h += '<div class="sb-card-block">';
-        h += '<div class="sb-block-title">索敌覆写</div>';
-        h += `<div class="sb-card-stats">${parts.join('  ')}</div>`;
-        h += '</div>';
-      }
+      const summary = formatTargetingSummary({
+        targetFaction: tm.targetFaction,
+        sortBy: tm.sortBy,
+        targetOrder: tm.targetOrder,
+        priorityTarget: tm.priorityTarget,
+        filterBy: tm.filterBy,
+        targetCount: tm.targetCount,
+      });
+      h += '<div class="sb-card-block">';
+      h += '<div class="sb-block-title">索敌覆写</div>';
+      h += `<div class="sb-card-stats">${summary}</div>`;
+      h += '</div>';
     }
 
     h += '</div>'; // body-expanded
@@ -315,12 +339,12 @@ export function renderEntityCard(
       const matched = combatUnit.weapons.find(w => w.name === edef.name);
       if (matched) {
         const wIdx = combatUnit.weapons.indexOf(matched);
-        h += `伤:${matched.damage}  倒计时:<span id="cu-cd-${sideFirst}-${combatUnit!.instanceId}-${wIdx}">${(Math.max(matched.remainingTime, 0) / 1000).toFixed(1)}s</span>  耐耗:${matched.staminaCost}  ${matched.targetType}${matched.priorityTarget ? ' 优先' + matched.priorityTarget : ''}`;
+        h += `伤:${matched.damage}  倒计时:<span id="cu-cd-${sideFirst}-${combatUnit!.instanceId}-${wIdx}">${(Math.max(matched.remainingTime, 0) / 1000).toFixed(1)}s</span>  耐耗:${matched.staminaCost}  ${targetingFromWeaponOrDef(matched, edef)}`;
       } else {
-        h += `伤:${edef.damage}  耗时:${(edef.actionTime / 1000).toFixed(1)}s  耐耗:${edef.staminaCost}  ${edef.targetType || ''}${edef.priorityTarget ? ' 优先' + edef.priorityTarget : ''}`;
+        h += `伤:${edef.damage}  耗时:${(edef.actionTime / 1000).toFixed(1)}s  耐耗:${edef.staminaCost}  ${targetingFromWeaponOrDef(null, edef)}`;
       }
     } else {
-      h += `伤:${edef.damage}  耗时:${(edef.actionTime / 1000).toFixed(1)}s  耐耗:${edef.staminaCost}  ${edef.targetType || ''}${edef.priorityTarget ? ' 优先' + edef.priorityTarget : ''}`;
+      h += `伤:${edef.damage}  耗时:${(edef.actionTime / 1000).toFixed(1)}s  耐耗:${edef.staminaCost}  ${targetingFromWeaponOrDef(null, edef)}`;
     }
     h += '</div></div>';
   }

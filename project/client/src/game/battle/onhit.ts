@@ -58,6 +58,16 @@ export function executeOnHitEffect(
   }
 }
 
+/** Worker 传输：Map → 可结构化克隆的 pairs */
+export function onHitMapToPairs(map: Map<string, OnHitEffect[]>): [string, OnHitEffect[]][] {
+  return Array.from(map.entries());
+}
+
+/** Worker 传输：pairs → Map */
+export function onHitPairsToMap(pairs: [string, OnHitEffect[]][] | undefined): Map<string, OnHitEffect[]> {
+  return new Map(pairs ?? []);
+}
+
 /** 供测试：序列化事件关键字段做 hash 比对 */
 export function eventFingerprint(e: CombatEvent): string {
   return [

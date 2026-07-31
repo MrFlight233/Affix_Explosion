@@ -68,6 +68,7 @@ export class EntityRepo {
       targetOrder: def.targetOrder ?? def.attackOrder ?? null,
       priorityTarget: def.priorityTarget ?? null,
       targetFaction: def.targetFaction ?? null,
+      targetCount: def.targetCount ?? null,
       // null = 显式无条件 Targeting
       targetCondition: def.targetCondition != null ? def.targetCondition : undefined,
       preloadedDynamicAffixes: def.preloadedDynamicAffixes ?? undefined,
@@ -88,7 +89,7 @@ export class EntityRepo {
         default_children, preloaded_dynamic_affixes,
         hp, max_stamina, stamina_regen, hp_regen, max_load,
         is_active, stamina_cost, action_time, damage, damage_bonus,
-        target_type, target_order, priority_target, target_faction, target_condition,
+        target_type, target_order, priority_target, target_faction, target_count, target_condition,
         stamina_regeneration_bonus, stamina_bonus, hp_regeneration_bonus, hp_bonus,
         load_bonus, has_passive_bonuses, updated_at
       ) VALUES (
@@ -97,7 +98,7 @@ export class EntityRepo {
         @default_children, @preloaded_dynamic_affixes,
         @hp, @max_stamina, @stamina_regen, @hp_regen, @max_load,
         @is_active, @stamina_cost, @action_time, @damage, @damage_bonus,
-        @target_type, @target_order, @priority_target, @target_faction, @target_condition,
+        @target_type, @target_order, @priority_target, @target_faction, @target_count, @target_condition,
         @stamina_regeneration_bonus, @stamina_bonus, @hp_regeneration_bonus, @hp_bonus,
         @load_bonus, @has_passive_bonuses, @updated_at
       )
@@ -127,6 +128,7 @@ export class EntityRepo {
     if (patch.defaultChildren === null) merged.defaultChildren = undefined;
     if (patch.preloadedDynamicAffixes === null) merged.preloadedDynamicAffixes = undefined;
     if (patch.targetCondition === null) merged.targetCondition = undefined;
+    if (patch.targetCount === null) merged.targetCount = undefined;
 
     // 兼容旧字段名 attackType/attackOrder
     if (patch.targetType === undefined && patch.attackType !== undefined) {
@@ -148,7 +150,8 @@ export class EntityRepo {
         hp=@hp, max_stamina=@max_stamina, stamina_regen=@stamina_regen, hp_regen=@hp_regen, max_load=@max_load,
         is_active=@is_active, stamina_cost=@stamina_cost, action_time=@action_time, damage=@damage, damage_bonus=@damage_bonus,
         target_type=@target_type, target_order=@target_order,
-        priority_target=@priority_target, target_faction=@target_faction, target_condition=@target_condition,
+        priority_target=@priority_target, target_faction=@target_faction,
+        target_count=@target_count, target_condition=@target_condition,
         stamina_regeneration_bonus=@stamina_regeneration_bonus, stamina_bonus=@stamina_bonus,
         hp_regeneration_bonus=@hp_regeneration_bonus, hp_bonus=@hp_bonus,
         load_bonus=@load_bonus, has_passive_bonuses=@has_passive_bonuses,

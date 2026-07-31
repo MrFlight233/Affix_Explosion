@@ -36,6 +36,7 @@ export const entities = sqliteTable('entities', {
   targetOrder: text('target_order'),
   priorityTarget: integer('priority_target'),
   targetFaction: text('target_faction'),
+  targetCount: integer('target_count'),
   targetCondition: text('target_condition'),
   staminaRegenerationBonus: integer('stamina_regeneration_bonus').notNull().default(0),
   staminaBonus: integer('stamina_bonus').notNull().default(0),

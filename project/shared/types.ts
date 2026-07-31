@@ -49,47 +49,41 @@
 
 // ---- 枚举 ----
 
-/** @deprecated v6: 仅作 UI 展示标签，运行时忽略。从 targetOrder+priorityTarget 组合自动推导 */
+/** @deprecated */
 export type TargetType = '近战' | '远程';
-/** 针对顺序 — 条件 targeting 失效时的兜底搜索方向 */
+/** @deprecated 已并入 TargetSortBy */
 export type TargetOrder = '从上往下' | '从下往上';
-/** 针对目标 — 可触发动作的对付对象 */
-export type TargetFaction = '友方' | '敌人' | '所有';
-/** 优先目标位 — 优先攻击敌方第几位（1-based），null = 无优先。条件 targeting 存在时降级为兜底 */
-export type PriorityTarget = 1 | 2 | 3 | null;
+/** 针对目标 */
+export type TargetFaction = '友方' | '敌人' | '所有' | '自己';
+/** @deprecated 已并入 sortBy 站位k */
+export type PriorityTarget = 1 | 2 | 3 | 4 | 5 | null;
 
-// ===== 条件 Targeting 类型（v6 新增）=====
+export type TargetSortBy =
+  | '从上往下' | '从下往上'
+  | '站位1' | '站位2' | '站位3' | '站位4' | '站位5' | '站位中间'
+  | 'hp_asc' | 'hp_desc' | 'hp_pct_asc' | 'hp_pct_desc'
+  | 'stamina_asc' | 'stamina_desc' | 'stamina_pct_asc' | 'stamina_pct_desc'
+  | 'random' | null;
 
-/** 条件排序：按哪个属性排序候选池 */
-export type TargetSortBy = 'hp_asc' | 'hp_desc' | 'stamina_asc' | 'random' | null;
-/** 条件过滤：额外筛选条件 */
-export type TargetFilterBy = 'has_debuff' | 'most_buffs' | 'hp_below_50pct' | null;
+export type TargetFilterBy = string | null;
 
-/** 条件 Targeting 配置 — 武器级别的目标选择偏好。
- *  存在时优先级高于 priorityTarget/targetOrder（后者降级为兜底）。 */
 export interface TargetCondition {
-  /** 排序方式：null = 不排序 */
   sortBy?: TargetSortBy;
-  /** 过滤条件：null = 不过滤 */
-  filterBy?: TargetFilterBy;
-  /** 兜底策略：固定为 'targetOrder'（条件不匹配时回退到位置 targeting） */
-  fallback?: 'targetOrder';
+  filterBy?: string | string[] | null;
+  targetCount?: number | 'all' | null;
+  /** @deprecated */
+  fallback?: string;
 }
 
-/** Targeting 覆写（v7 扩展）— 词条可覆写实体的任意 targeting 字段。
- *  每个字段为 undefined 表示"不覆写该字段，保留实体原始值"。
- *  多个 targeting_modifier 词条按 children 数组顺序从前到后依次合并。 */
 export interface TargetingModifier {
-  /** 覆写针对目标阵营（null = 覆写为无阵营） */
   targetFaction?: TargetFaction | null;
-  /** 覆写针对顺序 */
+  /** @deprecated */
   targetOrder?: string | null;
-  /** 覆写优先目标位（null = 覆写为"无优先"） */
+  /** @deprecated */
   priorityTarget?: number | null;
-  /** 覆写条件排序（null = 覆写为"不排序"） */
   sortBy?: TargetSortBy;
-  /** 覆写条件过滤（null = 覆写为"不过滤"） */
-  filterBy?: TargetFilterBy;
+  filterBy?: string | string[] | null;
+  targetCount?: number | 'all' | null;
 }
 
 export type GamePhase = 1 | 2; // 1=探险 2=战斗
@@ -142,11 +136,15 @@ export interface EntityDef {
   actionTime: number;
   /** isActive=true 时: 每次触发伤害（可为负值=恢复HP）; isActive=false 时: 全局伤害加成（加至所有武器） */
   damage: number;
-  targetType: string | null;       // @deprecated 仅 UI 标签，运行时忽略
-  targetOrder: string | null;      // '从上往下'|'从下往上' — 针对顺序
-  priorityTarget: number | null;   // 1|2|3|null — 优先目标位（条件 targeting 存在时降级为兜底）
-  targetFaction: TargetFaction | null; // '友方'|'敌人'|'所有' — 针对目标（永不被词条覆盖）
-  /** 条件 Targeting 配置（v6 新增）— 存在时优先级高于 priorityTarget/targetOrder */
+  /** @deprecated */
+  targetType: string | null;
+  /** @deprecated 映射 sortBy */
+  targetOrder: string | null;
+  /** @deprecated 映射站位k */
+  priorityTarget: number | null;
+  targetFaction: TargetFaction | null;
+  /** 目标数量，默认 1；all/-1 = 全部 */
+  targetCount?: number | 'all' | null;
   targetCondition?: TargetCondition;
 
   // ---- 被动加成（对最外层启动端实体生效） ----

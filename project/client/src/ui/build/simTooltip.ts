@@ -7,6 +7,7 @@ import {
 } from '../../game/data';
 import { formatWeightG, formatWeightBonusG } from './format';
 import { hasPassive, resolveNames } from './entityCard';
+import { formatTargetingSummary } from '../../game/targetingUtil';
 
 export function tipkv(k: string, v: string | number): string {
   return `<span class="sb-tip-kv"><span class="sb-tip-key">${k}</span><span class="sb-tip-val">${v}</span></span>`;
@@ -61,19 +62,17 @@ export function renderTooltipTree(
         if (matched) { dmg = matched.damage; time = `${(Math.max(matched.remainingTime, 0) / 1000).toFixed(1)}s`; }
       }
       h += tipkv('伤害', dmg) + tipkv('耗时', time);
-      h += tipkv('耐耗', def.staminaCost) + tipkv('针对类型', def.targetType || '—');
-      if (def.targetOrder) h += tipkv('针对顺序', def.targetOrder);
-      if (def.priorityTarget != null) h += tipkv('优先目标', '第' + def.priorityTarget + '位');
-      if (def.targetFaction) h += tipkv('针对目标', def.targetFaction);
-      const tc = (combatUnit ? combatUnit.weapons.find(w => w.name === def.name)?.targetCondition : null) ?? def.targetCondition;
-      if (tc?.sortBy) {
-        const sortMap: Record<string, string> = { hp_asc: 'HP最低优先', hp_desc: 'HP最高优先', stamina_asc: '耐力最低优先', random: '随机' };
-        h += tipkv('条件排序', sortMap[tc.sortBy] || tc.sortBy);
-      }
-      if (tc?.filterBy) {
-        const fbMap: Record<string, string> = { has_debuff: '有debuff', most_buffs: 'Buff最多', hp_below_50pct: 'HP<50%' };
-        h += tipkv('条件过滤', fbMap[tc.filterBy] || tc.filterBy);
-      }
+      h += tipkv('耐耗', def.staminaCost);
+      const w = combatUnit?.weapons.find(x => x.name === def.name);
+      const tc = w?.targetCondition ?? def.targetCondition;
+      h += tipkv('索敌', formatTargetingSummary({
+        targetFaction: w?.targetFaction ?? def.targetFaction,
+        sortBy: tc?.sortBy,
+        targetOrder: def.targetOrder,
+        priorityTarget: def.priorityTarget,
+        filterBy: tc?.filterBy,
+        targetCount: w?.targetCount ?? def.targetCount ?? tc?.targetCount,
+      }));
       h += '</div>';
     }
 
@@ -225,18 +224,15 @@ export function showSimTooltip(
         html += tipSection('主动动作');
         html += '<div class="sb-tip-grid">';
         html += tipkv('伤害', def.damage) + tipkv('耗时', (def.actionTime / 1000).toFixed(1) + 's');
-        html += tipkv('耐耗', def.staminaCost) + tipkv('针对类型', def.targetType || '—');
-        if (def.targetOrder) html += tipkv('针对顺序', def.targetOrder);
-        if (def.priorityTarget != null) html += tipkv('优先目标', '第' + def.priorityTarget + '位');
-        if (def.targetFaction) html += tipkv('针对目标', def.targetFaction);
-        if (def.targetCondition?.sortBy) {
-          const sortMap: Record<string, string> = { hp_asc: 'HP最低优先', hp_desc: 'HP最高优先', stamina_asc: '耐力最低优先', random: '随机' };
-          html += tipkv('条件排序', sortMap[def.targetCondition.sortBy] || def.targetCondition.sortBy);
-        }
-        if (def.targetCondition?.filterBy) {
-          const fbMap: Record<string, string> = { has_debuff: '有debuff', most_buffs: 'Buff最多', hp_below_50pct: 'HP<50%' };
-          html += tipkv('条件过滤', fbMap[def.targetCondition.filterBy] || def.targetCondition.filterBy);
-        }
+        html += tipkv('耐耗', def.staminaCost);
+        html += tipkv('索敌', formatTargetingSummary({
+          targetFaction: def.targetFaction,
+          sortBy: def.targetCondition?.sortBy,
+          targetOrder: def.targetOrder,
+          priorityTarget: def.priorityTarget,
+          filterBy: def.targetCondition?.filterBy,
+          targetCount: def.targetCount ?? def.targetCondition?.targetCount,
+        }));
         html += '</div>';
       }
 

@@ -35,6 +35,7 @@ export function initTables(): void {
       target_order TEXT,
       priority_target INTEGER,
       target_faction TEXT,
+      target_count INTEGER,
       target_condition TEXT,
       stamina_regeneration_bonus INTEGER NOT NULL DEFAULT 0,
       stamina_bonus INTEGER NOT NULL DEFAULT 0,
@@ -137,6 +138,8 @@ export function initTables(): void {
   migrateLoadBonusAndEntityPassiveToggleV8(db);
   // ---- 迁移：categories 表新增 show_in_filter ----
   migrateCategoryShowInFilter(db);
+  // ---- 迁移：v9 目标数量 target_count ----
+  migrateTargetCountV9(db);
 
   console.log('[DB] 所有表创建/验证完成');
 }
@@ -391,5 +394,18 @@ function migrateCategoryShowInFilter(db: ReturnType<typeof getDB>): void {
     }
   } catch (e) {
     console.warn('[DB] categories show_in_filter 迁移跳过:', (e as Error).message);
+  }
+}
+
+/** 迁移 entities：目标数量 target_count（null=默认1；-1=全部） */
+function migrateTargetCountV9(db: ReturnType<typeof getDB>): void {
+  try {
+    const cols = db.prepare("PRAGMA table_info('entities')").all() as { name: string }[];
+    if (!cols.some(c => c.name === 'target_count')) {
+      db.exec('ALTER TABLE entities ADD COLUMN target_count INTEGER');
+      console.log('[DB] entities 表已迁移：添加 target_count 列');
+    }
+  } catch (e) {
+    console.warn('[DB] entities target_count 迁移跳过:', (e as Error).message);
   }
 }

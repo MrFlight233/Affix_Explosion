@@ -3,6 +3,7 @@
 // ============================================================
 
 import { getEntityDef, getAffixDef, isStarter, EntityDef, getEntityCategory, getCategoryName, getDefPackageTradeValue, getAffixPackageTradeValue } from '../game/data';
+import { formatTargetingSummary } from '../game/targetingUtil';
 
 let tooltipEl: HTMLElement | null = null;
 
@@ -59,8 +60,14 @@ function renderEntityTooltip(tip: HTMLElement, def: EntityDef) {
     html += `<div class="tt-row"><span class="tt-label">耗时:</span>${def.actionTime}ms</div>`;
     if (def.damage) html += `<div class="tt-row"><span class="tt-label">伤害:</span>${def.damage}</div>`;
     html += `<div class="tt-row"><span class="tt-label">耐力消耗:</span>${def.staminaCost}</div>`;
-    const targetInfo = [def.targetType, def.targetOrder].filter(Boolean).join(' ');
-    html += `<div class="tt-row"><span class="tt-label">针对:</span>${targetInfo || '—'}${def.priorityTarget ? ' [优先' + def.priorityTarget + ']' : ''}${def.targetFaction ? ' →' + def.targetFaction : ''}</div>`;
+    html += `<div class="tt-row"><span class="tt-label">索敌:</span>${formatTargetingSummary({
+      targetFaction: def.targetFaction,
+      sortBy: def.targetCondition?.sortBy,
+      targetOrder: def.targetOrder,
+      priorityTarget: def.priorityTarget,
+      filterBy: def.targetCondition?.filterBy,
+      targetCount: def.targetCount ?? def.targetCondition?.targetCount,
+    })}</div>`;
   }
 
   // 被动加成
@@ -129,6 +136,18 @@ function renderAffixTooltip(tip: HTMLElement, def: any) {
   html += `<div class="tt-row"><span class="tt-label">前置词条:</span>${resolvePrereq(def.prerequisite)}</div>`;
   if (def.poolPrerequisite && def.poolPrerequisite.length > 0) {
     html += `<div class="tt-row"><span class="tt-label">池前置:</span>${resolvePrereq(def.poolPrerequisite)}</div>`;
+  }
+  if (def.targetingModifier) {
+    const tm = def.targetingModifier;
+    html += '<div class="tt-section">索敌覆写</div>';
+    html += `<div class="tt-row"><span class="tt-label">覆写:</span>${formatTargetingSummary({
+      targetFaction: tm.targetFaction,
+      sortBy: tm.sortBy,
+      targetOrder: tm.targetOrder,
+      priorityTarget: tm.priorityTarget,
+      filterBy: tm.filterBy,
+      targetCount: tm.targetCount,
+    })}</div>`;
   }
   tip.innerHTML = html;
 }

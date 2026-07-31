@@ -23,15 +23,18 @@ export interface CombatUnitSnapshot {
   currentLoad: number;
   maxLoad: number;
   isOverloaded: boolean;
+  /** 第一层站位下标（0-based） */
+  slotIndex: number;
+  /** 是否启动端（含 starter 词条） */
+  isStarter: boolean;
   activeWeapons: {
     name: string;
     actionTime: number;
     damage: number;
     staminaCost: number;
-    targetType: string;
-    targetOrder: string;
-    priorityTarget: number | null;
-    targetFaction: string;
+    /** @deprecated 读档兼容；运行时以 filterBy 阵营为准 */
+    targetFaction?: string;
+    targetCount?: number | 'all';
     targetCondition?: TargetCondition;
     ownerInstanceId: string;
   }[];
@@ -50,10 +53,8 @@ export interface CombatWeaponRuntime {
   remainingTime: number;
   damage: number;
   staminaCost: number;
-  targetType: string;
-  targetOrder: string;
-  priorityTarget: number | null;
-  targetFaction: string;
+  targetFaction?: string;
+  targetCount?: number | 'all';
   targetCondition?: TargetCondition;
   ownerInstanceId: string;
 }
@@ -69,6 +70,8 @@ export interface CombatUnitRuntime {
   staminaRegen: number;
   hpRegeneration: number;
   isOverloaded: boolean;
+  slotIndex: number;
+  isStarter: boolean;
   weapons: CombatWeaponRuntime[];
 }
 
@@ -106,26 +109,18 @@ export function buildCombatRuntime(units: CombatUnitSnapshot[]): CombatUnitRunti
     staminaRegen: u.totalStaminaRegen,
     hpRegeneration: u.totalHpRegeneration,
     isOverloaded: u.isOverloaded,
+    slotIndex: u.slotIndex ?? 0,
+    isStarter: u.isStarter ?? false,
     weapons: u.activeWeapons.map(w => ({
       name: w.name,
       actionTime: w.actionTime,
       remainingTime: w.actionTime,
       damage: w.damage,
       staminaCost: w.staminaCost,
-      targetType: w.targetType,
-      targetOrder: w.targetOrder,
-      priorityTarget: w.priorityTarget,
       targetFaction: w.targetFaction,
+      targetCount: w.targetCount,
       targetCondition: w.targetCondition,
       ownerInstanceId: w.ownerInstanceId,
     })),
   }));
-}
-
-export function onHitMapToPairs(map: Map<string, OnHitEffect[]>): Array<[string, OnHitEffect[]]> {
-  return Array.from(map.entries());
-}
-
-export function onHitPairsToMap(pairs: Array<[string, OnHitEffect[]]>): Map<string, OnHitEffect[]> {
-  return new Map(pairs);
 }

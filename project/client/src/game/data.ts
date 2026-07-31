@@ -3,27 +3,26 @@
 // v5: 数据统一从服务端 API 加载，废弃客户端硬编码 fallback
 // ============================================================
 
-/** 条件 Targeting 配置（v6 新增）— 武器级别的目标选择偏好 */
+/** 条件 Targeting 配置（v8：多选过滤 + 统一排序 + 目标数量） */
 export interface TargetCondition {
-  sortBy?: 'hp_asc' | 'hp_desc' | 'stamina_asc' | 'random' | null;
-  filterBy?: 'has_debuff' | 'most_buffs' | 'hp_below_50pct' | null;
-  fallback?: 'targetOrder';
+  sortBy?: string | null;
+  filterBy?: string | string[] | null;
+  targetCount?: number | 'all' | null;
+  /** @deprecated */
+  fallback?: string;
 }
 
-/** Targeting 覆写（v7 扩展）— 词条可覆写实体的任意 targeting 字段。
- *  每个字段为 undefined 表示"不覆写该字段，保留实体原始值"。
- *  多个 targeting_modifier 词条按 children 数组顺序从前到后依次合并。 */
+/** Targeting 覆写（v8+：阵营只走 filterBy；targetFaction 仅读档兼容） */
 export interface TargetingModifier {
-  /** 覆写针对目标阵营 */
+  /** @deprecated 读档并入 filterBy */
   targetFaction?: string | null;
-  /** 覆写针对顺序 */
+  /** @deprecated */
   targetOrder?: string | null;
-  /** 覆写优先目标位（null = 覆写为"无优先"） */
+  /** @deprecated */
   priorityTarget?: number | null;
-  /** 覆写条件排序（null = 覆写为"不排序"） */
-  sortBy?: 'hp_asc' | 'hp_desc' | 'stamina_asc' | 'random' | null;
-  /** 覆写条件过滤（null = 覆写为"不过滤"） */
-  filterBy?: 'has_debuff' | 'most_buffs' | 'hp_below_50pct' | null;
+  sortBy?: string | null;
+  filterBy?: string | string[] | null;
+  targetCount?: number | 'all' | null;
 }
 
 /** 子实体规格（Template/Instance 分离）：引用模板 + 可选字段覆写 + 词条预设 */
@@ -64,9 +63,14 @@ export interface EntityDef {
   damage: number;
   /** 全局伤害加成（加至所有武器），独立于 isActive */
   damageBonus: number;
-  targetType: string | null; targetOrder: string | null; priorityTarget: number | null;
-  targetFaction: string | null; // '友方'|'敌人'|'所有'
-  /** 条件 Targeting 配置（v6 新增）— 存在时优先级高于 priorityTarget/targetOrder */
+  targetType: string | null; // @deprecated 忽略
+  targetOrder: string | null; // @deprecated 映射 sortBy
+  priorityTarget: number | null; // @deprecated 映射站位k
+  /** @deprecated 读档并入 filterBy；新配置勿写 */
+  targetFaction: string | null;
+  /** 目标数量；默认 1；'all' 或 -1 = 全部 */
+  targetCount?: number | 'all' | null;
+  /** 条件 Targeting（sortBy / filterBy[] / 可选 targetCount） */
   targetCondition?: TargetCondition;
 
   // ---- 被动加成（对最外层启动端实体生效） ----
