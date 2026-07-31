@@ -129,7 +129,39 @@ export class GameEngine {
   }
 
   rebuildItemPool() {
-    this.state.itemPool = ENTITY_DEFS.filter(e => e.poolPrerequisite.length === 0).map(e => e.id);
+    this.recomputeItemPool();
+  }
+
+  /** 收集当前持有 defId（仓库 + BD 子树；实体计入模板 fixedAffixes） */
+  collectOwnedDefIds(): Set<string> {
+    const owned = new Set<string>();
+    const visit = (item: ItemInstance) => {
+      if (item.defId) owned.add(item.defId);
+      if (item.type === 'entity') {
+        const def = getEntityDef(item.defId);
+        for (const affixId of def?.fixedAffixes || []) owned.add(affixId);
+      }
+      for (const c of item.children || []) visit(c);
+    };
+    for (const w of this.state.warehouse) visit(w);
+    for (const slot of this.state.deploySlots) {
+      visit(slot.entity);
+      for (const c of slot.children || []) visit(c);
+    }
+    return owned;
+  }
+
+  /** 按当前持有整表重建可售/可抽商品 id（出售后前置消失则立刻出池） */
+  recomputeItemPool(): void {
+    const owned = this.collectOwnedDefIds();
+    const pool: string[] = [];
+    for (const def of ENTITY_DEFS) {
+      if (def.poolPrerequisite.every(p => owned.has(p))) pool.push(def.id);
+    }
+    for (const def of AFFIX_DEFS) {
+      if (def.poolPrerequisite.every(p => owned.has(p))) pool.push(def.id);
+    }
+    this.state.itemPool = pool;
   }
 
   notify() { this.onStateChange?.(); }
@@ -391,13 +423,14 @@ export class GameEngine {
 
   /** 生成商店物品列表（不限数量，仅价值限制） */
   generateShopItems(filter: 'all' | 'entity' | 'affix'): ItemInstance[] {
+    this.recomputeItemPool();
     const cap = this.getMerchantValueCap();
     const items: ItemInstance[] = [];
 
     if (filter === 'all' || filter === 'entity') {
       for (const def of ENTITY_DEFS) {
         if (def.value > cap) continue;
-        if (def.poolPrerequisite.length > 0 && !def.poolPrerequisite.every(p => this.state.itemPool.includes(p))) continue;
+        if (!this.state.itemPool.includes(def.id)) continue;
         items.push(this.createItem(def.id, 'entity'));
       }
     }
@@ -405,7 +438,7 @@ export class GameEngine {
     if (filter === 'all' || filter === 'affix') {
       for (const def of AFFIX_DEFS) {
         if (Math.abs(def.costValue) > cap) continue;
-        if (def.poolPrerequisite.length > 0 && !def.poolPrerequisite.every(p => this.state.itemPool.includes(p))) continue;
+        if (!this.state.itemPool.includes(def.id)) continue;
         items.push(this.createItem(def.id, 'affix'));
       }
     }
@@ -1234,6 +1267,8 @@ export class GameEngine {
     this.state.battles = data.battles ?? [];
     this.state.maxRound = data.maxRound ?? MAX_ROUND;
     this.historyRunId = typeof data.historyRunId === 'number' ? data.historyRunId : null;
+    // 权威来源是持有物；存档 itemPool 仅快照，读档后整表重建
+    this.recomputeItemPool();
     if (Array.isArray(data.currentEvents) && data.currentEvents.length > 0) {
       this.state.currentEvents = data.currentEvents;
     } else if (this.isExplore()) {

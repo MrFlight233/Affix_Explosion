@@ -51,7 +51,7 @@ export function renderCardKeyInfo(
   if (item.type === 'affix') {
     const adef = getAffixDef(item.defId);
     if (!adef) return item.defId;
-    return `${getCategoryName(adef.category)}  槽耗${adef.slotCost}  价${Math.abs(adef.costValue)}`;
+    return `${adef.name}  ${getCategoryName(adef.category)}  槽耗${adef.slotCost}  价${Math.abs(adef.costValue)}`;
   }
 
   const edef = getEntityDef(item.defId);

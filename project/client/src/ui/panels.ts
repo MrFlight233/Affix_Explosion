@@ -521,7 +521,9 @@ export class UIManager {
   }
 
   randomItems(n: number, minV: number, maxV: number, entOnly: boolean, affOnly: boolean): ItemInstance[] {
+    this.engine.recomputeItemPool();
     const pool = this.engine.state.itemPool;
+    if (pool.length === 0) return [];
     const items: ItemInstance[] = []; const seen = new Set<string>();
     for (let i = 0; i < n * 3 && items.length < n; i++) {
       const did = pool[Math.floor(Math.random() * pool.length)]; if (seen.has(did)) continue;
