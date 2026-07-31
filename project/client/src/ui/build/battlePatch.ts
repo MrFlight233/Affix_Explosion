@@ -85,7 +85,16 @@ export function patchBattleValues(
 
   if (!opts.battleFinished) {
     const simSec = (engine.combatTime / 1000).toFixed(1);
-    const timeSpan = document.querySelector(`${headerSel} span`);
-    if (timeSpan) timeSpan.textContent = `模拟时间: ${simSec}s`;
+    const header = document.querySelector(headerSel) as HTMLElement | null;
+    if (header) {
+      const timeSpan = header.querySelector('span');
+      if (timeSpan) {
+        timeSpan.textContent = `模拟时间: ${simSec}s`;
+      } else {
+        // 正式局：#fg-battle-header 即数值节点
+        const next = `${simSec}s`;
+        if (header.textContent !== next) header.textContent = next;
+      }
+    }
   }
 }
