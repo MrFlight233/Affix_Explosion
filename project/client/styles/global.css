@@ -1376,6 +1376,50 @@ body.fg-resizing-row { cursor: row-resize !important; user-select: none; }
   font-size: 10px; color: var(--adm-text-secondary);
   margin-left: auto;
 }
+
+/* 命中效果多行编辑 — 浅色分隔，不用深色描边框 */
+.admin-onhit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 0 4px;
+}
+.admin-onhit-row {
+  border-top: 1px solid var(--adm-border);
+  background: var(--adm-surface);
+  padding: 4px 0 8px;
+}
+.admin-onhit-row:first-child { border-top: none; padding-top: 0; }
+.admin-onhit-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 14px 6px;
+  min-width: 0;
+}
+.admin-onhit-toolbar .admin-onhit-preview {
+  margin: 0;
+  padding: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--adm-text-muted);
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.admin-onhit-toolbar .btn {
+  margin: 0;
+  flex-shrink: 0;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+.admin-onhit-list + .btn {
+  margin: 8px 14px 12px;
+}
+
 .adm-field-hint {
   font-size: 11px; color: var(--adm-text-muted); padding: 3px 14px 6px;
   display: flex; align-items: center; gap: 4px;

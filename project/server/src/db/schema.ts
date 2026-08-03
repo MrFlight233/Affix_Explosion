@@ -32,6 +32,7 @@ export const entities = sqliteTable('entities', {
   actionTime: integer('action_time').notNull().default(0),
   damage: integer('damage').notNull().default(0),
   damageBonus: integer('damage_bonus').notNull().default(0),
+  onHitEffects: text('on_hit_effects').notNull().default('[]'),
   targetType: text('target_type'),
   targetOrder: text('target_order'),
   priorityTarget: integer('priority_target'),

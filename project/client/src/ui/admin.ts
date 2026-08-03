@@ -16,6 +16,12 @@ import {
 } from '../game/targetingUtil';
 import { mountAdminList, type AdminListBridge } from './admin/mountAdminList';
 import type { AdminListItem } from './admin/AdminListPanel';
+import {
+  bindOnHitEffectsEditor,
+  entityInitialOnHitEffects,
+  readOnHitEffectsFromDom,
+  renderOnHitEffectsEditor,
+} from './adminHitEffects';
 
 type TabType = 'entities' | 'affixes';
 
@@ -900,7 +906,6 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     h += `<div id="ef-action-fields" style="${isActiveVal ? '' : 'display:none;'}">`;
     h += `<div class="admin-field"><label>耐力消耗</label><input id="ef-staminaCost" type="number" value="${v('staminaCost', 0)}"></div>`;
     h += `<div class="admin-field"><label>触发耗时(ms)</label><input id="ef-actionTime" type="number" value="${v('actionTime', 0)}"></div>`;
-    h += `<div class="admin-field"><label>伤害(负值=恢复)</label><input id="ef-damage" type="number" value="${v('damage', 0)}" step="any"></div>`;
     const tc = v('targetCondition');
     const sortSelected = resolveSortBy({
       sortBy: tc?.sortBy,
@@ -916,6 +921,8 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     const countNorm = normalizeTargetCount(countRaw);
     const countSel = countNorm === 'all' ? 'all' : String(countNorm);
     h += `<div class="admin-field"><label>目标数量</label><select id="ef-targetCount"><option value="1"${countSel==='1'?' selected':''}>1</option><option value="2"${countSel==='2'?' selected':''}>2</option><option value="3"${countSel==='3'?' selected':''}>3</option><option value="4"${countSel==='4'?' selected':''}>4</option><option value="5"${countSel==='5'?' selected':''}>5</option><option value="all"${countSel==='all'?' selected':''}>全部</option></select></div>`;
+    h += `<div class="admin-field"><label>效果</label></div>`;
+    h += renderOnHitEffectsEditor('ef-onhit', entityInitialOnHitEffects(data));
     h += `</div>`;
     h += `</div>`;
     // 被动加成总开关（与词条对齐）
@@ -923,7 +930,6 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     h += `<div class="admin-form-section"><h4>被动加成</h4>`;
     h += `<div class="admin-field"><label>被动加成模式</label><select id="ef-hasPassiveBonuses"><option value="0"${!hasPB?' selected':''}>无</option><option value="1"${hasPB?' selected':''}>有</option></select></div>`;
     h += `<div id="ef-passive-fields" style="${hasPB?'':'display:none'}">`;
-    h += `<div class="admin-field"><label>伤害加成(正=增伤,负=增强治疗)</label><input id="ef-damageBonus" type="number" value="${v('damageBonus', 0)}" step="any"></div>`;
     h += `<div class="admin-field"><label>生命加成</label><input id="ef-hpBonus" type="number" value="${v('hpBonus', 0)}"></div>`;
     h += `<div class="admin-field"><label>生命恢复加成</label><input id="ef-hpRegenerationBonus" type="number" value="${v('hpRegenerationBonus', 0)}"></div>`;
     h += `<div class="admin-field"><label>耐力加成</label><input id="ef-staminaBonus" type="number" value="${v('staminaBonus', 0)}"></div>`;
@@ -943,7 +949,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
       // 兼容旧数据：完整内联实体对象 → 提取差异
       const tpl = c?.id ? state.entities.find((e: any) => e.id === c.id) : null;
       const ov: any = {};
-      const fields = ['damage','damageBonus','actionTime','staminaCost','staminaRegenerationBonus','staminaBonus','hpRegenerationBonus','hpBonus','loadBonus','hasPassiveBonuses','weight','value','isActive','targetCount','targetCondition','name','slotCost','entitySlots','dynamicAffixSlots','hp','maxStamina','staminaRegen','hpRegen','maxLoad','poolPrerequisite'];
+      const fields = ['damage','actionTime','staminaCost','staminaRegenerationBonus','staminaBonus','hpRegenerationBonus','hpBonus','loadBonus','hasPassiveBonuses','weight','value','isActive','targetCount','targetCondition','name','slotCost','entitySlots','dynamicAffixSlots','hp','maxStamina','staminaRegen','hpRegen','maxLoad','poolPrerequisite','onHitEffects'];
       for (const f of fields) { if (c[f] !== undefined && (!tpl || c[f] !== tpl[f])) ov[f] = c[f]; }
       const spec: DefaultChildSpec = { defId: c.id || 'unknown' };
       if (Object.keys(ov).length > 0) spec.overrides = ov;
@@ -1060,7 +1066,6 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     h += `<div class="admin-form-section"><h4>被动加成</h4>`;
     h += `<div class="admin-field"><label>被动加成模式</label><select id="af-hasPassiveBonuses"><option value="0"${!hasPB?' selected':''}>无</option><option value="1"${hasPB?' selected':''}>有</option></select></div>`;
     h += `<div id="af-passive-fields" style="${hasPB?'':'display:none'}">`;
-    h += `<div class="admin-field"><label>伤害加成(正=增伤,负=增强治疗)</label><input id="af-damageBonus" type="number" value="${v('damageBonus', 0)}" step="any"></div>`;
     h += `<div class="admin-field"><label>生命加成</label><input id="af-hpBonus" type="number" value="${v('hpBonus', 0)}"></div>`;
     h += `<div class="admin-field"><label>生命恢复加成</label><input id="af-hpRegenerationBonus" type="number" value="${v('hpRegenerationBonus', 0)}"></div>`;
     h += `<div class="admin-field"><label>耐力加成</label><input id="af-staminaBonus" type="number" value="${v('staminaBonus', 0)}"></div>`;
@@ -1068,11 +1073,8 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     h += `<div class="admin-field"><label>负重加成</label><input id="af-loadBonus" type="number" value="${v('loadBonus', 0)}"></div>`;
     h += `</div>`;
     h += `</div>`;
-    h += `<div class="admin-form-section"><h4>命中效果</h4>`;
-    const onHit: any = v('onHitEffects')?.[0] || {};
-    const effType = onHit.type || '';
-    h += `<div class="admin-field"><label>效果类型</label><select id="af-onHitType"><option value="">无</option><option value="life_steal"${effType==='life_steal'?' selected':''}>life_steal — 吸血</option><option value="stamina_drain"${effType==='stamina_drain'?' selected':''}>stamina_drain — 削耐</option></select></div>`;
-    h += `<div class="admin-field" id="af-onHitParams" style="${effType?'':'display:none'}"><label>参数</label><span style="display:flex;gap:4px;align-items:center"><input id="af-onHitPercent" type="number" value="${onHit.params?.percent ?? 0}" style="width:60px"> %<input id="af-onHitAmount" type="number" value="${onHit.params?.amount ?? 0}" style="width:60px"> 固定值</span></div>`;
+    h += `<div class="admin-form-section"><h4>效果</h4>`;
+    h += renderOnHitEffectsEditor('af-onhit', v('onHitEffects') || []);
     h += `</div>`;
     const tm = v('targetingModifier');
     const tmEnabled = !!(tm?.sortBy !== undefined ||
@@ -1109,6 +1111,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     const affixOpts = state.affixes.map((a: any) => ({ id: a.id, name: a.name, cat: getCategoryName(a.category) }));
     bindPopoverSelector('ef-fixedAffixes', affixOpts);
     bindPopoverSelector('ef-poolPrerequisite', affixOpts);
+    bindOnHitEffectsEditor('ef-onhit', entityInitialOnHitEffects(originalData || {}));
 
     // ── 动态词条槽位：始终绑定 + 动态显示/隐藏 ──
     bindPopoverSelector('ef-preloadedDynamicAffixes', affixOpts);
@@ -1206,7 +1209,8 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         isActive: (document.getElementById('ef-isActive') as HTMLSelectElement).value === '有',
         staminaCost: parseInt((document.getElementById('ef-staminaCost') as HTMLInputElement).value) || 0,
         actionTime: parseInt((document.getElementById('ef-actionTime') as HTMLInputElement).value) || 0,
-        damage: parseFloat((document.getElementById('ef-damage') as HTMLInputElement).value) || 0,
+        damage: 0,
+        onHitEffects: readOnHitEffectsFromDom('ef-onhit'),
         targetFaction: null,
         targetType: null,
         targetOrder: null,
@@ -1227,7 +1231,6 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         })(),
         // 被动总开关：关则清零全部被动（含 loadBonus）
         hasPassiveBonuses: hasPB,
-        damageBonus: hasPB ? (parseFloat((document.getElementById('ef-damageBonus') as HTMLInputElement).value) || 0) : 0,
         staminaRegenerationBonus: hasPB ? (parseInt((document.getElementById('ef-staminaRegenerationBonus') as HTMLInputElement).value) || 0) : 0,
         staminaBonus: hasPB ? (parseInt((document.getElementById('ef-staminaBonus') as HTMLInputElement).value) || 0) : 0,
         hpRegenerationBonus: hasPB ? (parseInt((document.getElementById('ef-hpRegenerationBonus') as HTMLInputElement).value) || 0) : 0,
@@ -1267,13 +1270,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     const affixOpts = state.affixes.map((a: any) => ({ id: a.id, name: a.name, cat: getCategoryName(a.category) }));
     bindPopoverSelector('af-prerequisite', affixOpts);
     bindPopoverSelector('af-poolPrerequisite', affixOpts);
-
-    // 命中效果类型切换
-    const onHitTypeSel = document.getElementById('af-onHitType') as HTMLSelectElement;
-    const onHitParamsDiv = document.getElementById('af-onHitParams');
-    onHitTypeSel?.addEventListener('change', () => {
-      if (onHitParamsDiv) onHitParamsDiv.style.display = onHitTypeSel.value ? '' : 'none';
-    });
+    bindOnHitEffectsEditor('af-onhit', originalData?.onHitEffects || []);
 
     // v7: 被动加成主开关
     const hasPBsel = document.getElementById('af-hasPassiveBonuses') as HTMLSelectElement;
@@ -1299,15 +1296,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
       if (!id) { showToast('ID 不能为空'); return; }
       const name = (document.getElementById('af-name') as HTMLInputElement).value.trim();
       if (!name) { showToast('名称不能为空'); return; }
-      // 组装命中效果
-      const onHitType = (document.getElementById('af-onHitType') as HTMLSelectElement).value;
-      const onHitEffects = onHitType ? [{
-        type: onHitType,
-        params: {
-          percent: parseFloat((document.getElementById('af-onHitPercent') as HTMLInputElement).value) || 0,
-          amount: parseInt((document.getElementById('af-onHitAmount') as HTMLInputElement).value) || 0,
-        }
-      }] : [];
+      const onHitEffects = readOnHitEffectsFromDom('af-onhit');
 
       const hasPB = (document.getElementById('af-hasPassiveBonuses') as HTMLSelectElement).value === '1';
       const affix = {
@@ -1325,7 +1314,6 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         onHitEffects,
         // 被动总开关：关则清零全部被动（含 loadBonus）
         hasPassiveBonuses: hasPB,
-        damageBonus: hasPB ? (parseFloat((document.getElementById('af-damageBonus') as HTMLInputElement).value) || 0) : 0,
         staminaRegenerationBonus: hasPB ? (parseInt((document.getElementById('af-staminaRegenerationBonus') as HTMLInputElement).value) || 0) : 0,
         staminaBonus: hasPB ? (parseInt((document.getElementById('af-staminaBonus') as HTMLInputElement).value) || 0) : 0,
         hpRegenerationBonus: hasPB ? (parseInt((document.getElementById('af-hpRegenerationBonus') as HTMLInputElement).value) || 0) : 0,

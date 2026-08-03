@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>主动动作展示 · 四向样机</title>
+  <style>
+    :root {
+      --page-bg: #f4f4f5;
+      --ink: #262626;
+      --muted: #737373;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      background: var(--page-bg);
+      color: var(--ink);
+    }
+    .page-note {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 12px 20px 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .grid {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 16px 20px 32px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+    .option {
+      background: #fff;
+      border: 1px solid #e5e5e5;
+      border-radius: 10px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 420px;
+    }
+    .option.is-recommended { outline: 2px solid #525252; outline-offset: -1px; }
+    .stage {
+      flex: 1;
+      min-height: 280px;
+      padding: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #fafafa;
+      border-bottom: 1px solid #e5e5e5;
+    }
+    .meta {
+      padding: 12px 14px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .meta-top {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .meta-top h2 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 650;
+    }
+    .badge {
+      font-size: 11px;
+      color: #fff;
+      background: #404040;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    .meta-blurb {
+      margin: 0;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.45;
+      max-width: 100%;
+    }
+    .qmdp-pick-button {
+      display: block;
+      width: 100%;
+      border: 1px solid #d4d4d4;
+      background: #fff;
+      color: #262626;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .qmdp-pick-button:hover { background: #f5f5f5; }
+    .notes {
+      max-width: 1200px;
+      margin: 0 auto 40px;
+      padding: 0 20px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    @media (max-width: 900px) {
+      .notes { grid-template-columns: 1fr; }
+    }
+    .note-card {
+      background: #fff;
+      border: 1px solid #e5e5e5;
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 12px;
+      color: #525252;
+      line-height: 1.5;
+    }
+    .note-card strong { color: #262626; }
+
+    /* ===== A · 扁平工牌 ===== */
+    .dir-a {
+      width: 100%;
+      max-width: 320px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .dir-a .card {
+      background: #fff;
+      border: 1px solid #e5e5e5;
+      border-radius: 6px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .dir-a .hdr {
+      background: #fafafa;
+      border-bottom: 1px solid #e5e5e5;
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .dir-a .bt {
+      font-size: 11px;
+      font-weight: 600;
+      color: #a3a3a3;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      padding: 6px 10px 2px;
+    }
+    .dir-a .st {
+      font-size: 12px;
+      color: #737373;
+      padding: 2px 10px;
+      line-height: 1.55;
+      font-variant-numeric: tabular-nums;
+    }
+    .dir-a .tip {
+      background: #fff;
+      border: 1px solid #e5e5e5;
+      border-radius: 6px;
+      padding: 10px 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      font-size: 12px;
+    }
+    .dir-a .tip-sec {
+      font-size: 11px;
+      font-weight: 600;
+      color: #a3a3a3;
+      margin: 8px 0 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .dir-a .tip-sec:first-child { margin-top: 0; }
+    .dir-a .kv {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 2px 0;
+      color: #525252;
+    }
+    .dir-a .k { color: #a3a3a3; }
+
+    /* ===== B · 战斗密记 ===== */
+    .dir-b {
+      width: 100%;
+      max-width: 320px;
+    }
+    .dir-b .card {
+      background: #171717;
+      color: #e5e5e5;
+      border: 1px solid #404040;
+      border-radius: 4px;
+      padding: 12px 14px;
+      font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+      font-size: 11px;
+      line-height: 1.55;
+    }
+    .dir-b .name { font-size: 13px; font-weight: 700; color: #fafafa; margin-bottom: 8px; font-family: inherit; }
+    .dir-b .sum { color: #a3a3a3; margin-bottom: 8px; }
+    .dir-b .rule { border: none; border-top: 1px dashed #525252; margin: 8px 0; }
+    .dir-b .eff { color: #d4d4d4; }
+    .dir-b .tip-label {
+      margin-top: 10px;
+      font-size: 10px;
+      color: #737373;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    /* ===== C · 线框大纲 ===== */
+    .dir-c {
+      width: 100%;
+      max-width: 320px;
+    }
+    .dir-c .card {
+      background: #fff;
+      border: 1px solid #e5e5e5;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .dir-c .hdr {
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 600;
+      border-bottom: 1px solid #e5e5e5;
+      background: #fafafa;
+    }
+    .dir-c .block-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: #a3a3a3;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      padding: 8px 10px 4px;
+    }
+    .dir-c .sub {
+      font-size: 11px;
+      font-weight: 600;
+      color: #737373;
+      padding: 6px 10px 2px;
+      border-bottom: 1px solid #ececec;
+      margin: 0 10px;
+    }
+    .dir-c .body {
+      font-size: 12px;
+      color: #525252;
+      padding: 4px 10px 6px;
+      line-height: 1.5;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ===== D · 数据表 ===== */
+    .dir-d {
+      width: 100%;
+      max-width: 320px;
+    }
+    .dir-d .card {
+      background: #fff;
+      border: 1px solid #e5e5e5;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .dir-d .hdr {
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 600;
+      border-bottom: 1px solid #e5e5e5;
+      background: #fafafa;
+    }
+    .dir-d .block-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: #a3a3a3;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      padding: 8px 10px 4px;
+    }
+    .dir-d table {
+      width: calc(100% - 20px);
+      margin: 0 10px 10px;
+      border-collapse: collapse;
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+    .dir-d th, .dir-d td {
+      border: 1px solid #e5e5e5;
+      padding: 5px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .dir-d th {
+      width: 56px;
+      background: #fafafa;
+      color: #737373;
+      font-weight: 500;
+    }
+    .dir-d td { color: #404040; }
+  </style>
+</head>
+<body>
+  <p class="page-note">设计方向样机，用于选择卡/悬浮「主动动作」气质，不是最终 App。选定后才改正式代码。</p>
+
+  <div class="grid">
+    <!-- A -->
+    <article class="option is-recommended" data-design-option="A" data-name="扁平工牌">
+      <div class="stage">
+        <div class="dir-a">
+          <div class="card">
+            <div class="hdr">短剑</div>
+            <div class="bt">属性</div>
+            <div class="st">HP: 0  槽耗: 1  重: 120g</div>
+            <div class="bt">主动动作</div>
+            <div class="st">耐力: 15  间隔: 1.0s</div>
+            <div class="st">索敌: 敌人 · 随机 · 1</div>
+            <div class="st">伤害 被命中 血量 - 10</div>
+            <div class="st">吸血 启动端 血量 + 2</div>
+          </div>
+          <div class="tip">
+            <div class="tip-sec">主动动作</div>
+            <div class="kv"><span class="k">耐力</span><span>15</span></div>
+            <div class="kv"><span class="k">间隔</span><span>1.0s</span></div>
+            <div class="kv"><span class="k">索敌</span><span>敌人 · 随机 · 1</span></div>
+            <div class="kv"><span class="k">效果</span><span>伤害 被命中 血量 - 10</span></div>
+            <div class="kv"><span class="k">效果</span><span>吸血 启动端 血量 + 2</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="meta">
+        <div class="meta-top">
+          <h2>A · 扁平工牌</h2>
+          <span class="badge">推荐</span>
+        </div>
+        <p class="meta-blurb">一级标题 + 短标签 KV，贴合现网 DESIGN，无副标题层级。</p>
+        <button type="button" class="qmdp-pick-button" data-design-option="A">选择 A · 扁平工牌</button>
+      </div>
+    </article>
+
+    <!-- B -->
+    <article class="option" data-design-option="B" data-name="战斗密记">
+      <div class="stage" style="background:#0a0a0a;">
+        <div class="dir-b">
+          <div class="card">
+            <div class="name">短剑</div>
+            <div class="sum">主动 · 耐15 · 1.0s · 敌人·随机·1</div>
+            <hr class="rule" />
+            <div class="eff">伤害 被命中 血量 - 10</div>
+            <div class="eff">吸血 启动端 血量 + 2</div>
+            <div class="tip-label">悬浮同构 · mono 摘录</div>
+            <div class="eff" style="margin-top:4px;color:#a3a3a3;">耐15  1.0s  敌人·随机·1</div>
+            <div class="eff">伤害 被命中 血量 - 10</div>
+          </div>
+        </div>
+      </div>
+      <div class="meta">
+        <div class="meta-top"><h2>B · 战斗密记</h2></div>
+        <p class="meta-blurb">等宽效果栈，消耗/目标压成一行，气质贴近战斗日志。</p>
+        <button type="button" class="qmdp-pick-button" data-design-option="B">选择 B · 战斗密记</button>
+      </div>
+    </article>
+
+    <!-- C -->
+    <article class="option" data-design-option="C" data-name="线框大纲">
+      <div class="stage">
+        <div class="dir-c">
+          <div class="card">
+            <div class="hdr">短剑</div>
+            <div class="block-title">主动动作</div>
+            <div class="sub">消耗</div>
+            <div class="body">耐力 15 · 间隔 1.0s</div>
+            <div class="sub">目标</div>
+            <div class="body">敌人 · 随机 · 1</div>
+            <div class="sub">效果</div>
+            <div class="body">伤害 被命中 血量 - 10<br>吸血 启动端 血量 + 2</div>
+          </div>
+        </div>
+      </div>
+      <div class="meta">
+        <div class="meta-top"><h2>C · 线框大纲</h2></div>
+        <p class="meta-blurb">正式收编分节小标题 + hairline，信息架构最清晰。</p>
+        <button type="button" class="qmdp-pick-button" data-design-option="C">选择 C · 线框大纲</button>
+      </div>
+    </article>
+
+    <!-- D -->
+    <article class="option" data-design-option="D" data-name="数据表">
+      <div class="stage">
+        <div class="dir-d">
+          <div class="card">
+            <div class="hdr">短剑</div>
+            <div class="block-title">主动动作</div>
+            <table>
+              <tr><th>耐力</th><td>15</td></tr>
+              <tr><th>间隔</th><td>1.0s</td></tr>
+              <tr><th>索敌</th><td>敌人 · 随机 · 1</td></tr>
+              <tr><th>效果</th><td>伤害 被命中 血量 - 10<br>吸血 启动端 血量 + 2</td></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="meta">
+        <div class="meta-top"><h2>D · 数据表</h2></div>
+        <p class="meta-blurb">字段|值双列对齐，与 Admin 表单阅读习惯同构。</p>
+        <button type="button" class="qmdp-pick-button" data-design-option="D">选择 D · 数据表</button>
+      </div>
+    </article>
+  </div>
+
+  <section class="notes">
+    <div class="note-card"><strong>A 推荐理由</strong><br>服从 DESIGN.md Zinc 工具风；改动最小，直接消掉副标题违和。</div>
+    <div class="note-card"><strong>B</strong><br>硬约束：效果等宽。适合爱扫日志的人；与 tip 网格会略割裂。</div>
+    <div class="note-card"><strong>C</strong><br>硬约束：三节分隔线。分区最强；卡片变高，需补 CSS token。</div>
+    <div class="note-card"><strong>D</strong><br>硬约束：两列表格。对齐最好；窄悬浮需降级单列。</div>
+  </section>
+</body>
+</html>

@@ -4,6 +4,7 @@
 // ============================================================
 
 import { getDB } from './connection';
+import { normalizeOnHitEffects } from '@shared/hitEffectUtil';
 
 // ---- DB 行 ↔ 前端 EntityDef/AffixDef 转换 ----
 
@@ -38,7 +39,7 @@ export function entityRowToDef(row: Record<string, any>): Record<string, any> {
     staminaCost: row.stamina_cost,
     actionTime: row.action_time,
     damage: row.damage,
-    damageBonus: row.damage_bonus,
+    onHitEffects: normalizeOnHitEffects(parseJsonField(row.on_hit_effects) ?? []),
     targetType: row.target_type,
     targetOrder: row.target_order,
     priorityTarget: row.priority_target,
@@ -76,7 +77,8 @@ export function entityDefToRow(def: Record<string, any>): Record<string, any> {
     stamina_cost: def.staminaCost ?? 0,
     action_time: def.actionTime ?? 0,
     damage: def.damage ?? 0,
-    damage_bonus: def.damageBonus ?? 0,
+    damage_bonus: 0,
+    on_hit_effects: serializeJsonField(normalizeOnHitEffects(def.onHitEffects ?? [])),
     target_type: def.targetType ?? null,
     target_order: def.targetOrder ?? null,
     priority_target: def.priorityTarget ?? null,
@@ -104,8 +106,7 @@ export function affixRowToDef(row: Record<string, any>): Record<string, any> {
     prerequisite: parseJsonField(row.prerequisite) ?? [],
     poolPrerequisite: parseJsonField(row.pool_prerequisite) ?? [],
     effect: row.effect,
-    onHitEffects: parseJsonField(row.on_hit_effects) ?? [],
-    damageBonus: row.damage_bonus ?? 0,
+    onHitEffects: normalizeOnHitEffects(parseJsonField(row.on_hit_effects) ?? []),
     targetingModifier: parseJsonField(row.targeting_modifier),
     hasPassiveBonuses: row.has_passive_bonuses === 1,
     staminaRegenerationBonus: row.stamina_regeneration_bonus ?? 0,
@@ -127,8 +128,8 @@ export function affixDefToRow(def: Record<string, any>): Record<string, any> {
     prerequisite: serializeJsonField(def.prerequisite),
     pool_prerequisite: serializeJsonField(def.poolPrerequisite),
     effect: def.effect ?? '',
-    on_hit_effects: serializeJsonField(def.onHitEffects),
-    damage_bonus: def.damageBonus ?? 0,
+    on_hit_effects: serializeJsonField(normalizeOnHitEffects(def.onHitEffects ?? [])),
+    damage_bonus: 0,
     targeting_modifier: def.targetingModifier != null ? JSON.stringify(def.targetingModifier) : null,
     has_passive_bonuses: def.hasPassiveBonuses ? 1 : 0,
     stamina_regeneration_bonus: def.staminaRegenerationBonus ?? 0,

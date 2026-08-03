@@ -8,6 +8,7 @@ import { renderEntityCard } from './build/entityCard';
 import { createCollapseState, collapseItemTree, CollapseState } from './build/types';
 import { bindSbTooltips } from './build/simTooltip';
 import { bindRunReviewSplitters } from './splitters';
+import { formatCombatEventLogHtml } from '../game/activeActionDisplay';
 
 function collectInstancesFromSlots(
   slots: DeploySlot[] | null | undefined,
@@ -57,23 +58,7 @@ function formatLogHtml(log: CombatEvent[]): string {
   if (!log?.length) return '<div class="sb-log-entry" style="color:var(--fg-text-muted);">无日志</div>';
   let h = '';
   for (let i = 0; i < log.length; i++) {
-    const evt = log[i];
-    if (evt.effects?.includes('击杀')) {
-      h += `<div class="sb-log-entry kill">[${(evt.time / 1000).toFixed(1)}s] ${evt.targetName} 击杀!</div>`;
-      continue;
-    }
-    if (evt.targetName === '战斗开始') {
-      h += `<div class="sb-log-entry">[0.0s] 战斗开始</div>`;
-      continue;
-    }
-    if (evt.effects?.includes('空池自动获胜') || evt.targetName === '玩家胜利') {
-      h += `<div class="sb-log-entry">[0.0s] 对战池无对手 · 自动获胜</div>`;
-      continue;
-    }
-    h += `<div class="sb-log-entry">[${(evt.time / 1000).toFixed(1)}s] ${evt.actorName} · ${evt.weaponName} -> ${evt.targetName} 伤害 ${evt.damage} (HP:${Math.round(evt.targetHpAfter)}/${evt.targetMaxHp})</div>`;
-    for (const eff of evt.effects || []) {
-      if (eff !== '击杀') h += `<div class="sb-log-entry" style="padding-left:20px">${eff}</div>`;
-    }
+    h += formatCombatEventLogHtml(log[i]);
   }
   return h;
 }

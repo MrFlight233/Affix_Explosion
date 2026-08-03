@@ -31,6 +31,7 @@ export function initTables(): void {
       action_time INTEGER NOT NULL DEFAULT 0,
       damage      INTEGER NOT NULL DEFAULT 0,
       damage_bonus INTEGER NOT NULL DEFAULT 0,
+      on_hit_effects TEXT NOT NULL DEFAULT '[]',
       target_type TEXT,
       target_order TEXT,
       priority_target INTEGER,
@@ -128,6 +129,8 @@ export function initTables(): void {
   migrateDamageBonus(db);
   // ---- 迁移：affixes 表新增 on_hit_effects 列 ----
   migrateAffixOnHitEffects(db);
+  // ---- 迁移：entities.on_hit_effects + 旧 damage / 词条 damage_bonus 注入 ----
+  migrateEntityOnHitEffects(db);
   // ---- 迁移：affixes 表新增被动加成 5 列 ----
   migrateAffixPassiveBonuses(db);
   // ---- 迁移：v6 targeting 体系（target_condition + targeting_modifier） ----
@@ -256,6 +259,76 @@ function migrateAffixOnHitEffects(db: ReturnType<typeof getDB>): void {
     }
   } catch (e) {
     console.warn('[DB] affixes on_hit_effects 迁移跳过:', (e as Error).message);
+  }
+}
+
+/** entities.on_hit_effects 列；旧 damage→效果；词条 damage_bonus→伤害效果（幂等） */
+function migrateEntityOnHitEffects(db: ReturnType<typeof getDB>): void {
+  try {
+    const cols = db.prepare("PRAGMA table_info('entities')").all() as { name: string }[];
+    const colNames = new Set(cols.map(c => c.name));
+    if (!colNames.has('on_hit_effects')) {
+      db.exec("ALTER TABLE entities ADD COLUMN on_hit_effects TEXT NOT NULL DEFAULT '[]'");
+      console.log('[DB] entities 表已迁移：添加 on_hit_effects 列');
+    }
+
+    const entities = db.prepare('SELECT id, damage, is_active, on_hit_effects FROM entities').all() as {
+      id: string; damage: number; is_active: number; on_hit_effects: string;
+    }[];
+    const update = db.prepare('UPDATE entities SET on_hit_effects = ?, damage = 0 WHERE id = ?');
+    for (const row of entities) {
+      let list: any[] = [];
+      try { list = JSON.parse(row.on_hit_effects || '[]'); } catch { list = []; }
+      if (!Array.isArray(list)) list = [];
+      const hasHp = list.some((e: any) =>
+        (e && e.stat === 'hp' && (e.op === 'loss' || e.op === 'gain'))
+        || e?.type === 'damage' || e?.type === 'heal' || e?.type === 'life_steal'
+      );
+      if (!hasHp && row.is_active === 1 && row.damage) {
+        if (row.damage > 0) {
+          list.unshift({
+            displayName: '伤害', stat: 'hp', op: 'loss',
+            params: { amount: row.damage }, applyTo: ['target'],
+          });
+        } else {
+          list.unshift({
+            displayName: '回复', stat: 'hp', op: 'gain',
+            params: { amount: Math.abs(row.damage) }, applyTo: ['target'],
+          });
+        }
+        update.run(JSON.stringify(list), row.id);
+      }
+    }
+
+    // strength 等：damage_bonus → 一条伤害命中效果（仅当 on_hit 尚无 hp/loss）
+    const affixes = db.prepare('SELECT id, damage_bonus, on_hit_effects FROM affixes').all() as {
+      id: string; damage_bonus: number; on_hit_effects: string;
+    }[];
+    const updA = db.prepare('UPDATE affixes SET on_hit_effects = ?, damage_bonus = 0 WHERE id = ?');
+    for (const row of affixes) {
+      if (!row.damage_bonus) continue;
+      let list: any[] = [];
+      try { list = JSON.parse(row.on_hit_effects || '[]'); } catch { list = []; }
+      if (!Array.isArray(list)) list = [];
+      const hasDmg = list.some((e: any) =>
+        (e && e.stat === 'hp' && e.op === 'loss') || e?.type === 'damage'
+      );
+      if (!hasDmg) {
+        list.push({
+          displayName: '伤害',
+          stat: 'hp',
+          op: 'loss',
+          params: { amount: row.damage_bonus },
+          applyTo: ['target'],
+        });
+        updA.run(JSON.stringify(list), row.id);
+      } else {
+        updA.run(JSON.stringify(list), row.id);
+      }
+    }
+    console.log('[DB] entities/affixes 命中效果迁移完成');
+  } catch (e) {
+    console.warn('[DB] entities on_hit_effects 迁移跳过:', (e as Error).message);
   }
 }
 

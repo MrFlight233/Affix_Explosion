@@ -1,0 +1,14 @@
+{
+  "id": "A",
+  "label": "A",
+  "name": "",
+  "notes": "",
+  "dials": {
+    "variance": 7,
+    "motion": 6,
+    "density": 5
+  },
+  "adjustments": "A的设计是不错的，但是主动动作中的靠左和靠右应该都用靠右，也用：分隔出名称和描述。",
+  "source": "click",
+  "receivedAt": "2026-08-03T08:10:44.631Z"
+}

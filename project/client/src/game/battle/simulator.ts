@@ -6,7 +6,7 @@ import {
   MAX_COMBAT_TIME, PENALTY_START_MS, TICK_MS, round6,
 } from './types';
 import { buildTargetingLabel, selectTargets } from './targeting';
-import { resolveOnHitEffects } from './onhit';
+import { resolveWeaponOnHitEffects } from './onhit';
 
 type WeaponEntry = { unit: CombatUnitRuntime; weapon: CombatWeaponRuntime; isPlayer: boolean };
 
@@ -80,7 +80,6 @@ export class BattleSimulator {
 
       const overloadPenalty = unit.isOverloaded ? 1.5 : 1.0;
       const effectiveCost = weapon.staminaCost * overloadPenalty;
-      const damage = weapon.damage;
 
       if (unit.currentStamina < effectiveCost) {
         weapon.remainingTime = 0;
@@ -95,27 +94,29 @@ export class BattleSimulator {
         continue;
       }
 
-      const hitMap = isPlayer ? this.playerOnHitEffects : this.enemyOnHitEffects;
       const label = buildTargetingLabel(weapon);
-      const dmg = damage;
+      const effectsList = weapon.onHitEffects || [];
 
       for (const target of targets) {
         if (target.currentHp <= 0) continue;
-        target.currentHp = round6(Math.min(target.currentHp - dmg, target.totalHp));
 
-        const onHitLabels = resolveOnHitEffects(weapon, unit, target, dmg, hitMap);
-        const effects: string[] = [];
-        if (onHitLabels.length > 0) effects.push(...onHitLabels);
+        const hitLines = resolveWeaponOnHitEffects(effectsList, {
+          starter: unit,
+          actionOwner: unit,
+          target,
+        });
+        const effects = hitLines.map(h => h.label);
+        const netDamage = hitLines.reduce((s, h) => s + h.targetHpDelta, 0);
 
         this.emit({
           time: Math.round(this.combatTime),
           actorName: unit.entityName,
           weaponName: weapon.name,
           targetName: target.entityName,
-          damage: dmg,
+          damage: netDamage,
           targetHpAfter: Math.min(Math.max(target.currentHp, 0), target.totalHp),
           targetMaxHp: target.totalHp,
-          effects,
+          effects: effects.length > 0 ? effects : ['（无效果）'],
           targetingLabel: label,
         });
 

@@ -30,6 +30,7 @@ export interface CombatUnitSnapshot {
   activeWeapons: {
     name: string;
     actionTime: number;
+    /** @deprecated 兼容；伤害来自 onHitEffects */
     damage: number;
     staminaCost: number;
     /** @deprecated 读档兼容；运行时以 filterBy 阵营为准 */
@@ -37,6 +38,8 @@ export interface CombatUnitSnapshot {
     targetCount?: number | 'all';
     targetCondition?: TargetCondition;
     ownerInstanceId: string;
+    /** 合并后的最终命中效果列表 */
+    onHitEffects?: OnHitEffect[];
   }[];
 }
 
@@ -51,12 +54,14 @@ export interface CombatWeaponRuntime {
   name: string;
   actionTime: number;
   remainingTime: number;
+  /** @deprecated 兼容字段；结算读 onHitEffects */
   damage: number;
   staminaCost: number;
   targetFaction?: string;
   targetCount?: number | 'all';
   targetCondition?: TargetCondition;
   ownerInstanceId: string;
+  onHitEffects?: OnHitEffect[];
 }
 
 export interface CombatUnitRuntime {
@@ -83,6 +88,7 @@ export interface CombatEvent {
   damage: number;
   targetHpAfter: number;
   targetMaxHp: number;
+  /** 已格式化的效果子行（或击杀/特殊标记） */
   effects: string[];
   targetingLabel?: string;
 }
@@ -121,6 +127,7 @@ export function buildCombatRuntime(units: CombatUnitSnapshot[]): CombatUnitRunti
       targetCount: w.targetCount,
       targetCondition: w.targetCondition,
       ownerInstanceId: w.ownerInstanceId,
+      onHitEffects: w.onHitEffects ? w.onHitEffects.map(e => ({ ...e, params: { ...e.params }, applyTo: e.applyTo ? [...e.applyTo] : undefined })) : [],
     })),
   }));
 }

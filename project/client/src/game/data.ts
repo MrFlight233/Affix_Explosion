@@ -3,6 +3,15 @@
 // v5: 数据统一从服务端 API 加载，废弃客户端硬编码 fallback
 // ============================================================
 
+export type {
+  OnHitEffect,
+  OnHitApplyTo,
+  OnHitStat,
+  OnHitOp,
+} from '@shared/hitEffectUtil';
+import type { OnHitEffect } from '@shared/hitEffectUtil';
+import { normalizeOnHitEffects } from './hitEffectUtil';
+
 /** 条件 Targeting 配置（v8：多选过滤 + 统一排序 + 目标数量） */
 export interface TargetCondition {
   sortBy?: string | null;
@@ -59,10 +68,10 @@ export interface EntityDef {
   staminaCost: number;
   /** 触发间隔（毫秒），isActive=true 时有效，否则为 0 */
   actionTime: number;
-  /** 每次触发伤害（可为负值=恢复HP），isActive=true 时有效 */
+  /** @deprecated 读档迁移进 onHitEffects；新配置勿依赖 */
   damage: number;
-  /** 全局伤害加成（加至所有武器），独立于 isActive */
-  damageBonus: number;
+  /** 命中效果列表（数值变化管道；与词条字段同名同结构） */
+  onHitEffects?: OnHitEffect[];
   targetType: string | null; // @deprecated 忽略
   targetOrder: string | null; // @deprecated 映射 sortBy
   priorityTarget: number | null; // @deprecated 映射站位k
@@ -88,18 +97,12 @@ export interface EntityDef {
   loadBonus: number;
 }
 
-/** 命中效果定义 */
-export interface OnHitEffect {
-  type: string;
-  params: Record<string, number>;
-}
-
 export interface AffixDef {
   id: string; name: string; category: string;
   costValue: number; slotCost: number;
   repeatable: boolean; prerequisite: string[]; poolPrerequisite: string[];
   effect: string;
-  /** 命中效果列表 */
+  /** 命中效果列表（与实体同结构） */
   onHitEffects?: OnHitEffect[];
 
   // ---- 被动加成（与 EntityDef 对齐，挂载到启动端子树上时生效） ----
@@ -113,8 +116,6 @@ export interface AffixDef {
   hpBonus: number;
   /** 被动加成: 负重上限（聚合到最近启动端 maxLoad） */
   loadBonus: number;
-  /** 全局伤害加成（加至所有武器），独立于 isActive */
-  damageBonus: number;
   /** targeting_modifier 分类词条的专属效果（v7 扩展）— 可覆写所有 targeting 字段 */
   targetingModifier?: TargetingModifier;
   /** 是否有被动加成（v7 新增）。false → 引擎跳过被动累加，提升性能。 */
@@ -216,9 +217,15 @@ export function getEntityClassCategoryIds(): Set<string> {
  */
 export function reloadData(entities: EntityDef[], affixes: AffixDef[], categories?: CategoryDef[]): void {
   ENTITY_DEFS.length = 0;
-  ENTITY_DEFS.push(...entities);
+  ENTITY_DEFS.push(...entities.map(e => ({
+    ...e,
+    onHitEffects: normalizeOnHitEffects(e.onHitEffects || []),
+  })));
   AFFIX_DEFS.length = 0;
-  AFFIX_DEFS.push(...affixes);
+  AFFIX_DEFS.push(...affixes.map(a => ({
+    ...a,
+    onHitEffects: normalizeOnHitEffects(a.onHitEffects || []),
+  })));
   if (categories) {
     CATEGORIES.length = 0;
     CATEGORIES.push(...categories);

@@ -18,6 +18,7 @@ import { mountBattleLog, type BattleLogBridge } from './sim/mountBattleLog';
 import { renderPlaybackControlsHtml } from './playbackControls';
 import type { CollapseState } from './build/types';
 import { renderEntityCard } from './build/entityCard';
+import { formatCombatEventLogHtml } from '../game/activeActionDisplay';
 import { showAppToast } from './toast';
 import {
   renderPoolFiltersHtml, renderPoolItemListHtml, bindPoolFilterEvents,
@@ -592,19 +593,7 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
     if (state.battleLog.length === 0) return '<span style="color:#999;">等待战斗开始...</span>';
     let h = '';
     for (const evt of state.battleLog) {
-      if (evt.effects.includes('击杀')) {
-        h += `<div class="sb-log-entry kill">[${(evt.time / 1000).toFixed(1)}s] ${evt.targetName} 击杀!</div>`;
-      } else if (evt.targetName === '战斗开始') {
-        h += `<div class="sb-log-entry">[0.0s] 战斗开始</div>`;
-      } else {
-        const tl = evt.targetingLabel ? ` <span style="color:#999;font-size:11px">[${evt.targetingLabel}]</span>` : '';
-        h += `<div class="sb-log-entry">[${(evt.time / 1000).toFixed(1)}s] ${evt.actorName} · ${evt.weaponName}${tl} -> ${evt.targetName} 伤害 ${evt.damage} (HP:${Math.round(evt.targetHpAfter)}/${evt.targetMaxHp})</div>`;
-        for (const eff of evt.effects) {
-          if (eff !== '击杀') {
-            h += `<div class="sb-log-entry" style="padding-left:20px">${eff}</div>`;
-          }
-        }
-      }
+      h += formatCombatEventLogHtml(evt);
     }
     return h;
   }

@@ -49,6 +49,14 @@
 
 // ---- 枚举 ----
 
+export type {
+  OnHitEffect,
+  OnHitApplyTo,
+  OnHitStat,
+  OnHitOp,
+} from './hitEffectUtil';
+import type { OnHitEffect } from './hitEffectUtil';
+
 /** @deprecated */
 export type TargetType = '近战' | '远程';
 /** @deprecated 已并入 TargetSortBy */
@@ -134,8 +142,10 @@ export interface EntityDef {
   staminaCost: number;
   /** 触发间隔（毫秒），isActive=true 时有效，否则为 0 */
   actionTime: number;
-  /** isActive=true 时: 每次触发伤害（可为负值=恢复HP）; isActive=false 时: 全局伤害加成（加至所有武器） */
+  /** @deprecated 读档迁移进 onHitEffects */
   damage: number;
+  /** 命中效果列表 */
+  onHitEffects?: OnHitEffect[];
   /** @deprecated */
   targetType: string | null;
   /** @deprecated 映射 sortBy */
@@ -156,14 +166,6 @@ export interface EntityDef {
   hpRegenerationBonus: number;
   /** 被动加成: 生命 */
   hpBonus: number;
-}
-
-// ---- 命中效果 ----
-
-/** 命中效果定义 — 武器命中后触发的额外效果 */
-export interface OnHitEffect {
-  type: string;                    // 效果类型ID（如 'life_steal', 'stamina_drain'）
-  params: Record<string, number>;  // 可扩展参数（如 { percent: 10 } 或 { amount: 5 }）
 }
 
 // ---- 词条 ----
@@ -191,8 +193,6 @@ export interface AffixDef {
   hpRegenerationBonus: number;
   /** 被动加成: 生命 */
   hpBonus: number;
-  /** 全局伤害加成（加至所有武器），独立于 isActive */
-  damageBonus: number;
   /** targeting_modifier 分类词条的专属效果（v7 扩展）— 可覆写所有 targeting 字段 */
   targetingModifier?: TargetingModifier;
   /** 是否有被动加成（v7 新增）。

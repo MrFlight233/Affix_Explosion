@@ -14,6 +14,11 @@ import {
 import {
   mergeFiltersWithLegacyFaction, normalizeTargetCount, resolveSortBy,
 } from './targetingUtil';
+import {
+  cloneOnHitEffects,
+  migrateLegacyDamageToOnHitEffects,
+  normalizeOnHitEffects,
+} from './hitEffectUtil';
 import { data as dataApi, saves as savesApi } from '../api/client';
 import {
   runBattleWithOptionalWorker,
@@ -626,43 +631,23 @@ export class GameEngine {
   }
 
   /** 递归计算战斗快照：遍历嵌套的装备树，聚合所有加成（v5: 支持 ItemInstance.overrides） */
-  /** 遍历实体树，收集每个 isActive 实体的直属 onHitEffects，注册到 Map */
-  private collectEntityOnHitEffects(
-    children: ItemInstance[],
-    map: Map<string, OnHitEffect[]>,
-  ): void {
-    for (const child of children) {
-      if (child.type === 'entity') {
-        const cdef = getEntityDef(child.defId);
-        if (!cdef) continue;
-        const isActive = getEffectiveValue(child, 'isActive') ?? cdef.isActive;
-
-        if (isActive) {
-          // 提取该实体直属 affix 的 onHitEffects
-          const effects: OnHitEffect[] = [];
-          if (child.children) {
-            for (const sub of child.children) {
-              if (sub.type === 'affix') {
-                const adef = getAffixDef(sub.defId);
-                if (adef?.onHitEffects) {
-                  for (const e of adef.onHitEffects) {
-                    effects.push({ type: e.type, params: { ...e.params } });
-                  }
-                }
-              }
-            }
-          }
-          // 始终注册，确保 starter 传播能覆盖所有 isActive 实体
-          const existing = map.get(child.instanceId) || [];
-          map.set(child.instanceId, [...existing, ...effects]);
-        }
-
-        // 递归处理嵌套子实体
-        if (child.children && child.children.length > 0) {
-          this.collectEntityOnHitEffects(child.children, map);
+  /** 宿主贡献袋：实体 onHitEffects（含旧 damage 迁移）+ 直属词条，语义等价 */
+  private collectHostOnHitBag(host: ItemInstance, extraChildLists: ItemInstance[][] = []): OnHitEffect[] {
+    const def = getEntityDef(host.defId);
+    if (!def) return [];
+    const raw = (host.overrides?.onHitEffects ?? def.onHitEffects) as OnHitEffect[] | undefined;
+    const damage = Number(getEffectiveValue(host, 'damage') ?? def.damage ?? 0);
+    const bag = migrateLegacyDamageToOnHitEffects(raw, damage);
+    for (const list of [host.children || [], ...extraChildLists]) {
+      for (const c of list) {
+        if (c.type !== 'affix') continue;
+        const adef = getAffixDef(c.defId);
+        if (adef?.onHitEffects?.length) {
+          bag.push(...cloneOnHitEffects(normalizeOnHitEffects(adef.onHitEffects)));
         }
       }
     }
+    return bag;
   }
 
   private collectFromChildren(
@@ -671,11 +656,11 @@ export class GameEngine {
   ): {
     totalStaminaRegenerationBonus: number; totalStaminaBonus: number;
     totalHpBonus: number; totalHpRegenerationBonus: number;
-    totalLoad: number; totalLoadBonus: number; passiveDamageBonus: number;
+    totalLoad: number; totalLoadBonus: number;
     weapons: CombatUnitSnapshot['activeWeapons'];
   } {
     let totalStaminaRegenerationBonus = 0, totalStaminaBonus = 0, totalHpBonus = 0, totalHpRegenerationBonus = 0;
-    let totalLoad = 0, totalLoadBonus = 0, passiveDamageBonus = 0;
+    let totalLoad = 0, totalLoadBonus = 0;
     const weapons: CombatUnitSnapshot['activeWeapons'] = [];
 
     for (const child of children) {
@@ -683,7 +668,6 @@ export class GameEngine {
         const cdef = getEntityDef(child.defId);
         if (!cdef) continue;
 
-        // 重量始终计入；被动加成仅 hasPassiveBonuses=true 时累加
         totalLoad += Number(getEffectiveValue(child, 'weight') ?? 0);
         const childHasPB = getEffectiveValue(child, 'hasPassiveBonuses') ?? cdef.hasPassiveBonuses;
         if (childHasPB) {
@@ -696,24 +680,33 @@ export class GameEngine {
 
         const isActive = getEffectiveValue(child, 'isActive') ?? cdef.isActive;
         if (isActive) {
-          const wDamage = Number(getEffectiveValue(child, 'damage') ?? 0);
-          const weaponDamage = wDamage + growthStack;
-          // ★ v7: 收集本实体直属 affix 子项中的 targeting_modifier（per-entity 生效）
           const entityTargetingMods = this._collectEntityTargetingMods(child.children);
-          // 被动伤害加成统一在 calculateCombatSnapshots 阶段应用，避免双重累加
+          let localBag = this.collectHostOnHitBag(child);
+          if (growthStack) {
+            localBag = cloneOnHitEffects(localBag);
+            const dmgEff = localBag.find(e => e.stat === 'hp' && e.op === 'loss');
+            if (dmgEff) {
+              dmgEff.params = { ...dmgEff.params, amount: (dmgEff.params.amount ?? 0) + growthStack };
+            } else {
+              localBag.unshift({
+                displayName: '伤害',
+                stat: 'hp',
+                op: 'loss',
+                params: { amount: growthStack },
+                applyTo: ['target'],
+              });
+            }
+          }
           weapons.push({
             name: String(getEffectiveValue(child, 'name') ?? cdef.name),
             actionTime: Number(getEffectiveValue(child, 'actionTime') ?? 0),
-            damage: weaponDamage,
+            damage: 0,
             staminaCost: Number(getEffectiveValue(child, 'staminaCost') ?? 0),
             ...this._resolveWeaponTargeting(entityTargetingMods, child, cdef),
             ownerInstanceId: child.instanceId,
+            onHitEffects: localBag,
           });
-        } else if (childHasPB) {
-          // isActive=false 且有被动 → 累加 damageBonus 到被动池
-          passiveDamageBonus += Number(getEffectiveValue(child, 'damageBonus') ?? 0);
         }
-        // 递归处理嵌套子项（isActive 和 !isActive 实体都需要：武器上的词条、嵌套实体等）
         if (child.children && child.children.length > 0) {
           const nested = this.collectFromChildren(child.children, growthStack);
           totalStaminaRegenerationBonus += nested.totalStaminaRegenerationBonus;
@@ -722,132 +715,78 @@ export class GameEngine {
           totalHpRegenerationBonus += nested.totalHpRegenerationBonus;
           totalLoad += nested.totalLoad;
           totalLoadBonus += nested.totalLoadBonus;
-          passiveDamageBonus += nested.passiveDamageBonus;
           for (const w of nested.weapons) weapons.push(w);
         }
       }
       if (child.type === 'affix') {
         const adef = getAffixDef(child.defId);
-        if (adef) {
-          // v7: 快速跳过无被动加成的词条（避免逐字段检查零值，提升性能）
-          if (adef.hasPassiveBonuses) {
-            totalStaminaRegenerationBonus += adef.staminaRegenerationBonus ?? 0;
-            totalStaminaBonus += adef.staminaBonus ?? 0;
-            totalHpBonus += adef.hpBonus ?? 0;
-            totalHpRegenerationBonus += adef.hpRegenerationBonus ?? 0;
-            totalLoadBonus += adef.loadBonus ?? 0;
-            passiveDamageBonus += adef.damageBonus ?? 0;
-          }
+        if (adef?.hasPassiveBonuses) {
+          totalStaminaRegenerationBonus += adef.staminaRegenerationBonus ?? 0;
+          totalStaminaBonus += adef.staminaBonus ?? 0;
+          totalHpBonus += adef.hpBonus ?? 0;
+          totalHpRegenerationBonus += adef.hpRegenerationBonus ?? 0;
+          totalLoadBonus += adef.loadBonus ?? 0;
         }
       }
     }
-    return { totalStaminaRegenerationBonus, totalStaminaBonus, totalHpBonus, totalHpRegenerationBonus, totalLoad, totalLoadBonus, passiveDamageBonus, weapons };
+    return { totalStaminaRegenerationBonus, totalStaminaBonus, totalHpBonus, totalHpRegenerationBonus, totalLoad, totalLoadBonus, weapons };
   }
 
   /** 从 DeploySlot 构建 CombatUnitSnapshot（v4：递归嵌套）。可传入自定义 slots 用于模拟对战。 */
   calculateCombatSnapshots(slots?: DeploySlot[]): { snapshots: CombatUnitSnapshot[]; onHitEffects: Map<string, OnHitEffect[]> } {
     const deploySlots = slots ?? this.state.deploySlots;
     const units: CombatUnitSnapshot[] = [];
-    // ★ 构建实体→命中效果映射表（跨所有 slot 累加）
     const entityOnHitEffects = new Map<string, OnHitEffect[]>();
-    const registerEffects = (instanceId: string, effects: OnHitEffect[]) => {
-      if (effects.length === 0) return;
-      const existing = entityOnHitEffects.get(instanceId) || [];
-      entityOnHitEffects.set(instanceId, [...existing, ...effects]);
-    };
+
     for (let slotIdx = 0; slotIdx < deploySlots.length; slotIdx++) {
       const slot = deploySlots[slotIdx];
       const edef = getEntityDef(slot.entity.defId);
       if (!edef) continue;
 
       const growthStack = this.state.growthStacks[slot.entity.instanceId] || 0;
-      // 合并 entity 自身的默认子实体 + slot 的用户挂载物品
       const allChildren = [...(slot.entity.children || []), ...slot.children];
       const collected = isStarter(edef)
         ? this.collectFromChildren(allChildren, growthStack)
-        : { totalStaminaRegenerationBonus: 0, totalStaminaBonus: 0, totalHpBonus: 0, totalHpRegenerationBonus: 0, totalLoad: 0, totalLoadBonus: 0, passiveDamageBonus: 0, weapons: [] };
+        : { totalStaminaRegenerationBonus: 0, totalStaminaBonus: 0, totalHpBonus: 0, totalHpRegenerationBonus: 0, totalLoad: 0, totalLoadBonus: 0, weapons: [] as CombatUnitSnapshot['activeWeapons'] };
 
-      // ★ 启动端自身的被动加成也对自己生效（受 hasPassiveBonuses 约束）
       if (isStarter(edef) && edef.hasPassiveBonuses) {
         collected.totalStaminaRegenerationBonus += edef.staminaRegenerationBonus;
         collected.totalStaminaBonus += edef.staminaBonus;
         collected.totalHpBonus += edef.hpBonus;
         collected.totalHpRegenerationBonus += edef.hpRegenerationBonus;
         collected.totalLoadBonus += edef.loadBonus ?? 0;
-        collected.passiveDamageBonus += Number(getEffectiveValue(slot.entity, 'damageBonus') ?? edef.damageBonus ?? 0);
       }
 
-      // ★ 启动端自身如果是主动实体，也加入武器列表
+      // 启动端袋：传播到全部主动；本地袋已在 collectFromChildren 写入各武器
+      const starterBag = isStarter(edef)
+        ? this.collectHostOnHitBag(slot.entity, [slot.children])
+        : [];
+
       if (isStarter(edef)) {
         const selfIsActive = getEffectiveValue(slot.entity, 'isActive') ?? edef.isActive;
         if (selfIsActive) {
-          // v7: 收集启动端直属 affix 子项中的 targeting_modifier（per-entity 生效）
           const starterTargetingMods = this._collectEntityTargetingMods(allChildren);
+          // 启动端自身主动：最终列表 = starter 袋（本地即 starter 袋，勿重复）
           collected.weapons.unshift({
             name: edef.name,
             actionTime: Number(getEffectiveValue(slot.entity, 'actionTime') ?? 0),
-            damage: Number(getEffectiveValue(slot.entity, 'damage') ?? 0) + growthStack,
+            damage: 0,
             staminaCost: Number(getEffectiveValue(slot.entity, 'staminaCost') ?? 0),
             ...this._resolveWeaponTargeting(starterTargetingMods, slot.entity, edef),
             ownerInstanceId: slot.entity.instanceId,
+            onHitEffects: cloneOnHitEffects(starterBag),
           });
         }
-      }
 
-      // onHitEffects 收集
-      // ★ starter 直属 onHitEffects 传播源（slot.entity.children + slot.children 的 affix 都传播）
-      const starterOnHitEffects: OnHitEffect[] = [];
-
-      if (isStarter(edef)) {
-        // 步骤1：遍历子树，收集每个 isActive 实体的自身效果
-        this.collectEntityOnHitEffects(allChildren, entityOnHitEffects);
-        // starter 自身若是 isActive，也收集其直属 affix 效果
-        if (isStarter(edef)) {
-          const starterEffects: OnHitEffect[] = [];
-          for (const c of (slot.entity.children || [])) {
-            if (c.type === 'affix') {
-              const adef = getAffixDef(c.defId);
-              if (adef?.onHitEffects) {
-                for (const e of adef.onHitEffects) {
-                  starterEffects.push({ type: e.type, params: { ...e.params } });
-                }
-              }
-            }
-          }
-          if (starterEffects.length > 0) {
-            registerEffects(slot.entity.instanceId, starterEffects);
-            // ★ 同时加入传播列表，使子树所有 isActive 实体也能获得此效果
-            starterOnHitEffects.push(...starterEffects);
-          }
-        }
-
-        // 步骤2：收集 slot.children 中的 affix onHitEffects
-        for (const c of slot.children) {
-          if (c.type === 'affix') {
-            const adef = getAffixDef(c.defId);
-            if (adef?.onHitEffects) {
-              for (const e of adef.onHitEffects) {
-                starterOnHitEffects.push({ type: e.type, params: { ...e.params } });
-              }
-            }
-          }
-        }
-
-        // 步骤3：传播 — 将 starter 效果追加到子树每个 isActive 实体的 map entry
-        if (starterOnHitEffects.length > 0) {
-          for (const [instanceId] of entityOnHitEffects) {
-            registerEffects(instanceId, starterOnHitEffects);
-          }
-        }
-
-        const netPassive = collected.passiveDamageBonus;
         for (const w of collected.weapons) {
-          // 符号感知：正的被动加成只影响正伤害武器，负的只影响负伤害（治疗）武器
-          if ((netPassive > 0 && w.damage > 0) || (netPassive < 0 && w.damage < 0)) {
-            w.damage += netPassive;
-          }
+          if (w.ownerInstanceId === slot.entity.instanceId) continue;
+          const local = w.onHitEffects || [];
+          w.onHitEffects = [...cloneOnHitEffects(starterBag), ...local];
         }
 
+        for (const w of collected.weapons) {
+          entityOnHitEffects.set(w.ownerInstanceId, cloneOnHitEffects(w.onHitEffects || []));
+        }
       }
 
       const hp = edef.hp + collected.totalHpBonus;
@@ -911,16 +850,28 @@ export class GameEngine {
       if (rand() > 0.5) {
         const wt = weaponTemplates[Math.floor(rand() * weaponTemplates.length)];
         const wdmg = Math.floor(wt.damage * mult * (0.8 + rand() * 0.4));
-        weapons.push({ ...wt, damage: wdmg > 0 ? wdmg : wt.damage, ownerInstanceId: `enemy_${i}` });
+        const amount = wdmg > 0 ? wdmg : wt.damage;
+        weapons.push({
+          ...wt,
+          damage: 0,
+          ownerInstanceId: `enemy_${i}`,
+          onHitEffects: amount
+            ? [{ displayName: '伤害', stat: 'hp', op: 'loss', params: { amount }, applyTo: ['target'] }]
+            : [],
+        });
       } else {
+        const amount = Math.floor((2 + rand() * 3) * mult);
         weapons.push({
           name: '基础攻击',
           actionTime: 2000 + Math.floor(rand() * 1500),
-          damage: Math.floor((2 + rand() * 3) * mult),
+          damage: 0,
           staminaCost: 8,
           targetCount: 1,
           targetCondition: { sortBy: t.sortBy, filterBy: ['敌人'] },
           ownerInstanceId: `enemy_${i}`,
+          onHitEffects: [
+            { displayName: '伤害', stat: 'hp', op: 'loss', params: { amount }, applyTo: ['target'] },
+          ],
         });
       }
 

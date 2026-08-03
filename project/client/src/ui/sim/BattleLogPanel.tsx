@@ -1,5 +1,10 @@
 import { For, type Accessor } from 'solid-js';
 import type { CombatEvent } from '../../game/engine';
+import {
+  formatCombatEventLogHtml,
+  formatCombatKillLine,
+  formatCombatLogHeader,
+} from '../../game/activeActionDisplay';
 
 const LOG_CAP = 500;
 
@@ -22,7 +27,7 @@ function toRows(events: CombatEvent[]): LogRow[] {
       rows.push({
         key: `${i}-kill`,
         className: 'sb-log-entry kill',
-        text: `[${(evt.time / 1000).toFixed(1)}s] ${evt.targetName} 击杀!`,
+        text: formatCombatKillLine(evt.time, evt.targetName),
       });
       continue;
     }
@@ -30,10 +35,26 @@ function toRows(events: CombatEvent[]): LogRow[] {
       rows.push({ key: `${i}-start`, className: 'sb-log-entry', text: '[0.0s] 战斗开始' });
       continue;
     }
+    if (evt.targetName === '超时惩罚') {
+      rows.push({
+        key: `${i}-ot`,
+        className: 'sb-log-entry',
+        text: `[${(evt.time / 1000).toFixed(1)}s] 超时惩罚 ${evt.effects[0] || ''}`,
+      });
+      continue;
+    }
+    if (!evt.actorName && !evt.weaponName) {
+      rows.push({
+        key: `${i}-misc`,
+        className: 'sb-log-entry',
+        text: `[${(evt.time / 1000).toFixed(1)}s] ${evt.targetName}`,
+      });
+      continue;
+    }
     rows.push({
       key: `${i}-main`,
       className: 'sb-log-entry',
-      text: `[${(evt.time / 1000).toFixed(1)}s] ${evt.actorName} · ${evt.weaponName} -> ${evt.targetName} 伤害 ${evt.damage} (HP:${Math.round(evt.targetHpAfter)}/${evt.targetMaxHp})`,
+      text: formatCombatLogHeader(evt),
     });
     for (let j = 0; j < evt.effects.length; j++) {
       const eff = evt.effects[j];
@@ -63,3 +84,6 @@ export function BattleLogPanel(props: BattleLogProps) {
     </For>
   );
 }
+
+/** 供非 Solid 页面复用同一事件→HTML 规则 */
+export { formatCombatEventLogHtml };

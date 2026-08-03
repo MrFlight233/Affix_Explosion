@@ -4,6 +4,8 @@
 
 import { getEntityDef, getAffixDef, isStarter, EntityDef, getEntityCategory, getCategoryName, getDefPackageTradeValue, getAffixPackageTradeValue } from '../game/data';
 import { formatTargetingSummary } from '../game/targetingUtil';
+import { migrateLegacyDamageToOnHitEffects } from '../game/hitEffectUtil';
+import { formatConfigEffectsBlock } from '../game/activeActionDisplay';
 
 let tooltipEl: HTMLElement | null = null;
 
@@ -36,7 +38,6 @@ export function showTooltip(e: MouseEvent, defId: string, type: 'entity' | 'affi
 function renderEntityTooltip(tip: HTMLElement, def: EntityDef) {
   const isSt = isStarter(def);
   const cat = getEntityCategory(def).join(' / ');
-  const hasPsv = !!(def.damageBonus) || !!(def.hpBonus) || !!(def.hpRegenerationBonus) || !!(def.staminaBonus) || !!(def.staminaRegenerationBonus);
 
   // 标题行: 名称(左) + 价格(右)
   let html = `<div class="tt-name"><span>${def.name}</span><span class="tt-price">价${getDefPackageTradeValue(def)}</span></div>`;
@@ -54,12 +55,11 @@ function renderEntityTooltip(tip: HTMLElement, def: EntityDef) {
   html += `<div class="tt-row"><span class="tt-label">槽位消耗:</span>${def.slotCost}</div>`;
   if (!isSt) html += `<div class="tt-row"><span class="tt-label">重量:</span>${def.weight}g</div>`;
 
-  // 主动动作
+  // 主动动作（方向 A：左对齐扁平行，无分节标题）
   if (def.isActive) {
     html += '<div class="tt-section">主动动作</div>';
-    html += `<div class="tt-row"><span class="tt-label">耗时:</span>${def.actionTime}ms</div>`;
-    if (def.damage) html += `<div class="tt-row"><span class="tt-label">伤害:</span>${def.damage}</div>`;
-    html += `<div class="tt-row"><span class="tt-label">耐力消耗:</span>${def.staminaCost}</div>`;
+    html += `<div class="tt-row"><span class="tt-label">耐力:</span>${def.staminaCost}</div>`;
+    html += `<div class="tt-row"><span class="tt-label">间隔:</span>${(def.actionTime / 1000).toFixed(1)}s</div>`;
     html += `<div class="tt-row"><span class="tt-label">索敌:</span>${formatTargetingSummary({
       targetFaction: def.targetFaction,
       sortBy: def.targetCondition?.sortBy,
@@ -68,12 +68,25 @@ function renderEntityTooltip(tip: HTMLElement, def: EntityDef) {
       filterBy: def.targetCondition?.filterBy,
       targetCount: def.targetCount ?? def.targetCondition?.targetCount,
     })}</div>`;
+    const effects = migrateLegacyDamageToOnHitEffects(def.onHitEffects, Number(def.damage) || 0);
+    const lines = formatConfigEffectsBlock(effects);
+    if (lines.length === 0) {
+      html += `<div class="tt-row">无效果</div>`;
+    } else {
+      for (const line of lines) {
+        html += `<div class="tt-row">${line}</div>`;
+      }
+    }
   }
+
+  const hasPsv = def.hasPassiveBonuses !== false && (
+    !!(def.hpBonus) || !!(def.hpRegenerationBonus)
+    || !!(def.staminaBonus) || !!(def.staminaRegenerationBonus) || !!(def.loadBonus)
+  );
 
   // 被动加成
   if (hasPsv) {
     html += '<div class="tt-section">被动加成</div>';
-    if (def.damageBonus) html += `<div class="tt-row"><span class="tt-label">伤害加成:</span>${def.damageBonus > 0 ? '+' : ''}${def.damageBonus}</div>`;
     if (def.hpBonus) html += `<div class="tt-row"><span class="tt-label">生命加成:</span>${def.hpBonus > 0 ? '+' : ''}${def.hpBonus}</div>`;
     if (def.hpRegenerationBonus) html += `<div class="tt-row"><span class="tt-label">生命恢复:</span>+${def.hpRegenerationBonus}/秒</div>`;
     if (def.staminaBonus) html += `<div class="tt-row"><span class="tt-label">耐力加成:</span>+${def.staminaBonus}</div>`;
@@ -118,11 +131,13 @@ function renderAffixTooltip(tip: HTMLElement, def: any) {
   html += `<div class="tt-cat">${getCategoryName(def.category)}</div>`;
   html += '<div class="tt-section">效果描述</div>';
   html += `<div class="tt-row"><span class="tt-label">效果:</span>${def.effect}</div>`;
+  const hasPsv = def.hasPassiveBonuses !== false && (
+    !!(def.hpBonus) || !!(def.hpRegenerationBonus)
+    || !!(def.staminaBonus) || !!(def.staminaRegenerationBonus) || !!(def.loadBonus)
+  );
   // 被动加成
-  const hasPsv = !!(def.damageBonus) || !!(def.hpBonus) || !!(def.hpRegenerationBonus) || !!(def.staminaBonus) || !!(def.staminaRegenerationBonus);
   if (hasPsv) {
     html += '<div class="tt-section">被动加成</div>';
-    if (def.damageBonus) html += `<div class="tt-row"><span class="tt-label">伤害加成:</span>${def.damageBonus > 0 ? '+' : ''}${def.damageBonus}</div>`;
     if (def.hpBonus) html += `<div class="tt-row"><span class="tt-label">生命加成:</span>${def.hpBonus > 0 ? '+' : ''}${def.hpBonus}</div>`;
     if (def.hpRegenerationBonus) html += `<div class="tt-row"><span class="tt-label">生命恢复:</span>+${def.hpRegenerationBonus}/秒</div>`;
     if (def.staminaBonus) html += `<div class="tt-row"><span class="tt-label">耐力加成:</span>+${def.staminaBonus}</div>`;
@@ -136,6 +151,13 @@ function renderAffixTooltip(tip: HTMLElement, def: any) {
   html += `<div class="tt-row"><span class="tt-label">前置词条:</span>${resolvePrereq(def.prerequisite)}</div>`;
   if (def.poolPrerequisite && def.poolPrerequisite.length > 0) {
     html += `<div class="tt-row"><span class="tt-label">池前置:</span>${resolvePrereq(def.poolPrerequisite)}</div>`;
+  }
+  const ohLines = formatConfigEffectsBlock(def.onHitEffects);
+  if (ohLines.length > 0) {
+    html += '<div class="tt-section">效果</div>';
+    for (const line of ohLines) {
+      html += `<div class="tt-row"><span class="tt-label"></span>${line}</div>`;
+    }
   }
   if (def.targetingModifier) {
     const tm = def.targetingModifier;

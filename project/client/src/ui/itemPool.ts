@@ -23,6 +23,8 @@ import {
   FILTER_LABELS,
   normalizeFilterBy,
 } from '../game/targetingUtil';
+import { formatConfigEffectsBlock } from '../game/activeActionDisplay';
+import { migrateLegacyDamageToOnHitEffects } from '../game/hitEffectUtil';
 
 type TabType = 'entities' | 'affixes';
 
@@ -32,11 +34,6 @@ interface TabSession {
   entityCatFilter: string;
   affixCatFilter: string;
 }
-
-const ON_HIT_LABEL: Record<string, string> = {
-  life_steal: 'life_steal — 吸血',
-  stamina_drain: 'stamina_drain — 削耐',
-};
 
 function esc(s: unknown): string {
   return String(s ?? '')
@@ -270,10 +267,11 @@ export function showFullItemPool(onBack: () => void): void {
       let body = field('可触发动作', e.isActive ? '有' : '无');
       if (e.isActive) {
         const tc = e.targetCondition;
+        const effects = migrateLegacyDamageToOnHitEffects(e.onHitEffects, Number(e.damage) || 0);
+        const effectLines = formatConfigEffectsBlock(effects);
         body += [
           field('耐力消耗', e.staminaCost),
           field('触发耗时(ms)', e.actionTime),
-          field('伤害(负值=恢复)', e.damage),
           field('索敌', formatTargetingSummary({
             targetFaction: e.targetFaction,
             sortBy: tc?.sortBy,
@@ -282,6 +280,7 @@ export function showFullItemPool(onBack: () => void): void {
             filterBy: tc?.filterBy,
             targetCount: e.targetCount ?? tc?.targetCount,
           })),
+          field('效果', effectLines.length ? effectLines.join('<br>') : '无'),
         ].join('');
       }
       h += section('可触发动作', body);
@@ -293,7 +292,6 @@ export function showFullItemPool(onBack: () => void): void {
       let body = field('被动加成模式', hasPB ? '有' : '无');
       if (hasPB) {
         body += [
-          field('伤害加成(正=增伤,负=增强治疗)', e.damageBonus),
           field('生命加成', e.hpBonus),
           field('生命恢复加成', e.hpRegenerationBonus),
           field('耐力加成', e.staminaBonus),
@@ -346,7 +344,6 @@ export function showFullItemPool(onBack: () => void): void {
       let body = field('被动加成模式', hasPB ? '有' : '无');
       if (hasPB) {
         body += [
-          field('伤害加成(正=增伤,负=增强治疗)', a.damageBonus),
           field('生命加成', a.hpBonus),
           field('生命恢复加成', a.hpRegenerationBonus),
           field('耐力加成', a.staminaBonus),
@@ -357,17 +354,13 @@ export function showFullItemPool(onBack: () => void): void {
       h += section('被动加成', body);
     }
 
-    // 命中效果
+    // 效果
     {
-      const onHit = a.onHitEffects?.[0];
-      const effType = onHit?.type || '';
-      let body = field('效果类型', effType ? (ON_HIT_LABEL[effType] || effType) : '无');
-      if (effType) {
-        const pct = onHit?.params?.percent ?? 0;
-        const amt = onHit?.params?.amount ?? 0;
-        body += field('参数', `${pct}% / 固定值 ${amt}`);
-      }
-      h += section('命中效果', body);
+      const effectLines = formatConfigEffectsBlock(a.onHitEffects);
+      let body = effectLines.length === 0
+        ? field('效果', '无')
+        : effectLines.map(line => field('效果', line)).join('');
+      h += section('效果', body);
     }
 
     // Targeting 覆写

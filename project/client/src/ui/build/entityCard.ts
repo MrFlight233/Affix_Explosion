@@ -8,6 +8,11 @@ import {
 import { formatWeightG, formatWeightBonusG } from './format';
 import type { CardSide, CardMode, CollapseState } from './types';
 import { formatTargetingSummary } from '../../game/targetingUtil';
+import { migrateLegacyDamageToOnHitEffects } from '../../game/hitEffectUtil';
+import {
+  formatActiveActionCollapseSummary,
+  formatConfigEffectsBlock,
+} from '../../game/activeActionDisplay';
 
 function targetingFromWeaponOrDef(
   weapon: { targetFaction?: string; targetCount?: number | 'all'; targetCondition?: any } | null | undefined,
@@ -36,8 +41,7 @@ function targetingFromWeaponOrDef(
 /** 检查实体是否有被动加成（受 hasPassiveBonuses 约束；字段含 loadBonus） */
 export function hasPassive(def: EntityDef): boolean {
   if (def.hasPassiveBonuses === false) return false;
-  return ((def.damageBonus || 0) !== 0)
-    || (def.hpBonus || 0) !== 0
+  return (def.hpBonus || 0) !== 0
     || (def.hpRegenerationBonus || 0) !== 0
     || (def.staminaBonus || 0) !== 0
     || (def.staminaRegenerationBonus || 0) !== 0
@@ -46,7 +50,7 @@ export function hasPassive(def: EntityDef): boolean {
 
 export function hasAffixPassive(def: AffixDef): boolean {
   if (def.hasPassiveBonuses === false) return false;
-  return !!(def.damageBonus) || !!(def.hpBonus) || !!(def.hpRegenerationBonus)
+  return !!(def.hpBonus) || !!(def.hpRegenerationBonus)
     || !!(def.staminaBonus) || !!(def.staminaRegenerationBonus) || !!(def.loadBonus);
 }
 
@@ -99,53 +103,66 @@ export function renderCardKeyInfo(
 
     const effIsActive = edef ? Boolean(getEffectiveValue(item, 'isActive') ?? edef.isActive) : false;
     if (effIsActive && edef) {
-      let dmg: number, time: string, targeting: string;
+      let remaining: number | undefined;
+      let staminaCost = Number(getEffectiveValue(item, 'staminaCost') ?? edef.staminaCost ?? 0);
+      let targeting = targetingFromWeaponOrDef(null, edef, item);
+      const effects = migrateLegacyDamageToOnHitEffects(
+        (getEffectiveValue(item, 'onHitEffects') as any) ?? edef.onHitEffects,
+        Number(getEffectiveValue(item, 'damage') ?? edef.damage ?? 0),
+      );
       if (mode === 'battle' && combatUnit) {
         const sw = combatUnit.weapons[0];
         if (sw && sw.name === edef.name) {
-          dmg = sw.damage;
-          time = sideFirst
-            ? `倒计时:<span id="cu-cd-${sideFirst}-${combatUnit.instanceId}-0">${(Math.max(sw.remainingTime, 0) / 1000).toFixed(1)}s</span>`
-            : `倒计时:${(Math.max(sw.remainingTime, 0) / 1000).toFixed(1)}s`;
+          remaining = Math.max(sw.remainingTime, 0);
+          staminaCost = sw.staminaCost;
           targeting = targetingFromWeaponOrDef(sw, edef, item);
-        } else {
-          dmg = Number(getEffectiveValue(item, 'damage') ?? 0);
-          time = `耗时:${(Number(getEffectiveValue(item, 'actionTime') ?? 0) / 1000).toFixed(1)}s`;
-          targeting = targetingFromWeaponOrDef(null, edef, item);
         }
-      } else {
-        dmg = Number(getEffectiveValue(item, 'damage') ?? 0);
-        time = `耗时:${(Number(getEffectiveValue(item, 'actionTime') ?? 0) / 1000).toFixed(1)}s`;
-        targeting = targetingFromWeaponOrDef(null, edef, item);
       }
-      s += `  伤:${dmg}  ${time}  ${targeting}`;
+      s += '  ' + formatActiveActionCollapseSummary({
+        staminaCost,
+        targetingSummary: targeting,
+        effects: mode === 'battle' && combatUnit?.weapons[0]?.name === edef.name
+          ? (combatUnit.weapons[0].onHitEffects || effects)
+          : effects,
+      });
+      if (mode === 'battle' && remaining !== undefined) {
+        const cd = sideFirst
+          ? `倒计时:<span id="cu-cd-${sideFirst}-${combatUnit!.instanceId}-0">${(remaining / 1000).toFixed(1)}s</span>`
+          : `倒计时:${(remaining / 1000).toFixed(1)}s`;
+        s += `  ${cd}`;
+      }
     }
 
     return s;
   } else if (isActive) {
-    let dmg: number, time: string, targeting: string;
+    let remaining: number | undefined;
+    let staminaCost = edef.staminaCost;
+    let targeting = targetingFromWeaponOrDef(null, edef);
+    let effects = migrateLegacyDamageToOnHitEffects(edef.onHitEffects, edef.damage || 0);
     if (mode === 'battle' && combatUnit) {
       const matched = combatUnit.weapons.find(w => w.name === edef.name);
       if (matched) {
-        dmg = matched.damage;
-        if (sideFirst) {
-          const wIdx = combatUnit.weapons.indexOf(matched);
-          time = `倒计时:<span id="cu-cd-${sideFirst}-${combatUnit.instanceId}-${wIdx}">${(Math.max(matched.remainingTime, 0) / 1000).toFixed(1)}s</span>`;
-        } else {
-          time = `倒计时:${(Math.max(matched.remainingTime, 0) / 1000).toFixed(1)}s`;
-        }
+        remaining = Math.max(matched.remainingTime, 0);
+        staminaCost = matched.staminaCost;
         targeting = targetingFromWeaponOrDef(matched, edef);
-      } else {
-        dmg = edef.damage;
-        time = `耗时:${(edef.actionTime / 1000).toFixed(1)}s`;
-        targeting = targetingFromWeaponOrDef(null, edef);
+        if (matched.onHitEffects?.length) effects = matched.onHitEffects;
       }
-    } else {
-      dmg = edef.damage;
-      time = `耗时:${(edef.actionTime / 1000).toFixed(1)}s`;
-      targeting = targetingFromWeaponOrDef(null, edef);
     }
-    return `${edef.name}  伤:${dmg}  ${time}  ${targeting}`;
+    let s = `${edef.name}  ${formatActiveActionCollapseSummary({
+      staminaCost,
+      targetingSummary: targeting,
+      effects,
+    })}`;
+    if (mode === 'battle' && remaining !== undefined && combatUnit) {
+      const matched = combatUnit.weapons.find(w => w.name === edef.name);
+      if (matched && sideFirst) {
+        const wIdx = combatUnit.weapons.indexOf(matched);
+        s += `  倒计时:<span id="cu-cd-${sideFirst}-${combatUnit.instanceId}-${wIdx}">${(remaining / 1000).toFixed(1)}s</span>`;
+      } else {
+        s += `  倒计时:${(remaining / 1000).toFixed(1)}s`;
+      }
+    }
+    return s;
   } else {
     const cat = getEntityCategory(edef).join(' / ');
     return `${edef.name}  HP:${edef.hp}  重:${formatWeightG(edef.weight)}  ${cat}`;
@@ -231,8 +248,7 @@ export function renderEntityCard(
       h += '<div class="sb-card-block">';
       h += '<div class="sb-block-title">被动加成</div>';
       h += '<div class="sb-card-stats">';
-      if (adef.damageBonus) h += `伤害加成: ${adef.damageBonus > 0 ? '+' : ''}${adef.damageBonus}  `;
-      if (adef.hpBonus) h += `生命加成: ${adef.hpBonus > 0 ? '+' : ''}${adef.hpBonus}  `;
+      if (adef.hpBonus) h += `生命加成: +${adef.hpBonus}  `;
       if (adef.hpRegenerationBonus) h += `生命恢复: +${adef.hpRegenerationBonus}/s  `;
       if (adef.staminaBonus) h += `耐力加成: +${adef.staminaBonus}  `;
       if (adef.staminaRegenerationBonus) h += `耐力恢复: +${adef.staminaRegenerationBonus}/s  `;
@@ -260,10 +276,9 @@ export function renderEntityCard(
 
     if (adef.onHitEffects && adef.onHitEffects.length > 0) {
       h += '<div class="sb-card-block">';
-      h += '<div class="sb-block-title">命中效果</div>';
-      for (const oh of adef.onHitEffects) {
-        const params = Object.entries(oh.params || {}).map(([k, v]) => `${k}:${v}`).join(' ');
-        h += `<div class="sb-card-stats">${oh.type}${params ? ` (${params})` : ''}</div>`;
+      h += '<div class="sb-block-title">效果</div>';
+      for (const line of formatConfigEffectsBlock(adef.onHitEffects)) {
+        h += `<div class="sb-card-stats">${line}</div>`;
       }
       h += '</div>';
     }
@@ -321,8 +336,7 @@ export function renderEntityCard(
   }
   if (edef && hasPassive(edef)) {
     h += '<div class="sb-card-stats">';
-    if (edef.damageBonus) h += `伤害加成: ${edef.damageBonus > 0 ? '+' : ''}${edef.damageBonus}  `;
-    if (edef.hpBonus) h += `生命加成: ${edef.hpBonus > 0 ? '+' : ''}${edef.hpBonus}  `;
+    if (edef.hpBonus) h += `生命加成: +${edef.hpBonus}  `;
     if (edef.hpRegenerationBonus) h += `生命恢复: +${edef.hpRegenerationBonus}/s  `;
     if (edef.staminaBonus) h += `耐力加成: +${edef.staminaBonus}  `;
     if (edef.staminaRegenerationBonus) h += `耐力恢复: +${edef.staminaRegenerationBonus}/s  `;
@@ -334,19 +348,47 @@ export function renderEntityCard(
   if ((isActive || starterHasActive) && edef) {
     h += '<div class="sb-card-block">';
     h += '<div class="sb-block-title">主动动作</div>';
-    h += '<div class="sb-card-stats">';
+    const effects = mode === 'battle' && combatUnit
+      ? (combatUnit.weapons.find(w => w.name === edef.name)?.onHitEffects
+        || migrateLegacyDamageToOnHitEffects(edef.onHitEffects, edef.damage || 0))
+      : migrateLegacyDamageToOnHitEffects(
+          (getEffectiveValue(item, 'onHitEffects') as any) ?? edef.onHitEffects,
+          Number(getEffectiveValue(item, 'damage') ?? edef.damage ?? 0),
+        );
+    let staminaCost = edef.staminaCost;
+    let actionTime = edef.actionTime;
+    let remaining: number | undefined;
+    let targeting = targetingFromWeaponOrDef(null, edef, item);
+    let cdSpan = '';
     if (mode === 'battle' && combatUnit) {
       const matched = combatUnit.weapons.find(w => w.name === edef.name);
       if (matched) {
         const wIdx = combatUnit.weapons.indexOf(matched);
-        h += `伤:${matched.damage}  倒计时:<span id="cu-cd-${sideFirst}-${combatUnit!.instanceId}-${wIdx}">${(Math.max(matched.remainingTime, 0) / 1000).toFixed(1)}s</span>  耐耗:${matched.staminaCost}  ${targetingFromWeaponOrDef(matched, edef)}`;
-      } else {
-        h += `伤:${edef.damage}  耗时:${(edef.actionTime / 1000).toFixed(1)}s  耐耗:${edef.staminaCost}  ${targetingFromWeaponOrDef(null, edef)}`;
+        staminaCost = matched.staminaCost;
+        actionTime = matched.actionTime;
+        remaining = Math.max(matched.remainingTime, 0);
+        targeting = targetingFromWeaponOrDef(matched, edef);
+        cdSpan = `<span id="cu-cd-${sideFirst}-${combatUnit.instanceId}-${wIdx}">${(remaining / 1000).toFixed(1)}s</span>`;
       }
-    } else {
-      h += `伤:${edef.damage}  耗时:${(edef.actionTime / 1000).toFixed(1)}s  耐耗:${edef.staminaCost}  ${targetingFromWeaponOrDef(null, edef)}`;
     }
-    h += '</div></div>';
+    // 方向 A：左对齐扁平行，无副标题
+    let costLine = `耐力: ${staminaCost}`;
+    if (cdSpan) {
+      costLine += `  倒计时: ${cdSpan}`;
+    } else {
+      costLine += `  间隔: ${(actionTime / 1000).toFixed(1)}s`;
+    }
+    h += `<div class="sb-card-stats">${costLine}</div>`;
+    h += `<div class="sb-card-stats">索敌: ${targeting}</div>`;
+    const effectLines = formatConfigEffectsBlock(effects);
+    if (effectLines.length === 0) {
+      h += '<div class="sb-card-stats">无效果</div>';
+    } else {
+      for (const line of effectLines) {
+        h += `<div class="sb-card-stats">${line}</div>`;
+      }
+    }
+    h += '</div>';
   }
 
   const dynAffixList = (item.children || []).filter(c => c.type === 'affix');

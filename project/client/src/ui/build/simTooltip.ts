@@ -8,6 +8,11 @@ import {
 import { formatWeightG, formatWeightBonusG } from './format';
 import { hasPassive, resolveNames } from './entityCard';
 import { formatTargetingSummary } from '../../game/targetingUtil';
+import { migrateLegacyDamageToOnHitEffects } from '../../game/hitEffectUtil';
+import {
+  formatActiveActionCollapseSummary,
+  formatConfigEffectsBlock,
+} from '../../game/activeActionDisplay';
 
 export function tipkv(k: string, v: string | number): string {
   return `<span class="sb-tip-kv"><span class="sb-tip-key">${k}</span><span class="sb-tip-val">${v}</span></span>`;
@@ -55,31 +60,46 @@ export function renderTooltipTree(
 
     if (def.isActive) {
       h += tipSection('主动动作');
-      h += '<div class="sb-tip-grid">';
-      let dmg = def.damage, time = (def.actionTime / 1000).toFixed(1) + 's';
-      if (combatUnit) {
-        const matched = combatUnit.weapons.find(w => w.name === def.name);
-        if (matched) { dmg = matched.damage; time = `${(Math.max(matched.remainingTime, 0) / 1000).toFixed(1)}s`; }
-      }
-      h += tipkv('伤害', dmg) + tipkv('耗时', time);
-      h += tipkv('耐耗', def.staminaCost);
+      let staminaCost = def.staminaCost;
+      let actionTime = def.actionTime;
+      let remaining: number | undefined;
       const w = combatUnit?.weapons.find(x => x.name === def.name);
-      const tc = w?.targetCondition ?? def.targetCondition;
-      h += tipkv('索敌', formatTargetingSummary({
+      if (w) {
+        staminaCost = w.staminaCost;
+        actionTime = w.actionTime;
+        remaining = Math.max(w.remainingTime, 0);
+      }
+      const effects = migrateLegacyDamageToOnHitEffects(
+        w?.onHitEffects?.length ? w.onHitEffects : def.onHitEffects,
+        Number(def.damage) || 0,
+      );
+      const targeting = formatTargetingSummary({
         targetFaction: w?.targetFaction ?? def.targetFaction,
-        sortBy: tc?.sortBy,
+        sortBy: (w?.targetCondition ?? def.targetCondition)?.sortBy,
         targetOrder: def.targetOrder,
         priorityTarget: def.priorityTarget,
-        filterBy: tc?.filterBy,
-        targetCount: w?.targetCount ?? def.targetCount ?? tc?.targetCount,
-      }));
-      h += '</div>';
+        filterBy: (w?.targetCondition ?? def.targetCondition)?.filterBy,
+        targetCount: w?.targetCount ?? def.targetCount ?? (w?.targetCondition ?? def.targetCondition)?.targetCount,
+      });
+      // 方向 A：左对齐扁平行，不用 tipkv 拉开
+      const timeLabel = remaining !== undefined
+        ? `倒计时: ${(remaining / 1000).toFixed(1)}s`
+        : `间隔: ${(actionTime / 1000).toFixed(1)}s`;
+      h += `<div class="sb-tip-fixed-row" style="${indent}">耐力: ${staminaCost}  ${timeLabel}</div>`;
+      h += `<div class="sb-tip-fixed-row" style="${indent}">索敌: ${targeting}</div>`;
+      const lines = formatConfigEffectsBlock(effects);
+      if (lines.length === 0) {
+        h += `<div class="sb-tip-fixed-row" style="${indent}">无效果</div>`;
+      } else {
+        for (const line of lines) {
+          h += `<div class="sb-tip-fixed-row" style="${indent}">${line}</div>`;
+        }
+      }
     }
 
     if (hasPassive(def)) {
       h += tipSection('被动加成');
       h += '<div class="sb-tip-grid">';
-      if (def.damageBonus) h += tipkv('伤害加成', (def.damageBonus > 0 ? '+' : '') + def.damageBonus);
       if (def.hpBonus) h += tipkv('生命加成', (def.hpBonus > 0 ? '+' : '') + def.hpBonus);
       if (def.hpRegenerationBonus) h += tipkv('生命恢复加成', '+' + def.hpRegenerationBonus + '/s');
       if (def.staminaBonus) h += tipkv('耐力加成', '+' + def.staminaBonus);
@@ -145,7 +165,17 @@ export function renderTooltipTree(
         row += `  HP:${cd.hp}  耐力:${cd.maxStamina}`;
       }
       if (cd.isActive) {
-        row += `  伤:${cd.damage}  ${(cd.actionTime / 1000).toFixed(1)}s`;
+        const effects = migrateLegacyDamageToOnHitEffects(cd.onHitEffects, Number(cd.damage) || 0);
+        row += `  ${formatActiveActionCollapseSummary({
+          staminaCost: cd.staminaCost,
+          targetingSummary: formatTargetingSummary({
+            targetFaction: cd.targetFaction,
+            sortBy: cd.targetCondition?.sortBy,
+            filterBy: cd.targetCondition?.filterBy,
+            targetCount: cd.targetCount ?? cd.targetCondition?.targetCount,
+          }),
+          effects,
+        })}`;
       }
       row += `  <span class="sb-tip-muted">槽耗${cd.slotCost}</span>`;
       row += '</div>';
@@ -222,24 +252,30 @@ export function showSimTooltip(
 
       if (def.isActive) {
         html += tipSection('主动动作');
-        html += '<div class="sb-tip-grid">';
-        html += tipkv('伤害', def.damage) + tipkv('耗时', (def.actionTime / 1000).toFixed(1) + 's');
-        html += tipkv('耐耗', def.staminaCost);
-        html += tipkv('索敌', formatTargetingSummary({
+        const effects = migrateLegacyDamageToOnHitEffects(def.onHitEffects, Number(def.damage) || 0);
+        const targeting = formatTargetingSummary({
           targetFaction: def.targetFaction,
           sortBy: def.targetCondition?.sortBy,
           targetOrder: def.targetOrder,
           priorityTarget: def.priorityTarget,
           filterBy: def.targetCondition?.filterBy,
           targetCount: def.targetCount ?? def.targetCondition?.targetCount,
-        }));
-        html += '</div>';
+        });
+        html += `<div class="sb-tip-fixed-row">耐力: ${def.staminaCost}  间隔: ${(def.actionTime / 1000).toFixed(1)}s</div>`;
+        html += `<div class="sb-tip-fixed-row">索敌: ${targeting}</div>`;
+        const lines = formatConfigEffectsBlock(effects);
+        if (lines.length === 0) {
+          html += '<div class="sb-tip-fixed-row">无效果</div>';
+        } else {
+          for (const line of lines) {
+            html += `<div class="sb-tip-fixed-row">${line}</div>`;
+          }
+        }
       }
 
       if (hasPassive(def)) {
         html += tipSection('被动加成');
         html += '<div class="sb-tip-grid">';
-        if (def.damageBonus) html += tipkv('伤害加成', (def.damageBonus > 0 ? '+' : '') + def.damageBonus);
         if (def.hpBonus) html += tipkv('生命加成', (def.hpBonus > 0 ? '+' : '') + def.hpBonus);
         if (def.hpRegenerationBonus) html += tipkv('生命恢复加成', '+' + def.hpRegenerationBonus + '/s');
         if (def.staminaBonus) html += tipkv('耐力加成', '+' + def.staminaBonus);
@@ -283,7 +319,17 @@ export function showSimTooltip(
             row += `  HP:${cd.hp}  耐力:${cd.maxStamina}`;
           }
           if (cd.isActive) {
-            row += `  伤:${cd.damage}  ${(cd.actionTime / 1000).toFixed(1)}s`;
+            const effects = migrateLegacyDamageToOnHitEffects(cd.onHitEffects, Number(cd.damage) || 0);
+            row += `  ${formatActiveActionCollapseSummary({
+              staminaCost: cd.staminaCost,
+              targetingSummary: formatTargetingSummary({
+                targetFaction: cd.targetFaction,
+                sortBy: cd.targetCondition?.sortBy,
+                filterBy: cd.targetCondition?.filterBy,
+                targetCount: cd.targetCount ?? cd.targetCondition?.targetCount,
+              }),
+              effects,
+            })}`;
           }
           row += `  <span class="sb-tip-muted">槽耗${cd.slotCost}</span></div>`;
           html += row;
@@ -315,13 +361,12 @@ export function showSimTooltip(
     h += tipSection('效果描述');
     h += `<div class="sb-tip-effect">${def.effect}</div>`;
     const hasPsv = def.hasPassiveBonuses !== false && (
-      !!(def.damageBonus) || !!(def.hpBonus) || !!(def.hpRegenerationBonus)
+      !!(def.hpBonus) || !!(def.hpRegenerationBonus)
       || !!(def.staminaBonus) || !!(def.staminaRegenerationBonus) || !!(def.loadBonus)
     );
     if (hasPsv) {
       h += tipSection('被动加成');
       h += '<div class="sb-tip-grid">';
-      if (def.damageBonus) h += tipkv('伤害加成', `${def.damageBonus > 0 ? '+' : ''}${def.damageBonus}`);
       if (def.hpBonus) h += tipkv('生命加成', `${def.hpBonus > 0 ? '+' : ''}${def.hpBonus}`);
       if (def.hpRegenerationBonus) h += tipkv('生命恢复', `+${def.hpRegenerationBonus}/秒`);
       if (def.staminaBonus) h += tipkv('耐力加成', `+${def.staminaBonus}`);
@@ -342,6 +387,13 @@ export function showSimTooltip(
       }
       if (def.poolPrerequisite.length > 0) {
         h += `<div class="sb-tip-fixed-row">池前置: ${resolveNames(def.poolPrerequisite)}</div>`;
+      }
+    }
+    const ohLines = formatConfigEffectsBlock(def.onHitEffects);
+    if (ohLines.length > 0) {
+      h += tipSection('效果');
+      for (const line of ohLines) {
+        h += `<div class="sb-tip-fixed-row">${line}</div>`;
       }
     }
     inner.innerHTML = h;

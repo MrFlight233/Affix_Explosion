@@ -57,7 +57,6 @@ export class AffixRepo {
       poolPrerequisite: def.poolPrerequisite ?? [],
       effect: def.effect ?? '',
       onHitEffects: def.onHitEffects ?? [],
-      damageBonus: def.damageBonus ?? 0,
       staminaRegenerationBonus: def.staminaRegenerationBonus ?? 0,
       staminaBonus: def.staminaBonus ?? 0,
       hpRegenerationBonus: def.hpRegenerationBonus ?? 0,
