@@ -41,12 +41,16 @@ function unit(
 
 function weapon(partial: Partial<CombatWeaponRuntime> & { sortBy?: string; filterBy?: string | string[]; count?: number | 'all' } = {}): CombatWeaponRuntime {
   const { sortBy, filterBy, count, targetCondition, ...rest } = partial;
+  const actionTime = rest.actionTime ?? 1000;
+  const staminaCost = rest.staminaCost ?? 1;
   return {
     name: 'w',
-    actionTime: 1000,
+    actionTime,
     remainingTime: 0,
+    baseActionTime: rest.baseActionTime ?? actionTime,
+    baseStaminaCost: rest.baseStaminaCost ?? staminaCost,
     damage: 5,
-    staminaCost: 1,
+    staminaCost,
     ownerInstanceId: 'p0',
     ...rest,
     targetCount: count ?? rest.targetCount ?? 1,

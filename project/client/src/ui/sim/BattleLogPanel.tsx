@@ -44,11 +44,30 @@ function toRows(events: CombatEvent[]): LogRow[] {
       continue;
     }
     if (!evt.actorName && !evt.weaponName) {
-      rows.push({
-        key: `${i}-misc`,
-        className: 'sb-log-entry',
-        text: `[${(evt.time / 1000).toFixed(1)}s] ${evt.targetName}`,
-      });
+      // 持续 Tick 等：有子行则显示时间戳 + 效果；否则仅显示目标名
+      if (evt.effects?.length) {
+        rows.push({
+          key: `${i}-tick-t`,
+          className: 'sb-log-entry',
+          text: `[${(evt.time / 1000).toFixed(1)}s]`,
+        });
+        for (let j = 0; j < evt.effects.length; j++) {
+          const eff = evt.effects[j];
+          if (eff === '击杀') continue;
+          rows.push({
+            key: `${i}-tick-e${j}`,
+            className: 'sb-log-entry',
+            text: eff,
+            indent: '20px',
+          });
+        }
+      } else {
+        rows.push({
+          key: `${i}-misc`,
+          className: 'sb-log-entry',
+          text: `[${(evt.time / 1000).toFixed(1)}s] ${evt.targetName}`,
+        });
+      }
       continue;
     }
     rows.push({

@@ -31,7 +31,7 @@ export interface CombatLogHeaderInput {
   weaponName: string;
 }
 
-/** 配置面效果行：每条效果一行；多 applyTo 用 / 合并角色 */
+/** 配置面效果行：每条效果一行；多 applyTo 用 / 合并角色；持续用「每/总」时长 */
 export function formatConfigEffectLines(effect: OnHitEffect): string[] {
   const n = normalizeOnHitEffect(effect);
   if (!n) return [];
@@ -40,8 +40,24 @@ export function formatConfigEffectLines(effect: OnHitEffect): string[] {
   const sym = opSymbol(n.op);
   const st = statLabel(n.stat);
   const roleLabels = resolveApplyTo(n).map(applyToLabel).join('/');
-  const base = `${name} ${roleLabels} ${st} ${sym}`;
-  return [mag ? `${base} ${mag}` : base];
+  const isDuration = (n.kind === 'duration' || (n.durationMs ?? 0) > 0) && (n.durationMs ?? 0) > 0;
+  const tickMs = n.tickIntervalMs ?? 0;
+
+  if (isDuration && tickMs > 0) {
+    // Tick 壳：毒 被命中 每1.0s 血量 - 5 总2.0s
+    const every = `${(tickMs / 1000).toFixed(1)}s`;
+    const total = `${((n.durationMs as number) / 1000).toFixed(1)}s`;
+    const mid = mag ? `${st} ${sym} ${mag}` : `${st} ${sym}`;
+    return [`${name} ${roleLabels} 每${every} ${mid} 总${total}`];
+  }
+
+  let base = `${name} ${roleLabels} ${st} ${sym}`;
+  if (mag) base = `${base} ${mag}`;
+  if (isDuration) {
+    // 底盘持续：鼓舞 被命中 生命恢复 + 2 总5.0s
+    base = `${base} 总${((n.durationMs as number) / 1000).toFixed(1)}s`;
+  }
+  return [base];
 }
 
 export function formatConfigEffectsBlock(effects: OnHitEffect[] | undefined): string[] {
@@ -93,7 +109,7 @@ export function formatCombatLogHeader(evt: CombatLogHeaderInput): string {
 }
 
 export function formatCombatEffectLine(line: CombatLogEffectLine): string {
-  const pool = line.stat === 'hp' ? 'HP' : '耐力';
+  const pool = line.stat === 'hp' ? 'HP' : line.stat === 'stamina' ? '耐力' : statLabel(line.stat);
   const sym = opSymbol(line.op);
   const st = statLabel(line.stat);
   const before = Math.round(line.before);
@@ -127,6 +143,15 @@ export function formatCombatEventLogHtml(evt: {
     return `<div class="sb-log-entry">[${(evt.time / 1000).toFixed(1)}s] 超时惩罚 ${sec}</div>`;
   }
   if (!evt.actorName && !evt.weaponName) {
+    // 持续 Tick 等无攻击方事件：时间戳 + 效果子行
+    if (evt.effects?.length) {
+      let h = `<div class="sb-log-entry">[${(evt.time / 1000).toFixed(1)}s]</div>`;
+      for (const eff of evt.effects) {
+        if (eff === '击杀') continue;
+        h += `<div class="sb-log-entry" style="padding-left:20px">${eff}</div>`;
+      }
+      return h;
+    }
     return `<div class="sb-log-entry">[${(evt.time / 1000).toFixed(1)}s] ${evt.targetName}</div>`;
   }
   let h = `<div class="sb-log-entry">${formatCombatLogHeader(evt)}</div>`;

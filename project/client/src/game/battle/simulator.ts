@@ -6,7 +6,16 @@ import {
   MAX_COMBAT_TIME, PENALTY_START_MS, TICK_MS, round6,
 } from './types';
 import { buildTargetingLabel, selectTargets } from './targeting';
-import { resolveWeaponOnHitEffects } from './onhit';
+import {
+  advanceDurations,
+  clearDurationsOnDeath,
+} from './durations';
+import {
+  applyDeferredRemainingTime,
+  applyInstantEffectToUnit,
+  resolveWeaponOnHitEffects,
+  type DeferredRemainingTimeOp,
+} from './onhit';
 
 type WeaponEntry = { unit: CombatUnitRuntime; weapon: CombatWeaponRuntime; isPlayer: boolean };
 
@@ -69,6 +78,10 @@ export class BattleSimulator {
     this.combatTime += TICK_MS;
     this.rebuildWeaponsIfNeeded();
 
+    // 持续：到期 / tick 跳伤
+    this.processDurationSide(this.playerUnits);
+    this.processDurationSide(this.enemyUnits);
+
     // 恢复 + CD
     this.regenSide(this.playerUnits);
     this.regenSide(this.enemyUnits);
@@ -96,15 +109,18 @@ export class BattleSimulator {
 
       const label = buildTargetingLabel(weapon);
       const effectsList = weapon.onHitEffects || [];
+      const allDeferred: DeferredRemainingTimeOp[] = [];
 
       for (const target of targets) {
         if (target.currentHp <= 0) continue;
 
-        const hitLines = resolveWeaponOnHitEffects(effectsList, {
+        const { lines: hitLines, deferredRemaining } = resolveWeaponOnHitEffects(effectsList, {
           starter: unit,
           actionOwner: unit,
           target,
+          firingWeapon: weapon,
         });
+        allDeferred.push(...deferredRemaining);
         const effects = hitLines.map(h => h.label);
         const netDamage = hitLines.reduce((s, h) => s + h.targetHpDelta, 0);
 
@@ -121,6 +137,7 @@ export class BattleSimulator {
         });
 
         if (target.currentHp <= 0) {
+          clearDurationsOnDeath(target);
           this.weaponsDirty = true;
           this.emit({
             time: Math.round(this.combatTime),
@@ -135,7 +152,9 @@ export class BattleSimulator {
         }
       }
 
+      // 先重置本轮 CD，再应用开火武器上的即时倒计时
       weapon.remainingTime = weapon.actionTime;
+      applyDeferredRemainingTime(allDeferred);
     }
 
     // 软狂暴
@@ -182,6 +201,58 @@ export class BattleSimulator {
     this.eventBuffer.push(evt);
   }
 
+  private processDurationSide(units: CombatUnitRuntime[]) {
+    for (const u of units) {
+      if (u.currentHp <= 0) continue;
+      const ticks = advanceDurations(u, TICK_MS);
+      for (const { unit, duration } of ticks) {
+        const deferred: DeferredRemainingTimeOp[] = [];
+        // 周期跳：独立战斗日志，不挂在武器攻击事件下
+        const tickLines = applyInstantEffectToUnit(
+          {
+            displayName: duration.displayName,
+            stat: duration.stat,
+            op: duration.op,
+            params: { amount: duration.value },
+          },
+          unit,
+          'target',
+          duration.weaponIndices,
+          undefined,
+          deferred,
+        );
+        applyDeferredRemainingTime(deferred);
+        if (tickLines.length > 0) {
+          const netDamage = tickLines.reduce((s, h) => s + h.targetHpDelta, 0);
+          this.emit({
+            time: Math.round(this.combatTime),
+            actorName: '',
+            weaponName: '',
+            targetName: unit.entityName,
+            damage: netDamage,
+            targetHpAfter: Math.min(Math.max(unit.currentHp, 0), unit.totalHp),
+            targetMaxHp: unit.totalHp,
+            effects: tickLines.map(h => h.label),
+          });
+        }
+        if (unit.currentHp <= 0) {
+          clearDurationsOnDeath(unit);
+          this.weaponsDirty = true;
+          this.emit({
+            time: Math.round(this.combatTime),
+            actorName: '',
+            weaponName: '',
+            targetName: unit.entityName,
+            damage: 0,
+            targetHpAfter: 0,
+            targetMaxHp: unit.totalHp,
+            effects: ['击杀'],
+          });
+        }
+      }
+    }
+  }
+
   private regenSide(units: CombatUnitRuntime[]) {
     for (const u of units) {
       if (u.currentHp <= 0) continue;
@@ -193,7 +264,6 @@ export class BattleSimulator {
 
   private rebuildWeaponsIfNeeded() {
     if (!this.weaponsDirty && this.allWeapons.length > 0) {
-      // 仍校验：若有阵亡单位残留则重建
       if (this.allWeapons.every(e => e.unit.currentHp > 0)) return;
     }
     this.allWeapons = [];
@@ -213,6 +283,7 @@ export class BattleSimulator {
       if (u.currentHp <= 0) continue;
       u.currentHp = round6(Math.max(u.currentHp - penaltyDamage, 0));
       if (u.currentHp <= 0) {
+        clearDurationsOnDeath(u);
         this.weaponsDirty = true;
         this.emit({
           time: Math.round(this.combatTime), actorName: '', weaponName: '',

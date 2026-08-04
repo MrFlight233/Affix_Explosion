@@ -1,11 +1,34 @@
-// 命中效果：规范化、迁移、展示（数值变化管道）
+// 命中效果：规范化、迁移、展示（即时 / 持续数值管道）
 
 export type OnHitApplyTo = 'starter' | 'actionOwner' | 'target';
-export type OnHitStat = 'hp' | 'stamina';
+export type OnHitKind = 'instant' | 'duration';
 export type OnHitOp = 'gain' | 'loss' | 'set';
+
+/** 即时白名单：当前池 + 本轮 CD */
+export type OnHitInstantStat = 'hp' | 'stamina' | 'remainingTime';
+/** 持续底盘白名单 */
+export type OnHitChassisStat =
+  | 'maxHp'
+  | 'maxStamina'
+  | 'maxLoad'
+  | 'hpRegen'
+  | 'staminaRegen'
+  | 'actionTime'
+  | 'staminaCost'
+  | 'burden';
+
+export type OnHitStat = OnHitInstantStat | OnHitChassisStat;
 
 export interface OnHitEffect {
   displayName: string;
+  /** 缺省即时；读档无 kind 时由 normalize 补齐 */
+  kind?: OnHitKind;
+  /** duration 必填，毫秒 */
+  durationMs?: number;
+  /** 有则 Tick 壳，无则底盘修饰（互斥） */
+  tickIntervalMs?: number;
+  /** duration 必填；可用展示名默认填充 */
+  buffKey?: string;
   stat: OnHitStat;
   op: OnHitOp;
   params: { amount?: number; percent?: number };
@@ -13,17 +36,55 @@ export interface OnHitEffect {
 }
 
 const APPLY_TO_SET = new Set<OnHitApplyTo>(['starter', 'actionOwner', 'target']);
-const STAT_SET = new Set<OnHitStat>(['hp', 'stamina']);
 const OP_SET = new Set<OnHitOp>(['gain', 'loss', 'set']);
 
+export const INSTANT_STATS = new Set<OnHitStat>(['hp', 'stamina', 'remainingTime']);
+export const CHASSIS_STATS = new Set<OnHitStat>([
+  'maxHp', 'maxStamina', 'maxLoad', 'hpRegen', 'staminaRegen',
+  'actionTime', 'staminaCost', 'burden',
+]);
+export const ALL_STATS = new Set<OnHitStat>([...INSTANT_STATS, ...CHASSIS_STATS]);
+export const WEAPON_STATS = new Set<OnHitStat>(['actionTime', 'staminaCost', 'remainingTime']);
+
+const STAT_SET = ALL_STATS;
+
+export function isInstantStat(stat: OnHitStat): boolean {
+  return INSTANT_STATS.has(stat);
+}
+
+export function isChassisStat(stat: OnHitStat): boolean {
+  return CHASSIS_STATS.has(stat);
+}
+
+export function isWeaponStat(stat: OnHitStat): boolean {
+  return WEAPON_STATS.has(stat);
+}
+
+export function effectKind(effect: OnHitEffect): OnHitKind {
+  if (effect.kind === 'duration') return 'duration';
+  if (effect.kind === undefined && (effect.durationMs ?? 0) > 0) return 'duration';
+  return 'instant';
+}
+
+export function isTickShell(effect: OnHitEffect): boolean {
+  return effectKind(effect) === 'duration' && (effect.tickIntervalMs ?? 0) > 0;
+}
+
 export function defaultDisplayName(stat: OnHitStat, op: OnHitOp): string {
-  if (stat === 'hp' && op === 'loss') return '伤害';
-  if (stat === 'hp' && op === 'gain') return '回复';
-  if (stat === 'hp' && op === 'set') return 'HP变为';
-  if (stat === 'stamina' && op === 'loss') return '削耐';
-  if (stat === 'stamina' && op === 'gain') return '增耐';
-  if (stat === 'stamina' && op === 'set') return '耐力变为';
-  return '效果';
+  const table: Partial<Record<OnHitStat, Partial<Record<OnHitOp, string>>>> = {
+    hp: { loss: '伤害', gain: '回复', set: 'HP变为' },
+    stamina: { loss: '削耐', gain: '增耐', set: '耐力变为' },
+    remainingTime: { loss: '缩短倒计时', gain: '延长倒计时', set: '倒计时变为' },
+    maxHp: { loss: '削血上限', gain: '加血上限' },
+    maxStamina: { loss: '削耐上限', gain: '加耐上限' },
+    maxLoad: { loss: '削负重上限', gain: '加负重上限' },
+    hpRegen: { loss: '削生命恢复', gain: '加生命恢复' },
+    staminaRegen: { loss: '削耐力恢复', gain: '加耐力恢复' },
+    actionTime: { loss: '缩短耗时', gain: '加长耗时' },
+    staminaCost: { loss: '减耐耗', gain: '加耐耗' },
+    burden: { loss: '减轻重压', gain: '加重压' },
+  };
+  return table[stat]?.[op] || '效果';
 }
 
 export function resolveApplyTo(effect: OnHitEffect): OnHitApplyTo[] {
@@ -33,14 +94,14 @@ export function resolveApplyTo(effect: OnHitEffect): OnHitApplyTo[] {
   return out.length > 0 ? out : ['target'];
 }
 
-/** 百分比向下取整后与固定值相加 */
+/** 百分比相对 cap 向下取整后与固定值相加 */
 export function computeHitEffectValue(
-  hitMagnitude: number,
+  cap: number,
   params: { amount?: number; percent?: number } | undefined,
 ): number {
   const amount = params?.amount ?? 0;
   const percent = params?.percent ?? 0;
-  const percentPart = Math.floor(hitMagnitude * percent / 100);
+  const percentPart = Math.floor(cap * percent / 100);
   return percentPart + amount;
 }
 
@@ -66,6 +127,7 @@ function migrateLegacyTypeEffect(raw: Record<string, any>): OnHitEffect | null {
     displayName: (typeof raw.displayName === 'string' && raw.displayName.trim())
       ? raw.displayName.trim()
       : m.name,
+    kind: 'instant',
     stat: m.stat,
     op: m.op,
     params: p,
@@ -75,11 +137,32 @@ function migrateLegacyTypeEffect(raw: Record<string, any>): OnHitEffect | null {
   };
 }
 
+/** 校验白名单；不合法返回 null */
+function validateKindStatOp(effect: OnHitEffect): OnHitEffect | null {
+  const kind = effectKind(effect);
+  effect.kind = kind;
+  if (kind === 'instant') {
+    if (!isInstantStat(effect.stat)) return null;
+    if (!OP_SET.has(effect.op)) return null;
+    return effect;
+  }
+  // duration
+  if (effect.op === 'set') return null;
+  if ((effect.durationMs ?? 0) <= 0) return null;
+  if (!effect.buffKey || !String(effect.buffKey).trim()) return null;
+  const tick = effect.tickIntervalMs ?? 0;
+  if (tick > 0) {
+    if (!isInstantStat(effect.stat)) return null;
+  } else {
+    if (!isChassisStat(effect.stat)) return null;
+  }
+  return effect;
+}
+
 /** 将任意读档/API 条目规范为新结构；无法识别则返回 null */
 export function normalizeOnHitEffect(raw: any): OnHitEffect | null {
   if (!raw || typeof raw !== 'object') return null;
 
-  // 旧 type 表
   if (typeof raw.type === 'string' && raw.type && !raw.stat) {
     return migrateLegacyTypeEffect(raw);
   }
@@ -98,16 +181,31 @@ export function normalizeOnHitEffect(raw: any): OnHitEffect | null {
   }
 
   const name = typeof raw.displayName === 'string' ? raw.displayName.trim() : '';
+  let kind: OnHitKind = raw.kind === 'duration' ? 'duration' : 'instant';
+  // 缺省：无 kind 时若带 durationMs 则视为持续
+  if (raw.kind === undefined && Number(raw.durationMs) > 0) kind = 'duration';
+
   const effect: OnHitEffect = {
     displayName: name || defaultDisplayName(stat, op),
+    kind,
     stat,
     op,
     params,
   };
+
+  if (kind === 'duration') {
+    effect.durationMs = Math.max(0, Number(raw.durationMs) || 0);
+    const tick = Number(raw.tickIntervalMs) || 0;
+    if (tick > 0) effect.tickIntervalMs = tick;
+    const key = typeof raw.buffKey === 'string' ? raw.buffKey.trim() : '';
+    effect.buffKey = key || effect.displayName;
+  }
+
   if (Array.isArray(raw.applyTo) && raw.applyTo.length > 0) {
     effect.applyTo = raw.applyTo.filter((r: string) => APPLY_TO_SET.has(r as OnHitApplyTo));
   }
-  return effect;
+
+  return validateKindStatOp(effect);
 }
 
 export function normalizeOnHitEffects(list: any): OnHitEffect[] {
@@ -132,6 +230,7 @@ export function migrateLegacyDamageToOnHitEffects(
   if (damage > 0) {
     list.unshift({
       displayName: '伤害',
+      kind: 'instant',
       stat: 'hp',
       op: 'loss',
       params: { amount: damage },
@@ -140,6 +239,7 @@ export function migrateLegacyDamageToOnHitEffects(
   } else {
     list.unshift({
       displayName: '回复',
+      kind: 'instant',
       stat: 'hp',
       op: 'gain',
       params: { amount: Math.abs(damage) },
@@ -153,6 +253,10 @@ export function migrateLegacyDamageToOnHitEffects(
 export function cloneOnHitEffects(list: OnHitEffect[]): OnHitEffect[] {
   return list.map(e => ({
     displayName: e.displayName,
+    kind: e.kind || 'instant',
+    durationMs: e.durationMs,
+    tickIntervalMs: e.tickIntervalMs,
+    buffKey: e.buffKey,
     stat: e.stat,
     op: e.op,
     params: { ...e.params },
@@ -169,6 +273,15 @@ const APPLY_LABEL: Record<OnHitApplyTo, string> = {
 const STAT_LABEL: Record<OnHitStat, string> = {
   hp: '血量',
   stamina: '耐力',
+  remainingTime: '倒计时',
+  maxHp: 'HP上限',
+  maxStamina: '耐力上限',
+  maxLoad: '负重上限',
+  hpRegen: '生命恢复',
+  staminaRegen: '耐力恢复',
+  actionTime: '触发耗时',
+  staminaCost: '耐力消耗',
+  burden: '重压',
 };
 
 export function applyToLabel(role: OnHitApplyTo): string {
@@ -176,7 +289,7 @@ export function applyToLabel(role: OnHitApplyTo): string {
 }
 
 export function statLabel(stat: OnHitStat): string {
-  return STAT_LABEL[stat];
+  return STAT_LABEL[stat] || String(stat);
 }
 
 export function opSymbol(op: OnHitOp): string {
@@ -185,7 +298,7 @@ export function opSymbol(op: OnHitOp): string {
   return '→';
 }
 
-/** 配置面量：`10` / `20%` / `5 + 10%` */
+/** 配置面量：`10` / `20%` / `5 + 10%`；时间类固定值显示为秒 */
 export function formatHitEffectMagnitude(effect: OnHitEffect): string {
   const n = normalizeOnHitEffect(effect) || effect;
   const amount = n.params?.amount;
@@ -194,7 +307,13 @@ export function formatHitEffectMagnitude(effect: OnHitEffect): string {
   const mag: string[] = [];
   if (hasAmount) {
     const showAmount = n.op === 'set' || amount !== 0 || percent === undefined || percent === 0;
-    if (showAmount) mag.push(String(amount ?? 0));
+    if (showAmount) {
+      if ((n.stat === 'actionTime' || n.stat === 'remainingTime') && amount !== undefined) {
+        mag.push(`${(amount / 1000).toFixed(1)}s`);
+      } else {
+        mag.push(String(amount ?? 0));
+      }
+    }
   }
   if (percent !== undefined && percent !== 0) mag.push(`${percent}%`);
   return mag.join(' + ');
@@ -203,13 +322,22 @@ export function formatHitEffectMagnitude(effect: OnHitEffect): string {
 export function formatHitEffectLine(effect: OnHitEffect, opts?: { showApplyTo?: boolean }): string {
   const n = normalizeOnHitEffect(effect) || effect;
   const parts: string[] = [n.displayName || defaultDisplayName(n.stat, n.op)];
-  const mag = formatHitEffectMagnitude(n);
-  if (mag) parts.push(mag);
   if (opts?.showApplyTo) {
     const roles = resolveApplyTo(n);
     if (!(roles.length === 1 && roles[0] === 'target')) {
       parts.push(`(${roles.map(r => APPLY_LABEL[r]).join('/')})`);
     }
+  }
+  const mag = formatHitEffectMagnitude(n);
+  const tickMs = n.tickIntervalMs ?? 0;
+  const isDuration = effectKind(n) === 'duration' && (n.durationMs ?? 0) > 0;
+  if (isDuration && tickMs > 0) {
+    parts.push(`每${(tickMs / 1000).toFixed(1)}s`);
+    if (mag) parts.push(mag);
+    parts.push(`总${((n.durationMs as number) / 1000).toFixed(1)}s`);
+  } else {
+    if (mag) parts.push(mag);
+    if (isDuration) parts.push(`总${((n.durationMs as number) / 1000).toFixed(1)}s`);
   }
   return parts.join(' ');
 }

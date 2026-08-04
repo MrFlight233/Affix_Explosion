@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   formatActiveActionCollapseSummary,
   formatCombatEffectLine,
+  formatCombatEventLogHtml,
   formatCombatLogHeader,
   formatConfigEffectLines,
 } from './activeActionDisplay';
@@ -46,6 +47,33 @@ describe('formatConfigEffectLines', () => {
       applyTo: ['target', 'actionOwner', 'starter'],
     })).toEqual(['伤害 被命中/被触发/启动端 血量 - 10']);
   });
+
+  it('Tick 壳：每间隔 + 总量时长', () => {
+    expect(formatConfigEffectLines({
+      displayName: '毒',
+      kind: 'duration',
+      durationMs: 2000,
+      tickIntervalMs: 1000,
+      buffKey: 'poison',
+      stat: 'hp',
+      op: 'loss',
+      params: { amount: 5 },
+      applyTo: ['target'],
+    })).toEqual(['毒 被命中 每1.0s 血量 - 5 总2.0s']);
+  });
+
+  it('底盘持续：总时长', () => {
+    expect(formatConfigEffectLines({
+      displayName: '鼓舞',
+      kind: 'duration',
+      durationMs: 5000,
+      buffKey: 'inspire',
+      stat: 'hpRegen',
+      op: 'gain',
+      params: { amount: 2 },
+      applyTo: ['target'],
+    })).toEqual(['鼓舞 被命中 生命恢复 + 2 总5.0s']);
+  });
 });
 
 describe('combat log lines', () => {
@@ -65,6 +93,19 @@ describe('combat log lines', () => {
       before: 50,
       after: 40,
     })).toBe('伤害 哥布林 血量 - 10  (HP: 50 -> 40)');
+  });
+
+  it('持续 Tick 独立事件：无攻击方时仍渲染效果子行', () => {
+    const html = formatCombatEventLogHtml({
+      time: 2000,
+      actorName: '',
+      weaponName: '',
+      targetName: '哥布林',
+      effects: ['毒 哥布林 血量 - 5  (HP: 535 -> 530)'],
+    });
+    expect(html).toContain('[2.0s]');
+    expect(html).toContain('毒 哥布林 血量 - 5');
+    expect(html).not.toMatch(/\[2\.0s\] 哥布林</);
   });
 });
 

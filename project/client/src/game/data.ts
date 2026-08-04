@@ -8,6 +8,7 @@ export type {
   OnHitApplyTo,
   OnHitStat,
   OnHitOp,
+  OnHitKind,
 } from '@shared/hitEffectUtil';
 import type { OnHitEffect } from '@shared/hitEffectUtil';
 import { normalizeOnHitEffects } from './hitEffectUtil';

@@ -29,6 +29,9 @@ function makeUnit(id: string, name: string, hp: number, dmg: number, actionTime 
       targetCount: 1,
       targetCondition: { sortBy: '从上往下', filterBy: ['敌人'] },
       ownerInstanceId: id,
+      onHitEffects: dmg
+        ? [{ displayName: '伤害', kind: 'instant' as const, stat: 'hp' as const, op: 'loss' as const, params: { amount: dmg }, applyTo: ['target' as const] }]
+        : [],
     }],
   };
 }
