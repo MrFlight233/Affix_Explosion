@@ -135,6 +135,14 @@ export const admin = {
     }),
   deleteCategory: (id: string) =>
     request<{ ok: boolean }>('/admin/categories/' + encodeURIComponent(id), { method: 'DELETE' }),
+
+  // Template seed (Git)
+  seedStatus: () =>
+    request<{ seedDir: string; exists: boolean; meta: any | null }>('/admin/seed/status'),
+  publishSeed: () =>
+    request<{ ok: boolean; path: string; entities: number; affixes: number; categories: number; version: number; exportedAt: string }>(
+      '/admin/seed/publish', { method: 'POST' }
+    ),
 };
 
 // Saves

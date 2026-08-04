@@ -158,6 +158,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
           <button class="btn adm-btn-action" id="adm-btn-export-sel" disabled>导出选中</button>
           <button class="btn adm-btn-action" id="adm-btn-export-all">导出全部</button>
           <button class="btn adm-btn-action" id="adm-btn-import">导入</button>
+          <button class="btn adm-btn-action" id="adm-btn-publish-seed" title="将当前实体/词条/分类写入 data/seed/ 供 Git 跟踪">发布种子</button>
           <button class="btn adm-btn-danger" id="adm-btn-clear-all">删除全部实体</button>
         </div>
       </div>
@@ -490,6 +491,18 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     (document.getElementById('adm-import-text') as HTMLTextAreaElement).value = '';
     (document.getElementById('adm-import-overwrite') as HTMLInputElement).checked = false;
     document.getElementById('adm-import-result')!.style.display = 'none';
+  });
+  document.getElementById('adm-btn-publish-seed')!.addEventListener('click', async () => {
+    const ok = confirm(
+      '将当前库中的实体、词条、分类写入 project/server/data/seed/，覆盖已有种子文件。\n\n发布后请记得 git add 并提交种子文件。是否继续？'
+    );
+    if (!ok) return;
+    try {
+      const result = await admin.publishSeed();
+      showToast(`种子已发布：实体 ${result.entities} / 词条 ${result.affixes} / 分类 ${result.categories}`);
+    } catch (e: any) {
+      showToast('发布种子失败：' + e.message);
+    }
   });
   document.getElementById('adm-import-cancel')!.addEventListener('click', () => {
     document.getElementById('adm-import-modal')!.classList.remove('show');

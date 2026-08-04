@@ -2,7 +2,8 @@ node_modules/
 dist/
 .obsidian/
 
-# SQLite runtime files (generated at startup)
+# SQLite runtime files (generated at startup; do NOT commit)
+# Template seed JSON lives in project/server/data/seed/ and IS tracked
 *.db
 *.db-shm
 *.db-wal

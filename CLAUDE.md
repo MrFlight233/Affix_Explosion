@@ -14,4 +14,6 @@
 - 当做计划时，每次要记录成文档，放入doc文件夹下，修改计划时也要修改文档。这个文档是用来给其它智能体对话执行使用的。
 - 计划方案的结构、命名、验收与模板详见项目 Skill：`.cursor/skills/ai-plan-writing/`（触发词：计划、方案、写入 doc、给其它智能体执行）。
 - 不要使用MCP中的开发规范。
+- 游戏模板数据以 `project/server/data/seed/` 下 JSON 种子纳入 Git；运行时 `*.db` / `*.db-shm` / `*.db-wal` 不入库。
+- **提交种子文件前必须主动导出**：凡本次提交会包含或更新 `project/server/data/seed/`，在 `git add` / `commit` 之前必须先执行 `cd project/server && npm run seed:publish`，用当前本地 DB 覆盖写出种子 JSON，再暂存种子文件。不得假设用户已点击 Admin「发布种子」按钮；若本地库为空或导出失败，应先说明并停止提交种子，而不是提交过期/空种子。
 

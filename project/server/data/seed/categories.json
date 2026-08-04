@@ -1,0 +1,72 @@
+[
+  {
+    "id": "admin",
+    "name": "admin",
+    "sortOrder": 100,
+    "isEntityClass": false,
+    "showInFilter": false
+  },
+  {
+    "id": "entity_class",
+    "name": "分类",
+    "sortOrder": 2,
+    "isEntityClass": true,
+    "showInFilter": false
+  },
+  {
+    "id": "fighter",
+    "name": "战士",
+    "sortOrder": 9,
+    "isEntityClass": false,
+    "showInFilter": true
+  },
+  {
+    "id": "normal",
+    "name": "普通",
+    "sortOrder": 1,
+    "isEntityClass": false,
+    "showInFilter": true
+  },
+  {
+    "id": "on_hit_effect",
+    "name": "命中效果",
+    "sortOrder": 5,
+    "isEntityClass": false,
+    "showInFilter": true
+  },
+  {
+    "id": "passive_bonus",
+    "name": "被动加成",
+    "sortOrder": 6,
+    "isEntityClass": false,
+    "showInFilter": true
+  },
+  {
+    "id": "path",
+    "name": "路线",
+    "sortOrder": 8,
+    "isEntityClass": true,
+    "showInFilter": true
+  },
+  {
+    "id": "special",
+    "name": "特殊",
+    "sortOrder": 3,
+    "isEntityClass": true,
+    "showInFilter": false
+  },
+  {
+    "id": "spell",
+    "name": "法术",
+    "sortOrder": 10,
+    "isEntityClass": false,
+    "showInFilter": true
+  },
+  {
+    "id": "target_selection",
+    "name": "目标选择",
+    "sortOrder": 7,
+    "isEntityClass": false,
+    "showInFilter": true
+  }
+]

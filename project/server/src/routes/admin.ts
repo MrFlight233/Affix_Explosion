@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import { adminMiddleware, AuthRequest } from '../middleware/admin';
-import { entityRepo, affixRepo, categoryRepo, templateCache } from '../db';
+import { entityRepo, affixRepo, categoryRepo, templateCache, publishSeed, getSeedStatus } from '../db';
 
 const router = Router();
 
@@ -260,6 +260,23 @@ router.delete('/categories/:id', (req: AuthRequest, res: Response) => {
     res.json({ ok: true, removed });
   } catch (e: any) {
     res.status(e.statusCode || 500).json({ error: e.message, refCount: e.refCount });
+  }
+});
+
+// ---- 模板种子 ----
+
+/** 查看仓库种子状态 */
+router.get('/seed/status', (_req: AuthRequest, res: Response) => {
+  res.json(getSeedStatus());
+});
+
+/** 将当前模板发布到 data/seed/（供 Git 跟踪） */
+router.post('/seed/publish', (_req: AuthRequest, res: Response) => {
+  try {
+    const result = publishSeed();
+    res.json({ ok: true, ...result });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
   }
 });
 

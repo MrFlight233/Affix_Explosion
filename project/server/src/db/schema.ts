@@ -6,6 +6,7 @@
 import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
 import { getDB as _getDB, initDB as _initDB } from './connection';
 import { initTables } from './seed';
+import { importSeedIfEmpty } from './seedData';
 import { templateCache } from './cache';
 
 // ========== 模板表 ==========
@@ -118,10 +119,11 @@ export const battlePool = sqliteTable(
 // 过渡兼容层 — 保持旧路由 (save.ts, auth.ts, data.ts) 不报错
 // ============================================================
 
-/** 初始化数据库：建立连接 + 建表 + 加载缓存 */
+/** 初始化数据库：建立连接 + 建表 + 空库灌种子 + 加载缓存 */
 export async function initDB(): Promise<void> {
   _initDB();
   initTables();
+  importSeedIfEmpty();
   templateCache.load();
 }
 

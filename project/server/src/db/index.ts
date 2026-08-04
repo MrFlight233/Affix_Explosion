@@ -4,6 +4,7 @@
 
 export { getDB, closeDB } from './connection';
 export { initTables } from './seed';
+export { publishSeed, importSeedIfEmpty, getSeedStatus } from './seedData';
 export { templateCache, entityRowToDef, affixRowToDef, entityDefToRow, affixDefToRow } from './cache';
 export * from './schema';
 export { entityRepo } from './repositories/entityRepo';

@@ -1,0 +1,640 @@
+[
+  {
+    "id": "ability",
+    "name": "能力",
+    "category": "entity_class",
+    "costValue": 0,
+    "slotCost": 0,
+    "repeatable": false,
+    "prerequisite": [],
+    "poolPrerequisite": [
+      "admin"
+    ],
+    "effect": "特殊能力",
+    "onHitEffects": [],
+    "hasPassiveBonuses": false,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0
+  },
+  {
+    "id": "accessory",
+    "name": "饰品",
+    "category": "entity_class",
+    "costValue": 0,
+    "slotCost": 0,
+    "repeatable": false,
+    "prerequisite": [],
+    "poolPrerequisite": [
+      "admin"
+    ],
+    "effect": "很多都有被动加成",
+    "onHitEffects": [],
+    "hasPassiveBonuses": false,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0
+  },
+  {
+    "id": "admin",
+    "name": "admin",
+    "category": "admin",
+    "costValue": 0,
+    "slotCost": 0,
+    "repeatable": false,
+    "prerequisite": [],
+    "poolPrerequisite": [
+      "admin"
+    ],
+    "effect": "管理员专属词条",
+    "onHitEffects": [],
+    "hasPassiveBonuses": false,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0
+  },
+  {
+    "id": "animal",
+    "name": "动物",
+    "category": "entity_class",
+    "costValue": 0,
+    "slotCost": 0,
+    "repeatable": false,
+    "prerequisite": [],
+    "poolPrerequisite": [
+      "admin"
+    ],
+    "effect": "一般智力低下",
+    "onHitEffects": [],
+    "hasPassiveBonuses": false,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0
+  },
+  {
+    "id": "beast_control",
+    "name": "御兽",
+    "category": "path",
+    "costValue": 20,
+    "slotCost": 2,
+    "repeatable": false,
+    "prerequisite": [],
+    "poolPrerequisite": [
+      "admin"
+    ],
+    "effect": "开启御兽路线",
+    "onHitEffects": [],
+    "hasPassiveBonuses": false,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0
+  },
+  {
+    "id": "blood_for_blood",
+    "name": "以血还血-40",
+    "category": "on_hit_effect",
+    "costValue": 10,
+    "slotCost": 1,
+    "repeatable": true,
+    "prerequisite": [],
+    "poolPrerequisite": [],
+    "effect": "伤敌40，自损40",
+    "onHitEffects": [
+      {
+        "displayName": "伤害",
+        "kind": "instant",
+        "stat": "hp",
+        "op": "loss",
+        "params": {
+          "amount": 40
+        },
+        "applyTo": [
+          "target",
+          "starter"
+        ]
+      }
+    ],
+    "hasPassiveBonuses": false,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0
+  },
+  {
+    "id": "damage_bonus_1",
+    "name": "伤害加成 1",
+    "category": "passive_bonus",
+    "costValue": 10,
+    "slotCost": 1,
+    "repeatable": true,
+    "prerequisite": [],
+    "poolPrerequisite": [],
+    "effect": "增加最上层实体伤害 1 点",
+    "onHitEffects": [
+      {
+        "displayName": "伤害",
+        "kind": "instant",
+        "stat": "hp",
+        "op": "loss",
+        "params": {
+          "amount": 1
+        },
+        "applyTo": [
+          "target"
+        ]
+      }
+    ],
+    "hasPassiveBonuses": true,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0
+  },
+  {
+    "id": "fighter",
+    "name": "战士",
+    "category": "path",
+    "costValue": 20,
+    "slotCost": 2,
+    "repeatable": false,
+    "prerequisite": [],
+    "poolPrerequisite": [],
+    "effect": "开启战士路线",
+    "onHitEffects": [],
+    "hasPassiveBonuses": false,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0
+  },
+  {
+    "id": "frenzy",
+    "name": "狂乱",
+    "category": "target_selection",
+    "costValue": 10,
+    "slotCost": 1,
+    "repeatable": false,
+    "prerequisite": [],
+    "poolPrerequisite": [],
+    "effect": "随机选择目标",
+    "onHitEffects": [],
+    "targetingModifier": {
+      "sortBy": "random"
+    },
+    "hasPassiveBonuses": false,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0
+  },
+  {
+    "id": "hp_bonus_50",
+    "name": "生命加成 50",
+    "category": "passive_bonus",
+    "costValue": 10,
+    "slotCost": 1,
+    "repeatable": true,
+    "prerequisite": [],
+    "poolPrerequisite": [],
+    "effect": "增加最上层实体HP 50 点",
+    "onHitEffects": [],
+    "hasPassiveBonuses": true,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 50,
+    "loadBonus": 0
+  },
+  {
+    "id": "hp_regeneration_bonus_2",
+    "name": "生命回复 2",
+    "category": "passive_bonus",
+    "costValue": 10,
+    "slotCost": 1,
+    "repeatable": true,
+    "prerequisite": [],
+    "poolPrerequisite": [],
+    "effect": "增加最上层实体生命回复 2 点",
+    "onHitEffects": [],
+    "hasPassiveBonuses": true,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 2,
+    "hpBonus": 0,
+    "loadBonus": 0
+  },
+  {
+    "id": "hp_steal_2",
+    "name": "生命吸取-2",
+    "category": "on_hit_effect",
+    "costValue": 8,
+    "slotCost": 1,
+    "repeatable": true,
+    "prerequisite": [],
+    "poolPrerequisite": [],
+    "effect": "攻击命中时回复2HP",
+    "onHitEffects": [
+      {
+        "displayName": "吸血",
+        "kind": "instant",
+        "stat": "hp",
+        "op": "gain",
+        "params": {
+          "amount": 2
+        },
+        "applyTo": [
+          "starter"
+        ]
+      },
+      {
+        "displayName": "伤害",
+        "kind": "instant",
+        "stat": "hp",
+        "op": "loss",
+        "params": {
+          "amount": 2
+        },
+        "applyTo": [
+          "target"
+        ]
+      }
+    ],
+    "hasPassiveBonuses": false,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0
+  },
+  {
+    "id": "humanoid",
+    "name": "类人",
+    "category": "entity_class",
+    "costValue": 0,
+    "slotCost": 0,
+    "repeatable": false,
+    "prerequisite": [],
+    "poolPrerequisite": [
+      "admin"
+    ],
+    "effect": "类人生物",
+    "onHitEffects": [],
+    "hasPassiveBonuses": false,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0
+  },
+  {
+    "id": "item",
+    "name": "物品",
+    "category": "entity_class",
+    "costValue": 0,
+    "slotCost": 0,
+    "repeatable": false,
+    "prerequisite": [],
+    "poolPrerequisite": [
+      "admin"
+    ],
+    "effect": "普通物品类型",
+    "onHitEffects": [],
+    "hasPassiveBonuses": false,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0
+  },
+  {
+    "id": "mechanic",
+    "name": "机械",
+    "category": "path",
+    "costValue": 20,
+    "slotCost": 2,
+    "repeatable": false,
+    "prerequisite": [],
+    "poolPrerequisite": [
+      "admin"
+    ],
+    "effect": "开启机械路线",
+    "onHitEffects": [],
+    "hasPassiveBonuses": false,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0
+  },
+  {
+    "id": "poison_2",
+    "name": "毒-5-4s",
+    "category": "on_hit_effect",
+    "costValue": 10,
+    "slotCost": 1,
+    "repeatable": false,
+    "prerequisite": [],
+    "poolPrerequisite": [],
+    "effect": "使敌人每秒中毒5持续4秒",
+    "onHitEffects": [
+      {
+        "displayName": "毒",
+        "kind": "duration",
+        "stat": "hp",
+        "op": "loss",
+        "params": {
+          "amount": 5
+        },
+        "durationMs": 4000,
+        "tickIntervalMs": 1000,
+        "buffKey": "poison",
+        "applyTo": [
+          "target"
+        ]
+      }
+    ],
+    "hasPassiveBonuses": false,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0
+  },
+  {
+    "id": "slavery",
+    "name": "奴役",
+    "category": "path",
+    "costValue": 20,
+    "slotCost": 2,
+    "repeatable": false,
+    "prerequisite": [],
+    "poolPrerequisite": [
+      "admin"
+    ],
+    "effect": "开启奴役路线",
+    "onHitEffects": [],
+    "hasPassiveBonuses": false,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0
+  },
+  {
+    "id": "spell_casting",
+    "name": "施法",
+    "category": "path",
+    "costValue": 20,
+    "slotCost": 2,
+    "repeatable": false,
+    "prerequisite": [],
+    "poolPrerequisite": [],
+    "effect": "开启施法路线",
+    "onHitEffects": [],
+    "hasPassiveBonuses": false,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0
+  },
+  {
+    "id": "stamina_bonus_20",
+    "name": "耐力加成 20",
+    "category": "passive_bonus",
+    "costValue": 10,
+    "slotCost": 1,
+    "repeatable": true,
+    "prerequisite": [],
+    "poolPrerequisite": [],
+    "effect": "增加最上层实体耐力 20 点",
+    "onHitEffects": [],
+    "hasPassiveBonuses": true,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 20,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0
+  },
+  {
+    "id": "stamina_drain_5",
+    "name": "耐力削减-5",
+    "category": "on_hit_effect",
+    "costValue": 10,
+    "slotCost": 1,
+    "repeatable": true,
+    "prerequisite": [],
+    "poolPrerequisite": [],
+    "effect": "攻击后减少敌人5点耐力",
+    "onHitEffects": [
+      {
+        "displayName": "削耐",
+        "kind": "instant",
+        "stat": "stamina",
+        "op": "loss",
+        "params": {
+          "amount": 5,
+          "percent": 0
+        },
+        "applyTo": [
+          "target"
+        ]
+      }
+    ],
+    "hasPassiveBonuses": false,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0
+  },
+  {
+    "id": "stamina_regeneration_bonus_5",
+    "name": "耐力回复 5",
+    "category": "passive_bonus",
+    "costValue": 10,
+    "slotCost": 1,
+    "repeatable": true,
+    "prerequisite": [],
+    "poolPrerequisite": [],
+    "effect": "增加最上层实体耐力回复 5 点",
+    "onHitEffects": [],
+    "hasPassiveBonuses": true,
+    "staminaRegenerationBonus": 5,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0
+  },
+  {
+    "id": "starter",
+    "name": "启动端",
+    "category": "special",
+    "costValue": 0,
+    "slotCost": 0,
+    "repeatable": false,
+    "prerequisite": [],
+    "poolPrerequisite": [
+      "admin"
+    ],
+    "effect": "可以触发实体的主动动作",
+    "onHitEffects": [],
+    "hasPassiveBonuses": false,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0
+  },
+  {
+    "id": "target_enemy",
+    "name": "针对敌人",
+    "category": "target_selection",
+    "costValue": 10,
+    "slotCost": 1,
+    "repeatable": false,
+    "prerequisite": [],
+    "poolPrerequisite": [],
+    "effect": "只针对敌人",
+    "onHitEffects": [],
+    "targetingModifier": {
+      "targetFaction": "敌人"
+    },
+    "hasPassiveBonuses": false,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0
+  },
+  {
+    "id": "target_friend",
+    "name": "针对友方",
+    "category": "target_selection",
+    "costValue": 10,
+    "slotCost": 1,
+    "repeatable": false,
+    "prerequisite": [],
+    "poolPrerequisite": [],
+    "effect": "只针对友方",
+    "onHitEffects": [],
+    "targetingModifier": {
+      "targetFaction": "友方"
+    },
+    "hasPassiveBonuses": false,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0
+  },
+  {
+    "id": "weapon",
+    "name": "武器",
+    "category": "entity_class",
+    "costValue": 0,
+    "slotCost": 0,
+    "repeatable": false,
+    "prerequisite": [],
+    "poolPrerequisite": [
+      "admin"
+    ],
+    "effect": "有主动动作的物品",
+    "onHitEffects": [],
+    "hasPassiveBonuses": false,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0
+  },
+  {
+    "id": "weapon_training",
+    "name": "武器训练",
+    "category": "fighter",
+    "costValue": 20,
+    "slotCost": 1,
+    "repeatable": true,
+    "prerequisite": [
+      "fighter"
+    ],
+    "poolPrerequisite": [
+      "fighter"
+    ],
+    "effect": "伤害加成 2",
+    "onHitEffects": [
+      {
+        "displayName": "伤害",
+        "kind": "instant",
+        "stat": "hp",
+        "op": "loss",
+        "params": {
+          "amount": 2
+        },
+        "applyTo": [
+          "target"
+        ]
+      }
+    ],
+    "hasPassiveBonuses": true,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0
+  },
+  {
+    "id": "weight_bonus_5000",
+    "name": "负重加成 5000",
+    "category": "passive_bonus",
+    "costValue": 10,
+    "slotCost": 1,
+    "repeatable": true,
+    "prerequisite": [],
+    "poolPrerequisite": [],
+    "effect": "增加负重上限5kg",
+    "onHitEffects": [],
+    "hasPassiveBonuses": true,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 5000
+  },
+  {
+    "id": "weight_training_5000",
+    "name": "负重训练",
+    "category": "fighter",
+    "costValue": 20,
+    "slotCost": 1,
+    "repeatable": true,
+    "prerequisite": [
+      "fighter"
+    ],
+    "poolPrerequisite": [
+      "fighter"
+    ],
+    "effect": "增加负重上限 5 kg",
+    "onHitEffects": [],
+    "hasPassiveBonuses": true,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 5000
+  }
+]

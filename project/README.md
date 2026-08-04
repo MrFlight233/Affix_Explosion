@@ -45,7 +45,21 @@ npm run dev
 
 1. 首次使用点击「注册」创建账号
 2. 登录后进入游戏主界面
-3. 初始拥有 100 金币
+3. 初始拥有开局金币（由配置/种子决定）
+
+---
+
+## 模板种子数据（Git）
+
+游戏实体 / 词条 / 分类以 JSON 种子跟踪，路径：`project/server/data/seed/`。
+
+| 场景 | 做法 |
+|------|------|
+| 新环境空库启动 | 自动从 `data/seed/` 导入（本地已有模板则**不覆盖**） |
+| 发布当前库到种子 | Admin 顶栏「发布种子」，或 `cd project/server && npm run seed:publish` |
+| 提交到 Git | 发布后再 `git add project/server/data/seed/` 并提交 |
+
+运行时 `data/game.db`（及 `-shm`/`-wal`）仍被 `.gitignore` 忽略，不要提交。
 
 ---
 
@@ -77,7 +91,12 @@ project/
 │   ├── package.json
 │   ├── tsconfig.json
 │   ├── data/
-│   │   └── game_data.json    # 种子数据（首次启动导入 DB）
+│   │   ├── game.db           # 运行时库（gitignore，不入库）
+│   │   └── seed/             # JSON 模板种子（入库；空库启动时导入）
+│   │       ├── entities.json
+│   │       ├── affixes.json
+│   │       ├── categories.json
+│   │       └── meta.json
 │   └── src/
 │       ├── index.ts          # 入口
 │       ├── config.ts         # 配置
@@ -85,13 +104,16 @@ project/
 │       │   ├── schema.ts     # Drizzle ORM 表定义
 │       │   ├── connection.ts # DB 单例连接
 │       │   ├── cache.ts      # 模板内存缓存
-│       │   ├── seed.ts       # 种子数据导入
+│       │   ├── seed.ts       # 建表与迁移
+│       │   ├── seedData.ts   # 种子发布 / 空库导入
 │       │   ├── index.ts      # 统一导出
 │       │   └── repositories/
 │       │       ├── entityRepo.ts  # 实体 CRUD
 │       │       ├── affixRepo.ts   # 词条 CRUD
 │       │       ├── saveRepo.ts    # 存档读写
 │       │       └── battleRepo.ts  # 对战池操作
+│       ├── scripts/
+│       │   └── publish-seed.ts # npm run seed:publish
 │       ├── middleware/
 │       │   ├── auth.ts       # JWT 认证
 │       │   └── admin.ts      # 管理员权限
@@ -99,7 +121,7 @@ project/
 │           ├── auth.ts       # 注册/登录
 │           ├── save.ts       # 存档
 │           ├── data.ts       # 游戏数据 + 战斗池
-│           └── admin.ts      # 管理员 CRUD
+│           └── admin.ts      # 管理员 CRUD + 发布种子
 └── client/                   # 前端（Vite + TypeScript）
     ├── package.json
     ├── tsconfig.json
