@@ -556,12 +556,14 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
       h += '<div style="color:#999;font-size:12px;padding:8px;">拖入实体到第一层</div>';
     }
 
-    // 渲染每个 slot 的第一层实体卡片（starter 和木桩都渲染）及其子实体
+    // 渲染每个 slot 的第一层实体卡片（starter 和木桩都渲染）及其子实体；被动静态预览并入面板
+    const preview = engine.previewBdRuntimes(slots);
     for (let si = 0; si < slots.length; si++) {
       const slot = slots[si];
       const edef = getEntityDef(slot.entity.defId);
       if (!edef) continue;
-      h += renderEntityCard(slot.entity, 0, side, 'build', getCollapse());
+      const unit = preview.find(u => u.instanceId === slot.entity.instanceId) || null;
+      h += renderEntityCard(slot.entity, 0, side, 'build', getCollapse(), unit);
     }
 
     h += '</div>';
@@ -602,7 +604,7 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
 
   function bindBattleTooltips() {
     const body = document.getElementById('sb-battle-body');
-    if (body) bindSbTooltips(body, getInstance);
+    if (body) bindSbTooltips(body, getInstance, lookupCombatUnit);
   }
 
   // ---- 动态战斗数值更新（重绘 body 确保所有数值实时） ----
@@ -1014,10 +1016,26 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
     return null;
   }
 
+  /** 悬浮窗取运行时（战斗用当前单位；BD 用被动预览） */
+  function lookupCombatUnit(instanceId: string): CombatUnitRuntime | null {
+    if (state.inBattle) {
+      const pu = getCombatUnits('player');
+      const eu = getCombatUnits('enemy');
+      return pu?.find(u => u.instanceId === instanceId)
+        || eu?.find(u => u.instanceId === instanceId)
+        || null;
+    }
+    const p = engine.previewBdRuntimes(state.playerSlots)
+      .find(u => u.instanceId === instanceId);
+    if (p) return p;
+    return engine.previewBdRuntimes(state.enemySlots)
+      .find(u => u.instanceId === instanceId) || null;
+  }
+
   function bindTooltipEvents() {
     for (const id of ['sb-player-bd', 'sb-enemy-bd'] as const) {
       const el = document.getElementById(id);
-      if (el) bindSbTooltips(el, getInstance);
+      if (el) bindSbTooltips(el, getInstance, lookupCombatUnit);
     }
   }
 
@@ -1119,6 +1137,8 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
     if (mode === 'battle') {
       const units = side === 'player' ? getCombatUnits('player') : getCombatUnits('enemy');
       combatUnit = units?.find(u => u.instanceId === item.instanceId);
+    } else {
+      combatUnit = engine.previewBdRuntimes(slots).find(u => u.instanceId === item.instanceId) || null;
     }
     const newHtml = renderEntityCard(item, depth, side, mode, getCollapse(), combatUnit);
     const temp = document.createElement('div');
@@ -1205,7 +1225,7 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
 
   /** 单张卡片（含子树）tooltip 绑定；build / battle 共用 */
   function bindTooltipEventsOnCard(card: HTMLElement) {
-    bindTooltipOnRoot(card, getInstance);
+    bindTooltipOnRoot(card, getInstance, lookupCombatUnit);
   }
 
 

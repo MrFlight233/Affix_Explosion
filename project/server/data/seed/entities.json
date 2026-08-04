@@ -53,7 +53,15 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": false
+    "hasPassiveBonuses": false,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "battery_10",
@@ -91,12 +99,29 @@
         "敌人"
       ]
     },
-    "staminaRegenerationBonus": 10,
+    "staminaRegenerationBonus": 0,
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": true
+    "hasPassiveBonuses": true,
+    "passiveEffects": [
+      {
+        "displayName": "耐力恢复加成",
+        "stat": "staminaRegen",
+        "op": "gain",
+        "params": {
+          "amount": 10
+        }
+      }
+    ],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "chariot",
@@ -152,7 +177,15 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": false
+    "hasPassiveBonuses": false,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "dagger",
@@ -198,7 +231,15 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": false
+    "hasPassiveBonuses": false,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "damage_of_endurance",
@@ -231,7 +272,15 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": true
+    "hasPassiveBonuses": true,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "dwarves",
@@ -269,7 +318,15 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": false
+    "hasPassiveBonuses": false,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "elf",
@@ -307,7 +364,15 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": false
+    "hasPassiveBonuses": false,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "fangs",
@@ -355,7 +420,15 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": false
+    "hasPassiveBonuses": false,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "fire_boll",
@@ -411,7 +484,15 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": false
+    "hasPassiveBonuses": false,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "fist",
@@ -466,7 +547,15 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": false
+    "hasPassiveBonuses": false,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "gnomes",
@@ -504,7 +593,15 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": false
+    "hasPassiveBonuses": false,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "goblin",
@@ -550,7 +647,15 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": false
+    "hasPassiveBonuses": false,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "half_elves",
@@ -588,7 +693,15 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": false
+    "hasPassiveBonuses": false,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "half_orcs",
@@ -626,7 +739,15 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": false
+    "hasPassiveBonuses": false,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "halflings",
@@ -664,7 +785,15 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": false
+    "hasPassiveBonuses": false,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "hp_of_endurance",
@@ -694,10 +823,35 @@
     "targetFaction": null,
     "staminaRegenerationBonus": 0,
     "staminaBonus": 0,
-    "hpRegenerationBonus": 1,
-    "hpBonus": 100,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": true
+    "hasPassiveBonuses": true,
+    "passiveEffects": [
+      {
+        "displayName": "生命加成",
+        "stat": "maxHp",
+        "op": "gain",
+        "params": {
+          "amount": 100
+        }
+      },
+      {
+        "displayName": "生命恢复加成",
+        "stat": "hpRegen",
+        "op": "gain",
+        "params": {
+          "amount": 1
+        }
+      }
+    ],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "human",
@@ -735,7 +889,69 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": false
+    "hasPassiveBonuses": false,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
+  },
+  {
+    "id": "inspirational_aura",
+    "name": "鼓舞光环",
+    "slotCost": 1,
+    "entitySlots": 0,
+    "weight": 0,
+    "value": 10,
+    "fixedAffixes": [
+      "fighter",
+      "ability"
+    ],
+    "dynamicAffixSlots": 0,
+    "poolPrerequisite": [
+      "fighter"
+    ],
+    "hp": 0,
+    "maxStamina": 0,
+    "staminaRegen": 0,
+    "hpRegen": 0,
+    "maxLoad": 0,
+    "isActive": false,
+    "staminaCost": 0,
+    "actionTime": 0,
+    "damage": 0,
+    "onHitEffects": [],
+    "targetType": null,
+    "targetOrder": null,
+    "priorityTarget": null,
+    "targetFaction": null,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0,
+    "hasPassiveBonuses": true,
+    "passiveEffects": [
+      {
+        "displayName": "鼓舞",
+        "stat": "staminaRegen",
+        "op": "gain",
+        "params": {
+          "amount": 5
+        }
+      }
+    ],
+    "passiveTargetCondition": {
+      "sortBy": "从上往下",
+      "filterBy": [
+        "友方",
+        "is_starter"
+      ]
+    },
+    "passiveTargetCount": "all"
   },
   {
     "id": "legendary_dagger",
@@ -800,7 +1016,15 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": false
+    "hasPassiveBonuses": false,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "mythic_dagger",
@@ -846,7 +1070,15 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": false
+    "hasPassiveBonuses": false,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "rare_dagger",
@@ -892,7 +1124,15 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": false
+    "hasPassiveBonuses": false,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "second_wind",
@@ -948,7 +1188,15 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": false
+    "hasPassiveBonuses": false,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "short_bow",
@@ -994,7 +1242,15 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": false
+    "hasPassiveBonuses": false,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "short_sword",
@@ -1040,7 +1296,15 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": false
+    "hasPassiveBonuses": false,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "short_wooden_stick",
@@ -1086,7 +1350,15 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": false
+    "hasPassiveBonuses": false,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "small backpack",
@@ -1119,7 +1391,15 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": false
+    "hasPassiveBonuses": false,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "staff_of_recovery",
@@ -1175,7 +1455,15 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": false
+    "hasPassiveBonuses": false,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "stamina_of_endurance",
@@ -1203,12 +1491,37 @@
     "targetOrder": null,
     "priorityTarget": null,
     "targetFaction": null,
-    "staminaRegenerationBonus": 1,
-    "staminaBonus": 100,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": true
+    "hasPassiveBonuses": true,
+    "passiveEffects": [
+      {
+        "displayName": "耐力加成",
+        "stat": "maxStamina",
+        "op": "gain",
+        "params": {
+          "amount": 100
+        }
+      },
+      {
+        "displayName": "耐力恢复加成",
+        "stat": "staminaRegen",
+        "op": "gain",
+        "params": {
+          "amount": 1
+        }
+      }
+    ],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "standard_long_sword",
@@ -1259,12 +1572,29 @@
         "敌人"
       ]
     },
-    "staminaRegenerationBonus": 5,
+    "staminaRegenerationBonus": 0,
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": true
+    "hasPassiveBonuses": true,
+    "passiveEffects": [
+      {
+        "displayName": "耐力恢复加成",
+        "stat": "staminaRegen",
+        "op": "gain",
+        "params": {
+          "amount": 5
+        }
+      }
+    ],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "standing_shield",
@@ -1295,9 +1625,26 @@
     "staminaRegenerationBonus": 0,
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
-    "hpBonus": 500,
+    "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": true
+    "hasPassiveBonuses": true,
+    "passiveEffects": [
+      {
+        "displayName": "生命加成",
+        "stat": "maxHp",
+        "op": "gain",
+        "params": {
+          "amount": 500
+        }
+      }
+    ],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "uncommon_dagger",
@@ -1343,7 +1690,15 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": false
+    "hasPassiveBonuses": false,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "wolf",
@@ -1388,6 +1743,14 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "hasPassiveBonuses": false
+    "hasPassiveBonuses": false,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   }
 ]

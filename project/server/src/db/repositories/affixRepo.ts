@@ -65,6 +65,9 @@ export class AffixRepo {
       // null = 显式无覆写
       targetingModifier: def.targetingModifier != null ? def.targetingModifier : undefined,
       hasPassiveBonuses: def.hasPassiveBonuses ?? false,
+      passiveEffects: def.passiveEffects ?? [],
+      passiveTargetCondition: def.passiveTargetCondition,
+      passiveTargetCount: def.passiveTargetCount ?? null,
     };
 
     const db = getDB();
@@ -73,12 +76,16 @@ export class AffixRepo {
         id, name, category, cost_value, slot_cost,
         repeatable, prerequisite, pool_prerequisite, effect, on_hit_effects,
         damage_bonus, stamina_regeneration_bonus, stamina_bonus, hp_regeneration_bonus, hp_bonus,
-        load_bonus, targeting_modifier, has_passive_bonuses, updated_at
+        load_bonus, targeting_modifier, has_passive_bonuses,
+        passive_effects, passive_target_condition, passive_target_count,
+        updated_at
       ) VALUES (
         @id, @name, @category, @cost_value, @slot_cost,
         @repeatable, @prerequisite, @pool_prerequisite, @effect, @on_hit_effects,
         @damage_bonus, @stamina_regeneration_bonus, @stamina_bonus, @hp_regeneration_bonus, @hp_bonus,
-        @load_bonus, @targeting_modifier, @has_passive_bonuses, @updated_at
+        @load_bonus, @targeting_modifier, @has_passive_bonuses,
+        @passive_effects, @passive_target_condition, @passive_target_count,
+        @updated_at
       )
     `).run(affixDefToRow(filled));
 
@@ -113,6 +120,8 @@ export class AffixRepo {
         stamina_bonus=@stamina_bonus, hp_regeneration_bonus=@hp_regeneration_bonus,
         hp_bonus=@hp_bonus, load_bonus=@load_bonus,
         targeting_modifier=@targeting_modifier, has_passive_bonuses=@has_passive_bonuses,
+        passive_effects=@passive_effects, passive_target_condition=@passive_target_condition,
+        passive_target_count=@passive_target_count,
         updated_at=@updated_at
       WHERE id=@id
     `).run(affixDefToRow(merged));

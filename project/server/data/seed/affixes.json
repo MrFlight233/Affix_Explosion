@@ -17,7 +17,15 @@
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
-    "loadBonus": 0
+    "loadBonus": 0,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "accessory",
@@ -37,7 +45,15 @@
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
-    "loadBonus": 0
+    "loadBonus": 0,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "admin",
@@ -57,7 +73,15 @@
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
-    "loadBonus": 0
+    "loadBonus": 0,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "animal",
@@ -77,7 +101,15 @@
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
-    "loadBonus": 0
+    "loadBonus": 0,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "beast_control",
@@ -97,7 +129,15 @@
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
-    "loadBonus": 0
+    "loadBonus": 0,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "blood_for_blood",
@@ -129,12 +169,20 @@
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
-    "loadBonus": 0
+    "loadBonus": 0,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "damage_bonus_1",
     "name": "伤害加成 1",
-    "category": "passive_bonus",
+    "category": "on_hit_effect",
     "costValue": 10,
     "slotCost": 1,
     "repeatable": true,
@@ -155,12 +203,20 @@
         ]
       }
     ],
-    "hasPassiveBonuses": true,
+    "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
-    "loadBonus": 0
+    "loadBonus": 0,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "fighter",
@@ -178,7 +234,15 @@
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
-    "loadBonus": 0
+    "loadBonus": 0,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "frenzy",
@@ -192,14 +256,26 @@
     "effect": "随机选择目标",
     "onHitEffects": [],
     "targetingModifier": {
-      "sortBy": "random"
+      "sortBy": "random",
+      "filterBy": [
+        "友方",
+        "敌人"
+      ]
     },
     "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
-    "loadBonus": 0
+    "loadBonus": 0,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "hp_bonus_50",
@@ -216,8 +292,25 @@
     "staminaRegenerationBonus": 0,
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
-    "hpBonus": 50,
-    "loadBonus": 0
+    "hpBonus": 0,
+    "loadBonus": 0,
+    "passiveEffects": [
+      {
+        "displayName": "生命加成",
+        "stat": "maxHp",
+        "op": "gain",
+        "params": {
+          "amount": 50
+        }
+      }
+    ],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "hp_regeneration_bonus_2",
@@ -233,9 +326,26 @@
     "hasPassiveBonuses": true,
     "staminaRegenerationBonus": 0,
     "staminaBonus": 0,
-    "hpRegenerationBonus": 2,
+    "hpRegenerationBonus": 0,
     "hpBonus": 0,
-    "loadBonus": 0
+    "loadBonus": 0,
+    "passiveEffects": [
+      {
+        "displayName": "生命恢复加成",
+        "stat": "hpRegen",
+        "op": "gain",
+        "params": {
+          "amount": 2
+        }
+      }
+    ],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "hp_steal_2",
@@ -278,7 +388,15 @@
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
-    "loadBonus": 0
+    "loadBonus": 0,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "humanoid",
@@ -298,7 +416,15 @@
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
-    "loadBonus": 0
+    "loadBonus": 0,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "item",
@@ -318,7 +444,15 @@
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
-    "loadBonus": 0
+    "loadBonus": 0,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "mechanic",
@@ -338,7 +472,15 @@
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
-    "loadBonus": 0
+    "loadBonus": 0,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "poison_2",
@@ -372,7 +514,15 @@
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
-    "loadBonus": 0
+    "loadBonus": 0,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "slavery",
@@ -392,7 +542,15 @@
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
-    "loadBonus": 0
+    "loadBonus": 0,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "spell_casting",
@@ -410,7 +568,15 @@
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
-    "loadBonus": 0
+    "loadBonus": 0,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "stamina_bonus_20",
@@ -425,10 +591,27 @@
     "onHitEffects": [],
     "hasPassiveBonuses": true,
     "staminaRegenerationBonus": 0,
-    "staminaBonus": 20,
+    "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
-    "loadBonus": 0
+    "loadBonus": 0,
+    "passiveEffects": [
+      {
+        "displayName": "耐力加成",
+        "stat": "maxStamina",
+        "op": "gain",
+        "params": {
+          "amount": 20
+        }
+      }
+    ],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "stamina_drain_5",
@@ -460,7 +643,15 @@
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
-    "loadBonus": 0
+    "loadBonus": 0,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "stamina_regeneration_bonus_5",
@@ -474,11 +665,28 @@
     "effect": "增加最上层实体耐力回复 5 点",
     "onHitEffects": [],
     "hasPassiveBonuses": true,
-    "staminaRegenerationBonus": 5,
+    "staminaRegenerationBonus": 0,
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
-    "loadBonus": 0
+    "loadBonus": 0,
+    "passiveEffects": [
+      {
+        "displayName": "耐力恢复加成",
+        "stat": "staminaRegen",
+        "op": "gain",
+        "params": {
+          "amount": 5
+        }
+      }
+    ],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "starter",
@@ -498,7 +706,15 @@
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
-    "loadBonus": 0
+    "loadBonus": 0,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "target_enemy",
@@ -519,7 +735,15 @@
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
-    "loadBonus": 0
+    "loadBonus": 0,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "target_friend",
@@ -540,7 +764,15 @@
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
-    "loadBonus": 0
+    "loadBonus": 0,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "weapon",
@@ -560,7 +792,15 @@
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
-    "loadBonus": 0
+    "loadBonus": 0,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "weapon_training",
@@ -595,7 +835,15 @@
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
-    "loadBonus": 0
+    "loadBonus": 0,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "weight_bonus_5000",
@@ -613,7 +861,24 @@
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
-    "loadBonus": 5000
+    "loadBonus": 0,
+    "passiveEffects": [
+      {
+        "displayName": "负重加成",
+        "stat": "maxLoad",
+        "op": "gain",
+        "params": {
+          "amount": 5000
+        }
+      }
+    ],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   },
   {
     "id": "weight_training_5000",
@@ -635,6 +900,23 @@
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
-    "loadBonus": 5000
+    "loadBonus": 0,
+    "passiveEffects": [
+      {
+        "displayName": "负重加成",
+        "stat": "maxLoad",
+        "op": "gain",
+        "params": {
+          "amount": 5000
+        }
+      }
+    ],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "自己"
+      ]
+    },
+    "passiveTargetCount": 1
   }
 ]

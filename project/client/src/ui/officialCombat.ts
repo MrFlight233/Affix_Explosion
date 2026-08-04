@@ -278,8 +278,13 @@ export function bindOfficialCombatInteractions(root: HTMLElement, ctx: OfficialC
 
   const playerSide = document.getElementById('sb-player-units');
   const enemySide = document.getElementById('sb-enemy-units');
-  if (playerSide) bindSbTooltips(playerSide, (id) => getOfficialCombatInstance(ctx, id));
-  if (enemySide) bindSbTooltips(enemySide, (id) => getOfficialCombatInstance(ctx, id));
+  const lookupCu = (id: string) => {
+    const pu = getOfficialCombatUnits(ctx, 'player');
+    const eu = getOfficialCombatUnits(ctx, 'enemy');
+    return pu?.find(u => u.instanceId === id) || eu?.find(u => u.instanceId === id) || null;
+  };
+  if (playerSide) bindSbTooltips(playerSide, (id) => getOfficialCombatInstance(ctx, id), lookupCu);
+  if (enemySide) bindSbTooltips(enemySide, (id) => getOfficialCombatInstance(ctx, id), lookupCu);
 
   const btn = document.getElementById('btn-continue-combat-center');
   if (btn) {

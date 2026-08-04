@@ -46,6 +46,9 @@ export const entities = sqliteTable('entities', {
   hpBonus: integer('hp_bonus').notNull().default(0),
   loadBonus: integer('load_bonus').notNull().default(0),
   hasPassiveBonuses: integer('has_passive_bonuses').notNull().default(0),
+  passiveEffects: text('passive_effects').notNull().default('[]'),
+  passiveTargetCondition: text('passive_target_condition'),
+  passiveTargetCount: integer('passive_target_count'),
   createdAt: text('created_at').notNull().default("(datetime('now'))"),
   updatedAt: text('updated_at').notNull().default("(datetime('now'))"),
 });
@@ -70,6 +73,9 @@ export const affixes = sqliteTable('affixes', {
   damageBonus: integer('damage_bonus').notNull().default(0),
   targetingModifier: text('targeting_modifier'),
   hasPassiveBonuses: integer('has_passive_bonuses').notNull().default(0),
+  passiveEffects: text('passive_effects').notNull().default('[]'),
+  passiveTargetCondition: text('passive_target_condition'),
+  passiveTargetCount: integer('passive_target_count'),
   createdAt: text('created_at').notNull().default("(datetime('now'))"),
   updatedAt: text('updated_at').notNull().default("(datetime('now'))"),
 });

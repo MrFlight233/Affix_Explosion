@@ -22,6 +22,11 @@ import {
   entityInitialOnHitEffects,
   renderOnHitEffectsEditor,
 } from './adminHitEffects';
+import {
+  bindPassiveBonusesEditor,
+  readPassiveBonusesFromDom,
+  renderPassiveBonusesEditor,
+} from './adminPassiveBonuses';
 
 type TabType = 'entities' | 'affixes';
 
@@ -926,6 +931,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
       priorityTarget: v('priorityTarget'),
     });
     const hasExplicitSort = !!(tc?.sortBy || v('targetOrder') || v('priorityTarget'));
+    h += `<div class="adm-section-title">主动目标</div>`;
     h += `<div class="admin-field"><label>统一排序</label><select id="ef-tc-sortBy">${sortByOptionsHtml(hasExplicitSort ? sortSelected : '', true, '随机（缺省）')}</select></div>`;
     let filters = mergeFiltersWithLegacyFaction(tc?.filterBy, v('targetFaction'));
     if (isNew && splitFilters(filters).factions.length === 0) filters = ['敌人'];
@@ -938,17 +944,9 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     h += renderOnHitEffectsEditor('ef-onhit', entityInitialOnHitEffects(data));
     h += `</div>`;
     h += `</div>`;
-    // 被动加成总开关（与词条对齐）
-    const hasPB = v('hasPassiveBonuses') === true;
+    // 被动加成（目标 + 效果，与主动同构；上下分区）
     h += `<div class="admin-form-section"><h4>被动加成</h4>`;
-    h += `<div class="admin-field"><label>被动加成模式</label><select id="ef-hasPassiveBonuses"><option value="0"${!hasPB?' selected':''}>无</option><option value="1"${hasPB?' selected':''}>有</option></select></div>`;
-    h += `<div id="ef-passive-fields" style="${hasPB?'':'display:none'}">`;
-    h += `<div class="admin-field"><label>生命加成</label><input id="ef-hpBonus" type="number" value="${v('hpBonus', 0)}"></div>`;
-    h += `<div class="admin-field"><label>生命恢复加成</label><input id="ef-hpRegenerationBonus" type="number" value="${v('hpRegenerationBonus', 0)}"></div>`;
-    h += `<div class="admin-field"><label>耐力加成</label><input id="ef-staminaBonus" type="number" value="${v('staminaBonus', 0)}"></div>`;
-    h += `<div class="admin-field"><label>耐力恢复加成</label><input id="ef-staminaRegenerationBonus" type="number" value="${v('staminaRegenerationBonus', 0)}"></div>`;
-    h += `<div class="admin-field"><label>负重加成</label><input id="ef-loadBonus" type="number" value="${v('loadBonus', 0)}"></div>`;
-    h += `</div>`;
+    h += renderPassiveBonusesEditor('ef', data || {});
     h += `</div>`;
     h += `</div>`;
     return h;
@@ -1074,17 +1072,9 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     h += renderPopoverSelector('af-prerequisite','前置词条',v('prerequisite')||[],affixOpts);
     h += renderPopoverSelector('af-poolPrerequisite','池前置',v('poolPrerequisite')||[],affixOpts);
     h += `</div>`;
-    // v7: 被动加成总开关
-    const hasPB = v('hasPassiveBonuses') === true;
+    // v7+: 被动加成（目标 + 效果）
     h += `<div class="admin-form-section"><h4>被动加成</h4>`;
-    h += `<div class="admin-field"><label>被动加成模式</label><select id="af-hasPassiveBonuses"><option value="0"${!hasPB?' selected':''}>无</option><option value="1"${hasPB?' selected':''}>有</option></select></div>`;
-    h += `<div id="af-passive-fields" style="${hasPB?'':'display:none'}">`;
-    h += `<div class="admin-field"><label>生命加成</label><input id="af-hpBonus" type="number" value="${v('hpBonus', 0)}"></div>`;
-    h += `<div class="admin-field"><label>生命恢复加成</label><input id="af-hpRegenerationBonus" type="number" value="${v('hpRegenerationBonus', 0)}"></div>`;
-    h += `<div class="admin-field"><label>耐力加成</label><input id="af-staminaBonus" type="number" value="${v('staminaBonus', 0)}"></div>`;
-    h += `<div class="admin-field"><label>耐力恢复加成</label><input id="af-staminaRegenerationBonus" type="number" value="${v('staminaRegenerationBonus', 0)}"></div>`;
-    h += `<div class="admin-field"><label>负重加成</label><input id="af-loadBonus" type="number" value="${v('loadBonus', 0)}"></div>`;
-    h += `</div>`;
+    h += renderPassiveBonusesEditor('af', data || {});
     h += `</div>`;
     h += `<div class="admin-form-section"><h4>效果</h4>`;
     h += renderOnHitEffectsEditor('af-onhit', v('onHitEffects') || []);
@@ -1125,6 +1115,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     bindPopoverSelector('ef-fixedAffixes', affixOpts);
     bindPopoverSelector('ef-poolPrerequisite', affixOpts);
     bindOnHitEffectsEditor('ef-onhit', entityInitialOnHitEffects(originalData || {}));
+    bindPassiveBonusesEditor('ef', originalData || {});
 
     // ── 动态词条槽位：始终绑定 + 动态显示/隐藏 ──
     bindPopoverSelector('ef-preloadedDynamicAffixes', affixOpts);
@@ -1186,12 +1177,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
       });
     }
 
-    // 被动加成总开关显隐
-    const hasPBsel = document.getElementById('ef-hasPassiveBonuses') as HTMLSelectElement;
-    const passiveFields = document.getElementById('ef-passive-fields');
-    hasPBsel?.addEventListener('change', () => {
-      if (passiveFields) passiveFields.style.display = hasPBsel.value === '1' ? '' : 'none';
-    });
+    // 被动显隐由 bindPassiveBonusesEditor 处理
 
     document.getElementById('ef-btn-save')?.addEventListener('click', async () => {
       try {
@@ -1210,7 +1196,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
           return;
         }
 
-        const hasPB = (document.getElementById('ef-hasPassiveBonuses') as HTMLSelectElement).value === '1';
+        const passive = readPassiveBonusesFromDom('ef');
         const entity: any = {
           id, name,
           slotCost: (() => {
@@ -1253,13 +1239,16 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
               filterBy,
             };
           })(),
-          // 被动总开关：关则清零全部被动（含 loadBonus）
-          hasPassiveBonuses: hasPB,
-          staminaRegenerationBonus: hasPB ? (parseInt((document.getElementById('ef-staminaRegenerationBonus') as HTMLInputElement).value) || 0) : 0,
-          staminaBonus: hasPB ? (parseInt((document.getElementById('ef-staminaBonus') as HTMLInputElement).value) || 0) : 0,
-          hpRegenerationBonus: hasPB ? (parseInt((document.getElementById('ef-hpRegenerationBonus') as HTMLInputElement).value) || 0) : 0,
-          hpBonus: hasPB ? (parseInt((document.getElementById('ef-hpBonus') as HTMLInputElement).value) || 0) : 0,
-          loadBonus: hasPB ? (parseInt((document.getElementById('ef-loadBonus') as HTMLInputElement).value) || 0) : 0,
+          // 被动：列表 + 目标
+          hasPassiveBonuses: passive.hasPassiveBonuses,
+          passiveEffects: passive.passiveEffects,
+          passiveTargetCondition: passive.passiveTargetCondition,
+          passiveTargetCount: passive.passiveTargetCount,
+          staminaRegenerationBonus: 0,
+          staminaBonus: 0,
+          hpRegenerationBonus: 0,
+          hpBonus: 0,
+          loadBonus: 0,
         };
         if (!entity.defaultChildren || entity.defaultChildren.length === 0) entity.defaultChildren = null;
         if (!entity.preloadedDynamicAffixes || entity.preloadedDynamicAffixes.length === 0) entity.preloadedDynamicAffixes = null;
@@ -1294,13 +1283,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     bindPopoverSelector('af-prerequisite', affixOpts);
     bindPopoverSelector('af-poolPrerequisite', affixOpts);
     bindOnHitEffectsEditor('af-onhit', originalData?.onHitEffects || []);
-
-    // v7: 被动加成主开关
-    const hasPBsel = document.getElementById('af-hasPassiveBonuses') as HTMLSelectElement;
-    const passiveFields = document.getElementById('af-passive-fields');
-    hasPBsel?.addEventListener('change', () => {
-      if (passiveFields) passiveFields.style.display = hasPBsel.value === '1' ? '' : 'none';
-    });
+    bindPassiveBonusesEditor('af', originalData || {});
 
     // v7: targeting modifier 主开关
     const tmEnabledSel = document.getElementById('af-tm-enabled') as HTMLSelectElement;
@@ -1330,8 +1313,8 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
           return;
         }
         const onHitEffects = hitCollect.effects;
+        const passive = readPassiveBonusesFromDom('af');
 
-        const hasPB = (document.getElementById('af-hasPassiveBonuses') as HTMLSelectElement).value === '1';
         const affix = {
           id, name,
           category: (document.getElementById('af-category') as HTMLSelectElement).value,
@@ -1345,13 +1328,15 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
           poolPrerequisite: getSelected('af-poolPrerequisite'),
           effect: (document.getElementById('af-effect') as HTMLInputElement).value.trim(),
           onHitEffects,
-          // 被动总开关：关则清零全部被动（含 loadBonus）
-          hasPassiveBonuses: hasPB,
-          staminaRegenerationBonus: hasPB ? (parseInt((document.getElementById('af-staminaRegenerationBonus') as HTMLInputElement).value) || 0) : 0,
-          staminaBonus: hasPB ? (parseInt((document.getElementById('af-staminaBonus') as HTMLInputElement).value) || 0) : 0,
-          hpRegenerationBonus: hasPB ? (parseInt((document.getElementById('af-hpRegenerationBonus') as HTMLInputElement).value) || 0) : 0,
-          hpBonus: hasPB ? (parseInt((document.getElementById('af-hpBonus') as HTMLInputElement).value) || 0) : 0,
-          loadBonus: hasPB ? (parseInt((document.getElementById('af-loadBonus') as HTMLInputElement).value) || 0) : 0,
+          hasPassiveBonuses: passive.hasPassiveBonuses,
+          passiveEffects: passive.passiveEffects,
+          passiveTargetCondition: passive.passiveTargetCondition,
+          passiveTargetCount: passive.passiveTargetCount,
+          staminaRegenerationBonus: 0,
+          staminaBonus: 0,
+          hpRegenerationBonus: 0,
+          hpBonus: 0,
+          loadBonus: 0,
           targetingModifier: (() => {
             const enabled = (document.getElementById('af-tm-enabled') as HTMLSelectElement).value === '1';
             if (!enabled) return null;

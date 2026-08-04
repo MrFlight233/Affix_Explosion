@@ -5,14 +5,23 @@ import {
   getEffectiveEntitySlots, countUsedSlots, countUsedAffixSlots, getCategoryName,
   getItemTradeValue, getDefPackageTradeValue, getAffixPackageTradeValue, computeStarterLoad,
 } from '../../game/data';
-import { formatWeightG, formatWeightBonusG } from './format';
-import { hasPassive, resolveNames } from './entityCard';
+import { formatWeightG } from './format';
+import { hasAffixPassive, hasPassive, resolveNames } from './entityCard';
 import { formatTargetingSummary } from '../../game/targetingUtil';
 import { migrateLegacyDamageToOnHitEffects } from '../../game/hitEffectUtil';
 import {
   formatActiveActionCollapseSummary,
   formatConfigEffectsBlock,
 } from '../../game/activeActionDisplay';
+import {
+  formatPassiveCollapseSummary,
+  formatPassiveTargetLine,
+  hasDisplayPassive,
+  passiveEffectPlainLines,
+  passiveRootHint,
+  resolvePassiveForDisplay,
+} from '../passiveBonusDisplay';
+import { summarizePassiveMods } from '../../game/battle/passives';
 
 export function tipkv(k: string, v: string | number): string {
   return `<span class="sb-tip-kv"><span class="sb-tip-key">${k}</span><span class="sb-tip-val">${v}</span></span>`;
@@ -51,8 +60,13 @@ export function renderTooltipTree(
       const hRegen = combatUnit ? combatUnit.hpRegeneration : (def.hpRegen || 0);
       h += tipkv('生命', hp) + tipkv('耐力', stam);
       h += tipkv('耐力恢复', sRegen + '/s') + tipkv('生命恢复', hRegen + '/s');
-      const load = computeStarterLoad(item);
-      h += tipkv('负重', `${formatWeightG(load.current)}/${formatWeightG(load.max)}`);
+      const load = combatUnit
+        ? `${formatWeightG(combatUnit.currentLoad)}/${formatWeightG(combatUnit.maxLoad)}`
+        : (() => {
+          const l = computeStarterLoad(item);
+          return `${formatWeightG(l.current)}/${formatWeightG(l.max)}`;
+        })();
+      h += tipkv('负重', load);
     }
     h += tipkv('槽位消耗', def.slotCost);
     if (!isSt) h += tipkv('重量', formatWeightG(def.weight));
@@ -86,7 +100,7 @@ export function renderTooltipTree(
         ? `倒计时: ${(remaining / 1000).toFixed(1)}s`
         : `间隔: ${(actionTime / 1000).toFixed(1)}s`;
       h += `<div class="sb-tip-fixed-row" style="${indent}">耐力: ${staminaCost}  ${timeLabel}</div>`;
-      h += `<div class="sb-tip-fixed-row" style="${indent}">索敌: ${targeting}</div>`;
+      h += `<div class="sb-tip-fixed-row" style="${indent}">目标: ${targeting}</div>`;
       const lines = formatConfigEffectsBlock(effects);
       if (lines.length === 0) {
         h += `<div class="sb-tip-fixed-row" style="${indent}">无效果</div>`;
@@ -98,14 +112,24 @@ export function renderTooltipTree(
     }
 
     if (hasPassive(def)) {
+      const pcfg = resolvePassiveForDisplay(def);
       h += tipSection('被动加成');
+      h += `<div class="sb-tip-fixed-row" style="${indent}">目标: ${formatPassiveTargetLine(pcfg)}</div>`;
       h += '<div class="sb-tip-grid">';
-      if (def.hpBonus) h += tipkv('生命加成', (def.hpBonus > 0 ? '+' : '') + def.hpBonus);
-      if (def.hpRegenerationBonus) h += tipkv('生命恢复加成', '+' + def.hpRegenerationBonus + '/s');
-      if (def.staminaBonus) h += tipkv('耐力加成', '+' + def.staminaBonus);
-      if (def.staminaRegenerationBonus) h += tipkv('耐力恢复加成', '+' + def.staminaRegenerationBonus + '/s');
-      if (def.loadBonus) h += tipkv('负重加成', formatWeightBonusG(def.loadBonus));
+      for (const line of passiveEffectPlainLines(pcfg)) {
+        h += tipkv('效果', line);
+      }
       h += '</div>';
+      const hint = passiveRootHint(pcfg);
+      if (hint) h += `<div class="sb-tip-fixed-row" style="${indent}">${hint}</div>`;
+    }
+
+    if (combatUnit) {
+      const modLines = summarizePassiveMods(combatUnit);
+      if (modLines.length > 0) {
+        h += tipSection('战斗修饰');
+        h += `<div class="sb-tip-fixed-row" style="${indent}">${modLines.join('  ')}</div>`;
+      }
     }
 
     const hasAffixInfo = def.poolPrerequisite.length > 0
@@ -176,6 +200,9 @@ export function renderTooltipTree(
           }),
           effects,
         })}`;
+      } else if (hasDisplayPassive(cd)) {
+        const psum = formatPassiveCollapseSummary(resolvePassiveForDisplay(cd));
+        if (psum) row += `  ${psum}`;
       }
       row += `  <span class="sb-tip-muted">槽耗${cd.slotCost}</span>`;
       row += '</div>';
@@ -214,6 +241,7 @@ export function showSimTooltip(
   type: 'entity' | 'affix',
   instanceId?: string | null,
   getInstance?: (instanceId: string) => ItemInstance | null,
+  getCombatUnit?: (instanceId: string) => CombatUnitRuntime | null | undefined,
 ): void {
   if (tipShowTimer) {
     clearTimeout(tipShowTimer);
@@ -262,7 +290,7 @@ export function showSimTooltip(
           targetCount: def.targetCount ?? def.targetCondition?.targetCount,
         });
         html += `<div class="sb-tip-fixed-row">耐力: ${def.staminaCost}  间隔: ${(def.actionTime / 1000).toFixed(1)}s</div>`;
-        html += `<div class="sb-tip-fixed-row">索敌: ${targeting}</div>`;
+        html += `<div class="sb-tip-fixed-row">目标: ${targeting}</div>`;
         const lines = formatConfigEffectsBlock(effects);
         if (lines.length === 0) {
           html += '<div class="sb-tip-fixed-row">无效果</div>';
@@ -274,14 +302,16 @@ export function showSimTooltip(
       }
 
       if (hasPassive(def)) {
+        const pcfg = resolvePassiveForDisplay(def);
         html += tipSection('被动加成');
+        html += `<div class="sb-tip-fixed-row">目标: ${formatPassiveTargetLine(pcfg)}</div>`;
         html += '<div class="sb-tip-grid">';
-        if (def.hpBonus) html += tipkv('生命加成', (def.hpBonus > 0 ? '+' : '') + def.hpBonus);
-        if (def.hpRegenerationBonus) html += tipkv('生命恢复加成', '+' + def.hpRegenerationBonus + '/s');
-        if (def.staminaBonus) html += tipkv('耐力加成', '+' + def.staminaBonus);
-        if (def.staminaRegenerationBonus) html += tipkv('耐力恢复加成', '+' + def.staminaRegenerationBonus + '/s');
-        if (def.loadBonus) html += tipkv('负重加成', formatWeightBonusG(def.loadBonus));
+        for (const line of passiveEffectPlainLines(pcfg)) {
+          html += tipkv('效果', line);
+        }
         html += '</div>';
+        const hint = passiveRootHint(pcfg);
+        if (hint) html += `<div class="sb-tip-fixed-row">${hint}</div>`;
       }
 
       const hasAffixInfo = def.poolPrerequisite.length > 0
@@ -330,6 +360,9 @@ export function showSimTooltip(
               }),
               effects,
             })}`;
+          } else if (hasDisplayPassive(cd)) {
+            const psum = formatPassiveCollapseSummary(resolvePassiveForDisplay(cd));
+            if (psum) row += `  ${psum}`;
           }
           row += `  <span class="sb-tip-muted">槽耗${cd.slotCost}</span></div>`;
           html += row;
@@ -346,7 +379,7 @@ export function showSimTooltip(
     };
 
     if (inst) {
-      const cu: CombatUnitRuntime | null | undefined = undefined;
+      const cu = (instanceId && getCombatUnit) ? getCombatUnit(instanceId) : undefined;
       h += renderTooltipTree(inst, def, 0, undefined, cu);
     } else {
       h += renderPoolDef();
@@ -360,19 +393,17 @@ export function showSimTooltip(
     h += `<div class="sb-tip-cat">${getCategoryName(def.category)}</div>`;
     h += tipSection('效果描述');
     h += `<div class="sb-tip-effect">${def.effect}</div>`;
-    const hasPsv = def.hasPassiveBonuses !== false && (
-      !!(def.hpBonus) || !!(def.hpRegenerationBonus)
-      || !!(def.staminaBonus) || !!(def.staminaRegenerationBonus) || !!(def.loadBonus)
-    );
-    if (hasPsv) {
+    if (hasAffixPassive(def)) {
+      const pcfg = resolvePassiveForDisplay(def);
       h += tipSection('被动加成');
+      h += `<div class="sb-tip-fixed-row">目标: ${formatPassiveTargetLine(pcfg)}</div>`;
       h += '<div class="sb-tip-grid">';
-      if (def.hpBonus) h += tipkv('生命加成', `${def.hpBonus > 0 ? '+' : ''}${def.hpBonus}`);
-      if (def.hpRegenerationBonus) h += tipkv('生命恢复', `+${def.hpRegenerationBonus}/秒`);
-      if (def.staminaBonus) h += tipkv('耐力加成', `+${def.staminaBonus}`);
-      if (def.staminaRegenerationBonus) h += tipkv('耐力恢复', `+${def.staminaRegenerationBonus}/秒`);
-      if (def.loadBonus) h += tipkv('负重加成', formatWeightBonusG(def.loadBonus));
+      for (const line of passiveEffectPlainLines(pcfg)) {
+        h += tipkv('效果', line);
+      }
       h += '</div>';
+      const hint = passiveRootHint(pcfg);
+      if (hint) h += `<div class="sb-tip-fixed-row">${hint}</div>`;
     }
     h += tipSection('基本信息');
     h += '<div class="sb-tip-grid">';
@@ -427,13 +458,15 @@ export function hideSimTooltip(): void {
 export function bindTooltipOnRoot(
   root: HTMLElement,
   getInstance?: (instanceId: string) => ItemInstance | null,
+  getCombatUnit?: (instanceId: string) => CombatUnitRuntime | null | undefined,
 ): void {
   root.querySelectorAll('[data-defid]').forEach(el => {
     const htmlEl = el as HTMLElement;
     const defId = htmlEl.dataset.defid!;
     const type = (htmlEl.dataset.type || 'entity') as 'entity' | 'affix';
     const instId = htmlEl.dataset.instance || htmlEl.dataset.cardtoggle || null;
-    htmlEl.addEventListener('mouseenter', (e) => showSimTooltip(e as MouseEvent, defId, type, instId, getInstance));
+    htmlEl.addEventListener('mouseenter', (e) =>
+      showSimTooltip(e as MouseEvent, defId, type, instId, getInstance, getCombatUnit));
     htmlEl.addEventListener('mouseleave', hideSimTooltip);
   });
 }
@@ -445,12 +478,15 @@ const delegatedRoots = new WeakSet<HTMLElement>();
  * 同一 root 只绑一次；getInstance 经 WeakMap 可更新。
  */
 const rootGetInstance = new WeakMap<HTMLElement, ((instanceId: string) => ItemInstance | null) | undefined>();
+const rootGetCombatUnit = new WeakMap<HTMLElement, ((instanceId: string) => CombatUnitRuntime | null | undefined) | undefined>();
 
 export function bindSbTooltips(
   root: HTMLElement,
   getInstance?: (instanceId: string) => ItemInstance | null,
+  getCombatUnit?: (instanceId: string) => CombatUnitRuntime | null | undefined,
 ): void {
   rootGetInstance.set(root, getInstance);
+  rootGetCombatUnit.set(root, getCombatUnit);
   if (delegatedRoots.has(root)) return;
   delegatedRoots.add(root);
 
@@ -462,7 +498,14 @@ export function bindSbTooltips(
     const defId = t.dataset.defid!;
     const type = (t.dataset.type || 'entity') as 'entity' | 'affix';
     const instId = t.dataset.instance || t.dataset.cardtoggle || null;
-    showSimTooltip(e as MouseEvent, defId, type, instId, rootGetInstance.get(root));
+    showSimTooltip(
+      e as MouseEvent,
+      defId,
+      type,
+      instId,
+      rootGetInstance.get(root),
+      rootGetCombatUnit.get(root),
+    );
   });
   root.addEventListener('mouseout', (e) => {
     const t = (e.target as HTMLElement).closest('[data-defid]') as HTMLElement | null;

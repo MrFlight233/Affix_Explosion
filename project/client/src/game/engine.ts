@@ -19,10 +19,16 @@ import {
   migrateLegacyDamageToOnHitEffects,
   normalizeOnHitEffects,
 } from './hitEffectUtil';
+import {
+  resolvePassiveBonusConfig,
+  clonePassiveEffects,
+} from './passiveBonusUtil';
+import type { PassiveSourceRuntime } from './battle/types';
 import { data as dataApi, saves as savesApi } from '../api/client';
 import {
   runBattleWithOptionalWorker,
   buildCombatRuntime,
+  recomputePassiveBonuses,
   type CombatUnitSnapshot, type CombatUnitRuntime, type CombatEvent,
   type PlaybackSpeed,
 } from './battle';
@@ -650,17 +656,76 @@ export class GameEngine {
     return bag;
   }
 
+  private collectPassiveSourcesFromTree(
+    item: ItemInstance,
+    rootInstanceId: string,
+    into: PassiveSourceRuntime[],
+  ): void {
+    if (item.type === 'entity') {
+      const cdef = getEntityDef(item.defId);
+      if (cdef) {
+        const cfg = resolvePassiveBonusConfig({
+          hasPassiveBonuses: Boolean(getEffectiveValue(item, 'hasPassiveBonuses') ?? cdef.hasPassiveBonuses),
+          passiveEffects: getEffectiveValue(item, 'passiveEffects') ?? cdef.passiveEffects,
+          passiveTargetCondition: getEffectiveValue(item, 'passiveTargetCondition') ?? cdef.passiveTargetCondition,
+          passiveTargetCount: getEffectiveValue(item, 'passiveTargetCount') ?? cdef.passiveTargetCount,
+          hpBonus: Number(getEffectiveValue(item, 'hpBonus') ?? cdef.hpBonus ?? 0),
+          hpRegenerationBonus: Number(getEffectiveValue(item, 'hpRegenerationBonus') ?? cdef.hpRegenerationBonus ?? 0),
+          staminaBonus: Number(getEffectiveValue(item, 'staminaBonus') ?? cdef.staminaBonus ?? 0),
+          staminaRegenerationBonus: Number(getEffectiveValue(item, 'staminaRegenerationBonus') ?? cdef.staminaRegenerationBonus ?? 0),
+          loadBonus: Number(getEffectiveValue(item, 'loadBonus') ?? cdef.loadBonus ?? 0),
+        });
+        if (cfg.hasPassiveBonuses && cfg.passiveEffects.length > 0) {
+          into.push({
+            ownerItemInstanceId: item.instanceId,
+            effects: clonePassiveEffects(cfg.passiveEffects),
+            targetCondition: {
+              sortBy: cfg.passiveTargetCondition.sortBy || 'random',
+              filterBy: [...(cfg.passiveTargetCondition.filterBy || [])],
+            },
+            targetCount: cfg.passiveTargetCount,
+          });
+        }
+      }
+      for (const c of item.children || []) {
+        this.collectPassiveSourcesFromTree(c, rootInstanceId, into);
+      }
+    } else if (item.type === 'affix') {
+      const adef = getAffixDef(item.defId);
+      if (!adef) return;
+      const cfg = resolvePassiveBonusConfig({
+        hasPassiveBonuses: adef.hasPassiveBonuses === true,
+        passiveEffects: adef.passiveEffects,
+        passiveTargetCondition: adef.passiveTargetCondition,
+        passiveTargetCount: adef.passiveTargetCount,
+        hpBonus: adef.hpBonus,
+        hpRegenerationBonus: adef.hpRegenerationBonus,
+        staminaBonus: adef.staminaBonus,
+        staminaRegenerationBonus: adef.staminaRegenerationBonus,
+        loadBonus: adef.loadBonus,
+      });
+      if (cfg.hasPassiveBonuses && cfg.passiveEffects.length > 0) {
+        into.push({
+          ownerItemInstanceId: item.instanceId,
+          effects: clonePassiveEffects(cfg.passiveEffects),
+          targetCondition: {
+            sortBy: cfg.passiveTargetCondition.sortBy || 'random',
+            filterBy: [...(cfg.passiveTargetCondition.filterBy || [])],
+          },
+          targetCount: cfg.passiveTargetCount,
+        });
+      }
+    }
+  }
+
   private collectFromChildren(
     children: ItemInstance[],
     growthStack: number,
   ): {
-    totalStaminaRegenerationBonus: number; totalStaminaBonus: number;
-    totalHpBonus: number; totalHpRegenerationBonus: number;
-    totalLoad: number; totalLoadBonus: number;
+    totalLoad: number;
     weapons: CombatUnitSnapshot['activeWeapons'];
   } {
-    let totalStaminaRegenerationBonus = 0, totalStaminaBonus = 0, totalHpBonus = 0, totalHpRegenerationBonus = 0;
-    let totalLoad = 0, totalLoadBonus = 0;
+    let totalLoad = 0;
     const weapons: CombatUnitSnapshot['activeWeapons'] = [];
 
     for (const child of children) {
@@ -669,14 +734,6 @@ export class GameEngine {
         if (!cdef) continue;
 
         totalLoad += Number(getEffectiveValue(child, 'weight') ?? 0);
-        const childHasPB = getEffectiveValue(child, 'hasPassiveBonuses') ?? cdef.hasPassiveBonuses;
-        if (childHasPB) {
-          totalStaminaRegenerationBonus += Number(getEffectiveValue(child, 'staminaRegenerationBonus') ?? 0);
-          totalStaminaBonus += Number(getEffectiveValue(child, 'staminaBonus') ?? 0);
-          totalHpBonus += Number(getEffectiveValue(child, 'hpBonus') ?? 0);
-          totalHpRegenerationBonus += Number(getEffectiveValue(child, 'hpRegenerationBonus') ?? 0);
-          totalLoadBonus += Number(getEffectiveValue(child, 'loadBonus') ?? 0);
-        }
 
         const isActive = getEffectiveValue(child, 'isActive') ?? cdef.isActive;
         if (isActive) {
@@ -709,27 +766,12 @@ export class GameEngine {
         }
         if (child.children && child.children.length > 0) {
           const nested = this.collectFromChildren(child.children, growthStack);
-          totalStaminaRegenerationBonus += nested.totalStaminaRegenerationBonus;
-          totalStaminaBonus += nested.totalStaminaBonus;
-          totalHpBonus += nested.totalHpBonus;
-          totalHpRegenerationBonus += nested.totalHpRegenerationBonus;
           totalLoad += nested.totalLoad;
-          totalLoadBonus += nested.totalLoadBonus;
           for (const w of nested.weapons) weapons.push(w);
         }
       }
-      if (child.type === 'affix') {
-        const adef = getAffixDef(child.defId);
-        if (adef?.hasPassiveBonuses) {
-          totalStaminaRegenerationBonus += adef.staminaRegenerationBonus ?? 0;
-          totalStaminaBonus += adef.staminaBonus ?? 0;
-          totalHpBonus += adef.hpBonus ?? 0;
-          totalHpRegenerationBonus += adef.hpRegenerationBonus ?? 0;
-          totalLoadBonus += adef.loadBonus ?? 0;
-        }
-      }
     }
-    return { totalStaminaRegenerationBonus, totalStaminaBonus, totalHpBonus, totalHpRegenerationBonus, totalLoad, totalLoadBonus, weapons };
+    return { totalLoad, weapons };
   }
 
   /** 从 DeploySlot 构建 CombatUnitSnapshot（v4：递归嵌套）。可传入自定义 slots 用于模拟对战。 */
@@ -747,17 +789,23 @@ export class GameEngine {
       const allChildren = [...(slot.entity.children || []), ...slot.children];
       const collected = isStarter(edef)
         ? this.collectFromChildren(allChildren, growthStack)
-        : { totalStaminaRegenerationBonus: 0, totalStaminaBonus: 0, totalHpBonus: 0, totalHpRegenerationBonus: 0, totalLoad: 0, totalLoadBonus: 0, weapons: [] as CombatUnitSnapshot['activeWeapons'] };
+        : { totalLoad: 0, weapons: [] as CombatUnitSnapshot['activeWeapons'] };
 
-      if (isStarter(edef) && edef.hasPassiveBonuses) {
-        collected.totalStaminaRegenerationBonus += edef.staminaRegenerationBonus;
-        collected.totalStaminaBonus += edef.staminaBonus;
-        collected.totalHpBonus += edef.hpBonus;
-        collected.totalHpRegenerationBonus += edef.hpRegenerationBonus;
-        collected.totalLoadBonus += edef.loadBonus ?? 0;
+      // 非 starter 仍统计负重（木桩可负重）
+      if (!isStarter(edef)) {
+        const loadOnly = this.collectFromChildren(allChildren, 0);
+        collected.totalLoad = loadOnly.totalLoad;
       }
 
-      // 启动端袋：传播到全部主动；本地袋已在 collectFromChildren 写入各武器
+      const passiveSources: PassiveSourceRuntime[] = [];
+      // 根自身 + 子树（slot.children 与 entity.children）
+      this.collectPassiveSourcesFromTree(slot.entity, slot.entity.instanceId, passiveSources);
+      for (const c of slot.children) {
+        this.collectPassiveSourcesFromTree(c, slot.entity.instanceId, passiveSources);
+      }
+      // 根实体的 children 已在 collectPassiveSourcesFromTree(slot.entity) 递归；避免 slot.entity.children 与 slot.children 重复时需注意
+      // slot.entity 已含 children；slot.children 是并列第一层装备——都要收
+
       const starterBag = isStarter(edef)
         ? this.collectHostOnHitBag(slot.entity, [slot.children])
         : [];
@@ -766,7 +814,6 @@ export class GameEngine {
         const selfIsActive = getEffectiveValue(slot.entity, 'isActive') ?? edef.isActive;
         if (selfIsActive) {
           const starterTargetingMods = this._collectEntityTargetingMods(allChildren);
-          // 启动端自身主动：最终列表 = starter 袋（本地即 starter 袋，勿重复）
           collected.weapons.unshift({
             name: edef.name,
             actionTime: Number(getEffectiveValue(slot.entity, 'actionTime') ?? 0),
@@ -789,11 +836,12 @@ export class GameEngine {
         }
       }
 
-      const hp = edef.hp + collected.totalHpBonus;
-      const maxStamina = edef.maxStamina + collected.totalStaminaBonus;
-      const totalStaminaRegen = edef.staminaRegen + collected.totalStaminaRegenerationBonus;
-      const totalHpRegen = edef.hpRegen + collected.totalHpRegenerationBonus;
-      const effectiveMaxLoad = edef.maxLoad + collected.totalLoadBonus;
+      // 基础值不含被动列表（被动运行时施加）；负重上限基础=模板
+      const hp = edef.hp;
+      const maxStamina = edef.maxStamina;
+      const totalStaminaRegen = edef.staminaRegen;
+      const totalHpRegen = edef.hpRegen;
+      const effectiveMaxLoad = edef.maxLoad;
       const isOverloaded = collected.totalLoad > effectiveMaxLoad;
 
       units.push({
@@ -813,8 +861,12 @@ export class GameEngine {
         slotIndex: slotIdx,
         isStarter: isStarter(edef),
         activeWeapons: collected.weapons,
+        passiveSources,
       });
     }
+
+    // BD/开战快照只保留基础值；被动由 buildCombatRuntime 后 recomputePassiveBonuses 施加。
+    // 禁止把被动结果写回 snapshot，否则开战会再叠一层（如 8+5 再 +5 → 18）。
     return { snapshots: units, onHitEffects: entityOnHitEffects };
   }
 
@@ -899,6 +951,14 @@ export class GameEngine {
   }
 
   /** 从 CombatUnitSnapshot 转换为运行时结构 */
+  /** BD 面板静态预览：基础快照 + 被动重算（不写回快照） */
+  previewBdRuntimes(slots: DeploySlot[]): CombatUnitRuntime[] {
+    const { snapshots } = this.calculateCombatSnapshots(slots);
+    const rts = buildCombatRuntime(snapshots);
+    recomputePassiveBonuses(rts, [], () => 0);
+    return rts;
+  }
+
   private buildCombatRuntime(units: CombatUnitSnapshot[]): CombatUnitRuntime[] {
     return buildCombatRuntime(units);
   }
@@ -1145,6 +1205,8 @@ export class GameEngine {
 
     const playerUnits = this.buildCombatRuntime(snapshots);
     const enemyUnits = this.buildCombatRuntime(enemySnaps);
+    // 开战即重算被动，供 UI 首帧与 Simulator 共用（勿等 Simulator 构造）
+    recomputePassiveBonuses(playerUnits, enemyUnits);
 
     this.combatPlayerUnits = playerUnits;
     this.combatEnemyUnits = enemyUnits;
@@ -1225,6 +1287,7 @@ export class GameEngine {
 
     const playerUnits = this.buildCombatRuntime(playerSnaps);
     const enemyUnits = this.buildCombatRuntime(enemySnaps);
+    recomputePassiveBonuses(playerUnits, enemyUnits);
 
     this.combatPlayerUnits = playerUnits;
     this.combatEnemyUnits = enemyUnits;

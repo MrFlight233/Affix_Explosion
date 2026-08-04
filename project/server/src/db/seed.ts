@@ -3,6 +3,11 @@
 // ============================================================
 
 import { getDB } from './connection';
+import {
+  DEFAULT_PASSIVE_TARGET,
+  migrateLegacyPassiveScalars,
+  normalizePassiveEffects,
+} from '@shared/passiveBonusUtil';
 
 /** 首次启动时建表 + 导入种子数据 */
 export function initTables(): void {
@@ -143,6 +148,8 @@ export function initTables(): void {
   migrateCategoryShowInFilter(db);
   // ---- 迁移：v9 目标数量 target_count ----
   migrateTargetCountV9(db);
+  // ---- 迁移：v10 被动列表 + 目标 ----
+  migratePassiveEffectsV10(db);
 
   console.log('[DB] 所有表创建/验证完成');
 }
@@ -480,5 +487,84 @@ function migrateTargetCountV9(db: ReturnType<typeof getDB>): void {
     }
   } catch (e) {
     console.warn('[DB] entities target_count 迁移跳过:', (e as Error).message);
+  }
+}
+
+/** v10：passive_effects / passive_target_*（实体+词条）；旧五列写入 effects 后清零 */
+function migratePassiveEffectsV10(db: ReturnType<typeof getDB>): void {
+  const addCols = (table: string) => {
+    const cols = db.prepare(`PRAGMA table_info('${table}')`).all() as { name: string }[];
+    const names = new Set(cols.map(c => c.name));
+    if (!names.has('passive_effects')) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN passive_effects TEXT NOT NULL DEFAULT '[]'`);
+      console.log(`[DB] ${table} 添加 passive_effects`);
+    }
+    if (!names.has('passive_target_condition')) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN passive_target_condition TEXT`);
+      console.log(`[DB] ${table} 添加 passive_target_condition`);
+    }
+    if (!names.has('passive_target_count')) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN passive_target_count INTEGER`);
+      console.log(`[DB] ${table} 添加 passive_target_count`);
+    }
+  };
+
+  const migrateRows = (table: string) => {
+    const rows = db.prepare(`SELECT * FROM ${table}`).all() as Record<string, any>[];
+    const upd = db.prepare(`
+      UPDATE ${table} SET
+        passive_effects = @passive_effects,
+        passive_target_condition = @passive_target_condition,
+        passive_target_count = @passive_target_count,
+        hp_bonus = 0,
+        hp_regeneration_bonus = 0,
+        stamina_bonus = 0,
+        stamina_regeneration_bonus = 0,
+        load_bonus = 0
+      WHERE id = @id
+    `);
+    let n = 0;
+    for (const row of rows) {
+      let effects = normalizePassiveEffects(
+        row.passive_effects ? (() => { try { return JSON.parse(row.passive_effects); } catch { return []; } })() : [],
+      );
+      if (effects.length === 0) {
+        effects = migrateLegacyPassiveScalars({
+          hpBonus: row.hp_bonus,
+          hpRegenerationBonus: row.hp_regeneration_bonus,
+          staminaBonus: row.stamina_bonus,
+          staminaRegenerationBonus: row.stamina_regeneration_bonus,
+          loadBonus: row.load_bonus,
+        });
+      }
+      const hasLegacy =
+        (Number(row.hp_bonus) || 0) !== 0
+        || (Number(row.hp_regeneration_bonus) || 0) !== 0
+        || (Number(row.stamina_bonus) || 0) !== 0
+        || (Number(row.stamina_regeneration_bonus) || 0) !== 0
+        || (Number(row.load_bonus) || 0) !== 0;
+      if (effects.length === 0 && !hasLegacy) continue;
+      if (!hasLegacy && row.passive_effects && row.passive_effects !== '[]') continue;
+      const tc = row.passive_target_condition
+        || JSON.stringify({ ...DEFAULT_PASSIVE_TARGET, filterBy: ['自己'] });
+      const count = row.passive_target_count != null ? row.passive_target_count : 1;
+      upd.run({
+        id: row.id,
+        passive_effects: JSON.stringify(effects),
+        passive_target_condition: typeof tc === 'string' ? tc : JSON.stringify(tc),
+        passive_target_count: count,
+      });
+      n += 1;
+    }
+    if (n > 0) console.log(`[DB] ${table} 旧五列→passive_effects 迁移 ${n} 条`);
+  };
+
+  try {
+    addCols('entities');
+    addCols('affixes');
+    migrateRows('entities');
+    migrateRows('affixes');
+  } catch (e) {
+    console.warn('[DB] v10 passive_effects 迁移跳过:', (e as Error).message);
   }
 }

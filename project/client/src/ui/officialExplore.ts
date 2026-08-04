@@ -63,10 +63,12 @@ export function renderOfficialBdHtml(ctx: OfficialExploreCtx): string {
   if (g.deploySlots.length === 0) {
     h += '<div class="fg-drop-empty">拖入实体</div>';
   }
+  const preview = ctx.engine.previewBdRuntimes(g.deploySlots);
   for (const slot of g.deploySlots) {
     const edef = getEntityDef(slot.entity.defId);
     if (!edef) continue;
-    h += renderEntityCard(slot.entity, 0, 'player', 'build', ctx.collapse);
+    const unit = preview.find(u => u.instanceId === slot.entity.instanceId) || null;
+    h += renderEntityCard(slot.entity, 0, 'player', 'build', ctx.collapse, unit);
   }
   h += '</div></div>';
   return h;
@@ -520,7 +522,10 @@ function bindCollapseToggles(root: HTMLElement, ctx: OfficialExploreCtx): void {
 }
 
 export function bindOfficialExplore(root: HTMLElement, ctx: OfficialExploreCtx): void {
-  bindSbTooltips(root, id => ctx.engine.findItem(id) ?? ctx.catalogItems.get(id) ?? null);
+  bindSbTooltips(root, id => ctx.engine.findItem(id) ?? ctx.catalogItems.get(id) ?? null, (id) => {
+    const preview = ctx.engine.previewBdRuntimes(ctx.engine.state.deploySlots);
+    return preview.find(u => u.instanceId === id) || null;
+  });
 
   const shopPanel = root.querySelector('#merchant-panel') as HTMLElement | null;
   if (shopPanel) {

@@ -79,6 +79,9 @@ export class EntityRepo {
       hpBonus: def.hpBonus ?? 0,
       loadBonus: def.loadBonus ?? 0,
       hasPassiveBonuses: def.hasPassiveBonuses ?? false,
+      passiveEffects: def.passiveEffects ?? [],
+      passiveTargetCondition: def.passiveTargetCondition,
+      passiveTargetCount: def.passiveTargetCount ?? null,
     };
 
     const db = getDB();
@@ -92,7 +95,9 @@ export class EntityRepo {
         is_active, stamina_cost, action_time, damage, damage_bonus, on_hit_effects,
         target_type, target_order, priority_target, target_faction, target_count, target_condition,
         stamina_regeneration_bonus, stamina_bonus, hp_regeneration_bonus, hp_bonus,
-        load_bonus, has_passive_bonuses, updated_at
+        load_bonus, has_passive_bonuses,
+        passive_effects, passive_target_condition, passive_target_count,
+        updated_at
       ) VALUES (
         @id, @name, @slot_cost, @entity_slots, @weight, @value,
         @fixed_affixes, @dynamic_affix_slots, @pool_prerequisite,
@@ -101,7 +106,9 @@ export class EntityRepo {
         @is_active, @stamina_cost, @action_time, @damage, @damage_bonus, @on_hit_effects,
         @target_type, @target_order, @priority_target, @target_faction, @target_count, @target_condition,
         @stamina_regeneration_bonus, @stamina_bonus, @hp_regeneration_bonus, @hp_bonus,
-        @load_bonus, @has_passive_bonuses, @updated_at
+        @load_bonus, @has_passive_bonuses,
+        @passive_effects, @passive_target_condition, @passive_target_count,
+        @updated_at
       )
     `).run(row);
 
@@ -157,6 +164,8 @@ export class EntityRepo {
         stamina_regeneration_bonus=@stamina_regeneration_bonus, stamina_bonus=@stamina_bonus,
         hp_regeneration_bonus=@hp_regeneration_bonus, hp_bonus=@hp_bonus,
         load_bonus=@load_bonus, has_passive_bonuses=@has_passive_bonuses,
+        passive_effects=@passive_effects, passive_target_condition=@passive_target_condition,
+        passive_target_count=@passive_target_count,
         updated_at=@updated_at
       WHERE id=@id
     `).run(row);

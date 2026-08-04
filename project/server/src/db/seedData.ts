@@ -145,14 +145,16 @@ export function importSeedIfEmpty(): void {
       stamina_regen, hp_regen, max_load, is_active, stamina_cost, action_time, damage, damage_bonus,
       on_hit_effects, target_type, target_order, priority_target, target_faction, target_count,
       target_condition, stamina_regeneration_bonus, stamina_bonus, hp_regeneration_bonus,
-      hp_bonus, load_bonus, has_passive_bonuses, updated_at
+      hp_bonus, load_bonus, has_passive_bonuses,
+      passive_effects, passive_target_condition, passive_target_count, updated_at
     ) VALUES (
       @id, @name, @slot_cost, @entity_slots, @weight, @value, @fixed_affixes, @dynamic_affix_slots,
       @pool_prerequisite, @default_children, @preloaded_dynamic_affixes, @hp, @max_stamina,
       @stamina_regen, @hp_regen, @max_load, @is_active, @stamina_cost, @action_time, @damage, @damage_bonus,
       @on_hit_effects, @target_type, @target_order, @priority_target, @target_faction, @target_count,
       @target_condition, @stamina_regeneration_bonus, @stamina_bonus, @hp_regeneration_bonus,
-      @hp_bonus, @load_bonus, @has_passive_bonuses, @updated_at
+      @hp_bonus, @load_bonus, @has_passive_bonuses,
+      @passive_effects, @passive_target_condition, @passive_target_count, @updated_at
     )
   `);
 
@@ -160,11 +162,13 @@ export function importSeedIfEmpty(): void {
     INSERT OR REPLACE INTO affixes (
       id, name, category, cost_value, slot_cost, repeatable, prerequisite, pool_prerequisite,
       effect, on_hit_effects, damage_bonus, targeting_modifier, has_passive_bonuses,
-      stamina_regeneration_bonus, stamina_bonus, hp_regeneration_bonus, hp_bonus, load_bonus, updated_at
+      stamina_regeneration_bonus, stamina_bonus, hp_regeneration_bonus, hp_bonus, load_bonus,
+      passive_effects, passive_target_condition, passive_target_count, updated_at
     ) VALUES (
       @id, @name, @category, @cost_value, @slot_cost, @repeatable, @prerequisite, @pool_prerequisite,
       @effect, @on_hit_effects, @damage_bonus, @targeting_modifier, @has_passive_bonuses,
-      @stamina_regeneration_bonus, @stamina_bonus, @hp_regeneration_bonus, @hp_bonus, @load_bonus, @updated_at
+      @stamina_regeneration_bonus, @stamina_bonus, @hp_regeneration_bonus, @hp_bonus, @load_bonus,
+      @passive_effects, @passive_target_condition, @passive_target_count, @updated_at
     )
   `);
 

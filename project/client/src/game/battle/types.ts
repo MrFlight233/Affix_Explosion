@@ -2,6 +2,26 @@
 
 import type { OnHitEffect, OnHitOp, OnHitStat, TargetCondition } from '../data';
 import { cloneOnHitEffects } from '../hitEffectUtil';
+import type { PassiveEffect } from '../passiveBonusUtil';
+
+export interface PassiveSourceRuntime {
+  ownerItemInstanceId?: string;
+  effects: PassiveEffect[];
+  targetCondition: TargetCondition;
+  targetCount: number | 'all';
+}
+
+export interface PassiveModBag {
+  maxHp: number;
+  maxStamina: number;
+  maxLoad: number;
+  hpRegen: number;
+  staminaRegen: number;
+}
+
+export function emptyPassiveMods(): PassiveModBag {
+  return { maxHp: 0, maxStamina: 0, maxLoad: 0, hpRegen: 0, staminaRegen: 0 };
+}
 
 /** 6 位小数精度取整 — 用于所有 HP/耐力/浮点属性计算 */
 export const round6 = (v: number) => Math.round(v * 1e6) / 1e6;
@@ -42,6 +62,8 @@ export interface CombatUnitSnapshot {
     /** 合并后的最终命中效果列表 */
     onHitEffects?: OnHitEffect[];
   }[];
+  /** 归属于本第一层实体的被动源（子树聚合） */
+  passiveSources?: PassiveSourceRuntime[];
 }
 
 export interface OnHitContext {
@@ -111,6 +133,10 @@ export interface CombatUnitRuntime {
   isStarter: boolean;
   weapons: CombatWeaponRuntime[];
   durations: ActiveDuration[];
+  /** 子树聚合的被动源；来源=本单位 */
+  passiveSources: PassiveSourceRuntime[];
+  /** 本 tick 被动修饰合计（全量重算写入） */
+  passiveMods: PassiveModBag;
 }
 
 export interface CombatEvent {
@@ -176,6 +202,16 @@ export function buildCombatRuntime(units: CombatUnitSnapshot[]): CombatUnitRunti
       isStarter: u.isStarter ?? false,
       weapons,
       durations: [],
+      passiveSources: (u.passiveSources || []).map(s => ({
+        ownerItemInstanceId: s.ownerItemInstanceId,
+        effects: s.effects.map(e => ({ ...e, params: { ...e.params } })),
+        targetCondition: {
+          sortBy: s.targetCondition?.sortBy || 'random',
+          filterBy: [...(s.targetCondition?.filterBy || [])],
+        },
+        targetCount: s.targetCount,
+      })),
+      passiveMods: emptyPassiveMods(),
     };
   });
 }

@@ -1,4 +1,6 @@
 import { GameEngine, CombatUnitRuntime, PlaybackSpeed } from '../../game/engine';
+import { summarizePassiveMods } from '../../game/battle/passives';
+import { formatWeightG } from './format';
 
 export interface BattlePatchOpts {
   battleLogLength: number;
@@ -46,6 +48,18 @@ export function patchBattleValues(
     let newVal = '';
     if (type === 'hp') newVal = `${Math.round(Math.max(unit.currentHp, 0))}/${unit.totalHp}`;
     else if (type === 'sta') newVal = `${Math.floor(unit.currentStamina)}/${unit.maxStamina}`;
+    else if (type === 'sregen') newVal = String(unit.staminaRegen);
+    else if (type === 'hregen') newVal = String(unit.hpRegeneration);
+    else if (type === 'load') {
+      newVal = `${formatWeightG(unit.currentLoad)}/${formatWeightG(unit.maxLoad)}`;
+    }
+    else if (type === 'pmods') {
+      const lines = summarizePassiveMods(unit);
+      newVal = lines.length > 0 ? `战斗修饰: ${lines.join('  ')}` : '';
+      (el as HTMLElement).style.display = lines.length > 0 ? '' : 'none';
+      if (el.textContent !== newVal && newVal) el.textContent = newVal;
+      return;
+    }
     else if (type === 'cd') {
       const wIdx = parseInt(parts[4] || '0');
       if (unit.weapons[wIdx]) {

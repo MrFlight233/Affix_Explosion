@@ -25,6 +25,13 @@ import {
 } from '../game/targetingUtil';
 import { formatConfigEffectsBlock } from '../game/activeActionDisplay';
 import { migrateLegacyDamageToOnHitEffects } from '../game/hitEffectUtil';
+import {
+  formatPassiveTargetLine,
+  hasDisplayPassive,
+  passiveEffectPlainLines,
+  passiveRootHint,
+  resolvePassiveForDisplay,
+} from './passiveBonusDisplay';
 
 type TabType = 'entities' | 'affixes';
 
@@ -272,7 +279,7 @@ export function showFullItemPool(onBack: () => void): void {
         body += [
           field('耐力消耗', e.staminaCost),
           field('触发耗时(ms)', e.actionTime),
-          field('索敌', formatTargetingSummary({
+          field('目标', formatTargetingSummary({
             targetFaction: e.targetFaction,
             sortBy: tc?.sortBy,
             targetOrder: e.targetOrder,
@@ -288,16 +295,14 @@ export function showFullItemPool(onBack: () => void): void {
 
     // 被动加成
     {
-      const hasPB = e.hasPassiveBonuses === true;
-      let body = field('被动加成模式', hasPB ? '有' : '无');
+      const hasPB = hasDisplayPassive(e);
+      let body = field('被动加成模式', e.hasPassiveBonuses === true ? '有' : '无');
       if (hasPB) {
-        body += [
-          field('生命加成', e.hpBonus),
-          field('生命恢复加成', e.hpRegenerationBonus),
-          field('耐力加成', e.staminaBonus),
-          field('耐力恢复加成', e.staminaRegenerationBonus),
-          field('负重加成', e.loadBonus),
-        ].join('');
+        const pcfg = resolvePassiveForDisplay(e);
+        body += field('目标', formatPassiveTargetLine(pcfg));
+        body += field('效果', passiveEffectPlainLines(pcfg).join('<br>') || '—');
+        const hint = passiveRootHint(pcfg);
+        if (hint) body += field('说明', hint);
       }
       h += section('被动加成', body);
     }
@@ -340,16 +345,14 @@ export function showFullItemPool(onBack: () => void): void {
 
     // 被动加成
     {
-      const hasPB = a.hasPassiveBonuses === true;
-      let body = field('被动加成模式', hasPB ? '有' : '无');
+      const hasPB = hasDisplayPassive(a);
+      let body = field('被动加成模式', a.hasPassiveBonuses === true ? '有' : '无');
       if (hasPB) {
-        body += [
-          field('生命加成', a.hpBonus),
-          field('生命恢复加成', a.hpRegenerationBonus),
-          field('耐力加成', a.staminaBonus),
-          field('耐力恢复加成', a.staminaRegenerationBonus),
-          field('负重加成', a.loadBonus),
-        ].join('');
+        const pcfg = resolvePassiveForDisplay(a);
+        body += field('目标', formatPassiveTargetLine(pcfg));
+        body += field('效果', passiveEffectPlainLines(pcfg).join('<br>') || '—');
+        const hint = passiveRootHint(pcfg);
+        if (hint) body += field('说明', hint);
       }
       h += section('被动加成', body);
     }

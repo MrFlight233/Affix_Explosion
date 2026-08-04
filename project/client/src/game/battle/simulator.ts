@@ -10,6 +10,7 @@ import {
   advanceDurations,
   clearDurationsOnDeath,
 } from './durations';
+import { recomputePassiveBonuses } from './passives';
 import {
   applyDeferredRemainingTime,
   applyInstantEffectToUnit,
@@ -49,6 +50,8 @@ export class BattleSimulator {
     this.playerOnHitEffects = opts.playerOnHitEffects;
     this.enemyOnHitEffects = opts.enemyOnHitEffects;
     this.rng = opts.rng ?? Math.random;
+    // 开战即挂被动
+    recomputePassiveBonuses(this.playerUnits, this.enemyUnits, this.rng);
   }
 
   get isFinished(): boolean { return this.finished; }
@@ -77,6 +80,9 @@ export class BattleSimulator {
 
     this.combatTime += TICK_MS;
     this.rebuildWeaponsIfNeeded();
+
+    // 存在被动：清死来源效果（全量重算仅存活来源）→ 再持续 → 回复 → 开火
+    recomputePassiveBonuses(this.playerUnits, this.enemyUnits, this.rng);
 
     // 持续：到期 / tick 跳伤
     this.processDurationSide(this.playerUnits);

@@ -12,6 +12,8 @@ export type {
 } from '@shared/hitEffectUtil';
 import type { OnHitEffect } from '@shared/hitEffectUtil';
 import { normalizeOnHitEffects } from './hitEffectUtil';
+import { resolvePassiveBonusConfig, isSelfOnlyPassiveTarget } from './passiveBonusUtil';
+import type { PassiveEffect } from './passiveBonusUtil';
 
 /** 条件 Targeting 配置（v8：多选过滤 + 统一排序 + 目标数量） */
 export interface TargetCondition {
@@ -83,19 +85,23 @@ export interface EntityDef {
   /** 条件 Targeting（sortBy / filterBy[] / 可选 targetCount） */
   targetCondition?: TargetCondition;
 
-  // ---- 被动加成（对最外层启动端实体生效） ----
-  /** 是否有被动加成。false → 引擎跳过该实体被动累加。 */
+  // ---- 被动加成（存在维持；与主动同构目标） ----
+  /** 是否有被动加成。false → 跳过。 */
   hasPassiveBonuses?: boolean;
-  /** 被动加成: 耐力恢复/秒 */
+  /** @deprecated 迁入 passiveEffects */
   staminaRegenerationBonus: number;
-  /** 被动加成: 耐力 */
+  /** @deprecated 迁入 passiveEffects */
   staminaBonus: number;
-  /** 被动加成: 生命恢复/秒 */
+  /** @deprecated 迁入 passiveEffects */
   hpRegenerationBonus: number;
-  /** 被动加成: 生命 */
+  /** @deprecated 迁入 passiveEffects */
   hpBonus: number;
-  /** 被动加成: 负重上限（聚合到最近启动端 maxLoad） */
+  /** @deprecated 迁入 passiveEffects */
   loadBonus: number;
+  /** 被动效果列表（v1：五类底盘 + amount） */
+  passiveEffects?: import('@shared/passiveBonusUtil').PassiveEffect[];
+  passiveTargetCondition?: TargetCondition;
+  passiveTargetCount?: number | 'all' | null;
 }
 
 export interface AffixDef {
@@ -106,20 +112,23 @@ export interface AffixDef {
   /** 命中效果列表（与实体同结构） */
   onHitEffects?: OnHitEffect[];
 
-  // ---- 被动加成（与 EntityDef 对齐，挂载到启动端子树上时生效） ----
-  /** 被动加成: 耐力恢复/秒 */
+  // ---- 被动加成（与实体对齐） ----
+  /** @deprecated 迁入 passiveEffects */
   staminaRegenerationBonus: number;
-  /** 被动加成: 耐力 */
+  /** @deprecated 迁入 passiveEffects */
   staminaBonus: number;
-  /** 被动加成: 生命恢复/秒 */
+  /** @deprecated 迁入 passiveEffects */
   hpRegenerationBonus: number;
-  /** 被动加成: 生命 */
+  /** @deprecated 迁入 passiveEffects */
   hpBonus: number;
-  /** 被动加成: 负重上限（聚合到最近启动端 maxLoad） */
+  /** @deprecated 迁入 passiveEffects */
   loadBonus: number;
+  passiveEffects?: import('@shared/passiveBonusUtil').PassiveEffect[];
+  passiveTargetCondition?: TargetCondition;
+  passiveTargetCount?: number | 'all' | null;
   /** targeting_modifier 分类词条的专属效果（v7 扩展）— 可覆写所有 targeting 字段 */
   targetingModifier?: TargetingModifier;
-  /** 是否有被动加成（v7 新增）。false → 引擎跳过被动累加，提升性能。 */
+  /** 是否有被动加成。false → 跳过。 */
   hasPassiveBonuses?: boolean;
 }
 
@@ -218,15 +227,29 @@ export function getEntityClassCategoryIds(): Set<string> {
  */
 export function reloadData(entities: EntityDef[], affixes: AffixDef[], categories?: CategoryDef[]): void {
   ENTITY_DEFS.length = 0;
-  ENTITY_DEFS.push(...entities.map(e => ({
-    ...e,
-    onHitEffects: normalizeOnHitEffects(e.onHitEffects || []),
-  })));
+  ENTITY_DEFS.push(...entities.map(e => {
+    const cfg = resolvePassiveBonusConfig(e as any);
+    return {
+      ...e,
+      onHitEffects: normalizeOnHitEffects(e.onHitEffects || []),
+      hasPassiveBonuses: cfg.hasPassiveBonuses,
+      passiveEffects: cfg.passiveEffects,
+      passiveTargetCondition: cfg.passiveTargetCondition,
+      passiveTargetCount: cfg.passiveTargetCount,
+    };
+  }));
   AFFIX_DEFS.length = 0;
-  AFFIX_DEFS.push(...affixes.map(a => ({
-    ...a,
-    onHitEffects: normalizeOnHitEffects(a.onHitEffects || []),
-  })));
+  AFFIX_DEFS.push(...affixes.map(a => {
+    const cfg = resolvePassiveBonusConfig(a as any);
+    return {
+      ...a,
+      onHitEffects: normalizeOnHitEffects(a.onHitEffects || []),
+      hasPassiveBonuses: cfg.hasPassiveBonuses,
+      passiveEffects: cfg.passiveEffects,
+      passiveTargetCondition: cfg.passiveTargetCondition,
+      passiveTargetCount: cfg.passiveTargetCount,
+    };
+  }));
   if (categories) {
     CATEGORIES.length = 0;
     CATEGORIES.push(...categories);
@@ -337,8 +360,8 @@ function packageEntityValue(
 }
 
 /**
- * 启动端当前负重 / 有效上限（与引擎 collectFromChildren 对齐）。
- * extraChildren：DeploySlot.children 尚未并入 entity 时传入。
+ * 启动端当前负重 / 有效上限。
+ * 负重上限被动：仅计入「目标仅自己」的 maxLoad 效果（与存在被动一致的常见自我加成）。
  */
 export function computeStarterLoad(
   starter: ItemInstance,
@@ -346,6 +369,16 @@ export function computeStarterLoad(
 ): { current: number; max: number } {
   const def = getEntityDef(starter.defId);
   if (!def) return { current: 0, max: 0 };
+
+  const maxLoadFromConfig = (cfg: ReturnType<typeof resolvePassiveBonusConfig>): number => {
+    if (!cfg.hasPassiveBonuses || !isSelfOnlyPassiveTarget(cfg.passiveTargetCondition)) return 0;
+    let d = 0;
+    for (const e of cfg.passiveEffects) {
+      if (e.stat !== 'maxLoad') continue;
+      d += e.op === 'gain' ? e.params.amount : -e.params.amount;
+    }
+    return d;
+  };
 
   const walk = (children: ItemInstance[]): { load: number; bonus: number } => {
     let load = 0;
@@ -355,10 +388,18 @@ export function computeStarterLoad(
         const cdef = getEntityDef(child.defId);
         if (!cdef) continue;
         load += Number(getEffectiveValue(child, 'weight') ?? 0);
-        const childHasPB = getEffectiveValue(child, 'hasPassiveBonuses') ?? cdef.hasPassiveBonuses;
-        if (childHasPB) {
-          bonus += Number(getEffectiveValue(child, 'loadBonus') ?? 0);
-        }
+        const cfg = resolvePassiveBonusConfig({
+          hasPassiveBonuses: Boolean(getEffectiveValue(child, 'hasPassiveBonuses') ?? cdef.hasPassiveBonuses),
+          passiveEffects: getEffectiveValue(child, 'passiveEffects') ?? cdef.passiveEffects,
+          passiveTargetCondition: getEffectiveValue(child, 'passiveTargetCondition') ?? cdef.passiveTargetCondition,
+          passiveTargetCount: getEffectiveValue(child, 'passiveTargetCount') ?? cdef.passiveTargetCount,
+          hpBonus: Number(getEffectiveValue(child, 'hpBonus') ?? cdef.hpBonus ?? 0),
+          hpRegenerationBonus: Number(getEffectiveValue(child, 'hpRegenerationBonus') ?? cdef.hpRegenerationBonus ?? 0),
+          staminaBonus: Number(getEffectiveValue(child, 'staminaBonus') ?? cdef.staminaBonus ?? 0),
+          staminaRegenerationBonus: Number(getEffectiveValue(child, 'staminaRegenerationBonus') ?? cdef.staminaRegenerationBonus ?? 0),
+          loadBonus: Number(getEffectiveValue(child, 'loadBonus') ?? cdef.loadBonus ?? 0),
+        });
+        bonus += maxLoadFromConfig(cfg);
         if (child.children?.length) {
           const nested = walk(child.children);
           load += nested.load;
@@ -366,9 +407,19 @@ export function computeStarterLoad(
         }
       } else if (child.type === 'affix') {
         const adef = getAffixDef(child.defId);
-        if (adef?.hasPassiveBonuses) {
-          bonus += adef.loadBonus ?? 0;
-        }
+        if (!adef) continue;
+        const cfg = resolvePassiveBonusConfig({
+          hasPassiveBonuses: adef.hasPassiveBonuses === true,
+          passiveEffects: adef.passiveEffects,
+          passiveTargetCondition: adef.passiveTargetCondition,
+          passiveTargetCount: adef.passiveTargetCount,
+          hpBonus: adef.hpBonus,
+          hpRegenerationBonus: adef.hpRegenerationBonus,
+          staminaBonus: adef.staminaBonus,
+          staminaRegenerationBonus: adef.staminaRegenerationBonus,
+          loadBonus: adef.loadBonus,
+        });
+        bonus += maxLoadFromConfig(cfg);
       }
     }
     return { load, bonus };
@@ -377,9 +428,18 @@ export function computeStarterLoad(
   const merged = [...(starter.children || []), ...(extraChildren || [])];
   const collected = walk(merged);
   let loadBonus = collected.bonus;
-  if (def.hasPassiveBonuses) {
-    loadBonus += def.loadBonus ?? 0;
-  }
+  const rootCfg = resolvePassiveBonusConfig({
+    hasPassiveBonuses: def.hasPassiveBonuses === true,
+    passiveEffects: def.passiveEffects,
+    passiveTargetCondition: def.passiveTargetCondition,
+    passiveTargetCount: def.passiveTargetCount,
+    hpBonus: def.hpBonus,
+    hpRegenerationBonus: def.hpRegenerationBonus,
+    staminaBonus: def.staminaBonus,
+    staminaRegenerationBonus: def.staminaRegenerationBonus,
+    loadBonus: def.loadBonus,
+  });
+  loadBonus += maxLoadFromConfig(rootCfg);
   return {
     current: collected.load,
     max: def.maxLoad + loadBonus,

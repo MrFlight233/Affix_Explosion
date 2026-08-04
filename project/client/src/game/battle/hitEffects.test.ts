@@ -59,6 +59,8 @@ function unit(partial: Partial<CombatUnitRuntime> & { instanceId: string }): Com
     weapons,
     durations: rest.durations ?? [],
     ...rest,
+    passiveSources: rest.passiveSources ?? [],
+    passiveMods: rest.passiveMods ?? { maxHp: 0, maxStamina: 0, maxLoad: 0, hpRegen: 0, staminaRegen: 0 },
   };
 }
 

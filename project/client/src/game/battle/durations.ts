@@ -61,13 +61,13 @@ export function recomputeChassis(unit: CombatUnitRuntime): void {
     }
   }
 
-  unit.totalHp = round6(Math.max(1, unit.baseTotalHp + dMaxHp));
+  unit.totalHp = round6(Math.max(1, unit.baseTotalHp + dMaxHp + (unit.passiveMods?.maxHp || 0)));
   unit.currentHp = round6(Math.min(unit.currentHp, unit.totalHp));
-  unit.maxStamina = round6(Math.max(1, unit.baseMaxStamina + dMaxSta));
+  unit.maxStamina = round6(Math.max(1, unit.baseMaxStamina + dMaxSta + (unit.passiveMods?.maxStamina || 0)));
   unit.currentStamina = round6(Math.min(Math.max(unit.currentStamina, 0), unit.maxStamina));
-  unit.maxLoad = round6(Math.max(0, unit.baseMaxLoad + dMaxLoad));
-  unit.hpRegeneration = round6(Math.max(0, unit.baseHpRegeneration + dHpRegen));
-  unit.staminaRegen = round6(Math.max(0, unit.baseStaminaRegen + dStaRegen));
+  unit.maxLoad = round6(Math.max(0, unit.baseMaxLoad + dMaxLoad + (unit.passiveMods?.maxLoad || 0)));
+  unit.hpRegeneration = round6(Math.max(0, unit.baseHpRegeneration + dHpRegen + (unit.passiveMods?.hpRegen || 0)));
+  unit.staminaRegen = round6(Math.max(0, unit.baseStaminaRegen + dStaRegen + (unit.passiveMods?.staminaRegen || 0)));
   unit.burden = round6(Math.max(0, dBurden));
   unit.isOverloaded = unit.currentLoad + unit.burden > unit.maxLoad;
 

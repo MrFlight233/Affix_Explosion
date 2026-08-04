@@ -5,6 +5,7 @@
 
 import { getDB } from './connection';
 import { normalizeOnHitEffects } from '@shared/hitEffectUtil';
+import { resolvePassiveBonusConfig } from '@shared/passiveBonusUtil';
 
 // ---- DB 行 ↔ 前端 EntityDef/AffixDef 转换 ----
 
@@ -17,8 +18,25 @@ function serializeJsonField(val: any): string {
   return JSON.stringify(val ?? []);
 }
 
+function attachResolvedPassives(def: Record<string, any>): Record<string, any> {
+  const cfg = resolvePassiveBonusConfig(def);
+  def.hasPassiveBonuses = cfg.hasPassiveBonuses;
+  def.passiveEffects = cfg.passiveEffects;
+  def.passiveTargetCondition = cfg.passiveTargetCondition;
+  def.passiveTargetCount = cfg.passiveTargetCount;
+  // 旧五列清零展示（数值已在 effects）
+  if (cfg.passiveEffects.length > 0) {
+    def.hpBonus = 0;
+    def.hpRegenerationBonus = 0;
+    def.staminaBonus = 0;
+    def.staminaRegenerationBonus = 0;
+    def.loadBonus = 0;
+  }
+  return def;
+}
+
 export function entityRowToDef(row: Record<string, any>): Record<string, any> {
-  return {
+  return attachResolvedPassives({
     id: row.id,
     name: row.name,
     slotCost: row.slot_cost,
@@ -52,10 +70,14 @@ export function entityRowToDef(row: Record<string, any>): Record<string, any> {
     hpBonus: row.hp_bonus,
     loadBonus: row.load_bonus ?? 0,
     hasPassiveBonuses: row.has_passive_bonuses === 1,
-  };
+    passiveEffects: parseJsonField(row.passive_effects) ?? [],
+    passiveTargetCondition: parseJsonField(row.passive_target_condition),
+    passiveTargetCount: row.passive_target_count === -1 ? 'all' : (row.passive_target_count ?? undefined),
+  });
 }
 
 export function entityDefToRow(def: Record<string, any>): Record<string, any> {
+  const cfg = resolvePassiveBonusConfig(def);
   return {
     id: def.id,
     name: def.name,
@@ -85,18 +107,21 @@ export function entityDefToRow(def: Record<string, any>): Record<string, any> {
     target_faction: def.targetFaction ?? null,
     target_count: def.targetCount === 'all' ? -1 : (def.targetCount ?? null),
     target_condition: def.targetCondition != null ? JSON.stringify(def.targetCondition) : null,
-    stamina_regeneration_bonus: def.staminaRegenerationBonus ?? 0,
-    stamina_bonus: def.staminaBonus ?? 0,
-    hp_regeneration_bonus: def.hpRegenerationBonus ?? 0,
-    hp_bonus: def.hpBonus ?? 0,
-    load_bonus: def.loadBonus ?? 0,
-    has_passive_bonuses: def.hasPassiveBonuses ? 1 : 0,
+    stamina_regeneration_bonus: 0,
+    stamina_bonus: 0,
+    hp_regeneration_bonus: 0,
+    hp_bonus: 0,
+    load_bonus: 0,
+    has_passive_bonuses: cfg.hasPassiveBonuses ? 1 : 0,
+    passive_effects: serializeJsonField(cfg.passiveEffects),
+    passive_target_condition: JSON.stringify(cfg.passiveTargetCondition),
+    passive_target_count: cfg.passiveTargetCount === 'all' ? -1 : cfg.passiveTargetCount,
     updated_at: new Date().toISOString(),
   };
 }
 
 export function affixRowToDef(row: Record<string, any>): Record<string, any> {
-  return {
+  return attachResolvedPassives({
     id: row.id,
     name: row.name,
     category: row.category,
@@ -114,10 +139,14 @@ export function affixRowToDef(row: Record<string, any>): Record<string, any> {
     hpRegenerationBonus: row.hp_regeneration_bonus ?? 0,
     hpBonus: row.hp_bonus ?? 0,
     loadBonus: row.load_bonus ?? 0,
-  };
+    passiveEffects: parseJsonField(row.passive_effects) ?? [],
+    passiveTargetCondition: parseJsonField(row.passive_target_condition),
+    passiveTargetCount: row.passive_target_count === -1 ? 'all' : (row.passive_target_count ?? undefined),
+  });
 }
 
 export function affixDefToRow(def: Record<string, any>): Record<string, any> {
+  const cfg = resolvePassiveBonusConfig(def);
   return {
     id: def.id,
     name: def.name,
@@ -131,12 +160,15 @@ export function affixDefToRow(def: Record<string, any>): Record<string, any> {
     on_hit_effects: serializeJsonField(normalizeOnHitEffects(def.onHitEffects ?? [])),
     damage_bonus: 0,
     targeting_modifier: def.targetingModifier != null ? JSON.stringify(def.targetingModifier) : null,
-    has_passive_bonuses: def.hasPassiveBonuses ? 1 : 0,
-    stamina_regeneration_bonus: def.staminaRegenerationBonus ?? 0,
-    stamina_bonus: def.staminaBonus ?? 0,
-    hp_regeneration_bonus: def.hpRegenerationBonus ?? 0,
-    hp_bonus: def.hpBonus ?? 0,
-    load_bonus: def.loadBonus ?? 0,
+    has_passive_bonuses: cfg.hasPassiveBonuses ? 1 : 0,
+    stamina_regeneration_bonus: 0,
+    stamina_bonus: 0,
+    hp_regeneration_bonus: 0,
+    hp_bonus: 0,
+    load_bonus: 0,
+    passive_effects: serializeJsonField(cfg.passiveEffects),
+    passive_target_condition: JSON.stringify(cfg.passiveTargetCondition),
+    passive_target_count: cfg.passiveTargetCount === 'all' ? -1 : cfg.passiveTargetCount,
     updated_at: new Date().toISOString(),
   };
 }
