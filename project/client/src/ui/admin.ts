@@ -18,8 +18,8 @@ import { mountAdminList, type AdminListBridge } from './admin/mountAdminList';
 import type { AdminListItem } from './admin/AdminListPanel';
 import {
   bindOnHitEffectsEditor,
+  collectOnHitEffectsFromDom,
   entityInitialOnHitEffects,
-  readOnHitEffectsFromDom,
   renderOnHitEffectsEditor,
 } from './adminHitEffects';
 
@@ -1194,66 +1194,76 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     });
 
     document.getElementById('ef-btn-save')?.addEventListener('click', async () => {
-      const id = (document.getElementById('ef-id') as HTMLInputElement).value.trim();
-      if (!id) { showToast('ID 不能为空'); return; }
-      const name = (document.getElementById('ef-name') as HTMLInputElement).value.trim();
-      if (!name) { showToast('名称不能为空'); return; }
-
-      const hasPB = (document.getElementById('ef-hasPassiveBonuses') as HTMLSelectElement).value === '1';
-      const entity: any = {
-        id, name,
-        slotCost: (() => {
-          const n = parseInt((document.getElementById('ef-slotCost') as HTMLInputElement).value, 10);
-          return Number.isFinite(n) && n >= 0 ? n : 1;
-        })(),
-        entitySlots: parseInt((document.getElementById('ef-entitySlots') as HTMLInputElement).value) || 0,
-        weight: parseInt((document.getElementById('ef-weight') as HTMLInputElement).value) || 0,
-        value: parseInt((document.getElementById('ef-value') as HTMLInputElement).value) || 1,
-        fixedAffixes: getSelected('ef-fixedAffixes'),
-        dynamicAffixSlots: parseInt((document.getElementById('ef-dynamicAffixSlots') as HTMLInputElement).value) || 0,
-        preloadedDynamicAffixes: (parseInt((document.getElementById('ef-dynamicAffixSlots') as HTMLInputElement).value) || 0) > 0 ? getSelected('ef-preloadedDynamicAffixes') : null,
-        poolPrerequisite: getSelected('ef-poolPrerequisite'),
-        defaultChildren: serializeChildrenSpecs(isNew ? 'new' : originalData?.id),
-        hp: parseInt((document.getElementById('ef-hp') as HTMLInputElement).value) || 0,
-        maxStamina: parseInt((document.getElementById('ef-maxStamina') as HTMLInputElement).value) || 0,
-        staminaRegen: parseInt((document.getElementById('ef-staminaRegen') as HTMLInputElement).value) || 0,
-        hpRegen: parseInt((document.getElementById('ef-hpRegen') as HTMLInputElement).value) || 0,
-        maxLoad: parseInt((document.getElementById('ef-maxLoad') as HTMLInputElement).value) || 0,
-        isActive: (document.getElementById('ef-isActive') as HTMLSelectElement).value === '有',
-        staminaCost: parseInt((document.getElementById('ef-staminaCost') as HTMLInputElement).value) || 0,
-        actionTime: parseInt((document.getElementById('ef-actionTime') as HTMLInputElement).value) || 0,
-        damage: 0,
-        onHitEffects: readOnHitEffectsFromDom('ef-onhit'),
-        targetFaction: null,
-        targetType: null,
-        targetOrder: null,
-        priorityTarget: null,
-        targetCount: (() => {
-          const v = (document.getElementById('ef-targetCount') as HTMLSelectElement).value;
-          if (v === 'all') return 'all';
-          const n = parseInt(v, 10);
-          return Number.isFinite(n) && n >= 1 ? n : 1;
-        })(),
-        targetCondition: (() => {
-          const sortBy = (document.getElementById('ef-tc-sortBy') as HTMLSelectElement).value || null;
-          const filterBy = readFilterCheckboxes('ef-tc-filter');
-          return {
-            sortBy: sortBy || 'random',
-            filterBy,
-          };
-        })(),
-        // 被动总开关：关则清零全部被动（含 loadBonus）
-        hasPassiveBonuses: hasPB,
-        staminaRegenerationBonus: hasPB ? (parseInt((document.getElementById('ef-staminaRegenerationBonus') as HTMLInputElement).value) || 0) : 0,
-        staminaBonus: hasPB ? (parseInt((document.getElementById('ef-staminaBonus') as HTMLInputElement).value) || 0) : 0,
-        hpRegenerationBonus: hasPB ? (parseInt((document.getElementById('ef-hpRegenerationBonus') as HTMLInputElement).value) || 0) : 0,
-        hpBonus: hasPB ? (parseInt((document.getElementById('ef-hpBonus') as HTMLInputElement).value) || 0) : 0,
-        loadBonus: hasPB ? (parseInt((document.getElementById('ef-loadBonus') as HTMLInputElement).value) || 0) : 0,
-      };
-      if (!entity.defaultChildren || entity.defaultChildren.length === 0) entity.defaultChildren = null;
-      if (!entity.preloadedDynamicAffixes || entity.preloadedDynamicAffixes.length === 0) entity.preloadedDynamicAffixes = null;
-
       try {
+        const id = (document.getElementById('ef-id') as HTMLInputElement).value.trim();
+        if (!id) { showToast('ID 不能为空'); return; }
+        const name = (document.getElementById('ef-name') as HTMLInputElement).value.trim();
+        if (!name) { showToast('名称不能为空'); return; }
+
+        const hitCollect = collectOnHitEffectsFromDom('ef-onhit');
+        if (hitCollect.tickRequiredMissing > 0) {
+          showToast(`有 ${hitCollect.tickRequiredMissing} 条「HP/耐力/倒计时」的持续效果未填 Tick 间隔（毒式须填；底盘请改选生命恢复等数据），已阻止保存`);
+          return;
+        }
+        if (hitCollect.dropped > 0) {
+          showToast(`有 ${hitCollect.dropped} 条效果不合法（持续须填时长等），已阻止保存`);
+          return;
+        }
+
+        const hasPB = (document.getElementById('ef-hasPassiveBonuses') as HTMLSelectElement).value === '1';
+        const entity: any = {
+          id, name,
+          slotCost: (() => {
+            const n = parseInt((document.getElementById('ef-slotCost') as HTMLInputElement).value, 10);
+            return Number.isFinite(n) && n >= 0 ? n : 1;
+          })(),
+          entitySlots: parseInt((document.getElementById('ef-entitySlots') as HTMLInputElement).value) || 0,
+          weight: parseInt((document.getElementById('ef-weight') as HTMLInputElement).value) || 0,
+          value: parseInt((document.getElementById('ef-value') as HTMLInputElement).value) || 1,
+          fixedAffixes: getSelected('ef-fixedAffixes'),
+          dynamicAffixSlots: parseInt((document.getElementById('ef-dynamicAffixSlots') as HTMLInputElement).value) || 0,
+          preloadedDynamicAffixes: (parseInt((document.getElementById('ef-dynamicAffixSlots') as HTMLInputElement).value) || 0) > 0 ? getSelected('ef-preloadedDynamicAffixes') : null,
+          poolPrerequisite: getSelected('ef-poolPrerequisite'),
+          defaultChildren: serializeChildrenSpecs(isNew ? 'new' : originalData?.id),
+          hp: parseInt((document.getElementById('ef-hp') as HTMLInputElement).value) || 0,
+          maxStamina: parseInt((document.getElementById('ef-maxStamina') as HTMLInputElement).value) || 0,
+          staminaRegen: parseInt((document.getElementById('ef-staminaRegen') as HTMLInputElement).value) || 0,
+          hpRegen: parseInt((document.getElementById('ef-hpRegen') as HTMLInputElement).value) || 0,
+          maxLoad: parseInt((document.getElementById('ef-maxLoad') as HTMLInputElement).value) || 0,
+          isActive: (document.getElementById('ef-isActive') as HTMLSelectElement).value === '有',
+          staminaCost: parseInt((document.getElementById('ef-staminaCost') as HTMLInputElement).value) || 0,
+          actionTime: parseInt((document.getElementById('ef-actionTime') as HTMLInputElement).value) || 0,
+          damage: 0,
+          onHitEffects: hitCollect.effects,
+          targetFaction: null,
+          targetType: null,
+          targetOrder: null,
+          priorityTarget: null,
+          targetCount: (() => {
+            const v = (document.getElementById('ef-targetCount') as HTMLSelectElement).value;
+            if (v === 'all') return 'all';
+            const n = parseInt(v, 10);
+            return Number.isFinite(n) && n >= 1 ? n : 1;
+          })(),
+          targetCondition: (() => {
+            const sortBy = (document.getElementById('ef-tc-sortBy') as HTMLSelectElement).value || null;
+            const filterBy = readFilterCheckboxes('ef-tc-filter');
+            return {
+              sortBy: sortBy || 'random',
+              filterBy,
+            };
+          })(),
+          // 被动总开关：关则清零全部被动（含 loadBonus）
+          hasPassiveBonuses: hasPB,
+          staminaRegenerationBonus: hasPB ? (parseInt((document.getElementById('ef-staminaRegenerationBonus') as HTMLInputElement).value) || 0) : 0,
+          staminaBonus: hasPB ? (parseInt((document.getElementById('ef-staminaBonus') as HTMLInputElement).value) || 0) : 0,
+          hpRegenerationBonus: hasPB ? (parseInt((document.getElementById('ef-hpRegenerationBonus') as HTMLInputElement).value) || 0) : 0,
+          hpBonus: hasPB ? (parseInt((document.getElementById('ef-hpBonus') as HTMLInputElement).value) || 0) : 0,
+          loadBonus: hasPB ? (parseInt((document.getElementById('ef-loadBonus') as HTMLInputElement).value) || 0) : 0,
+        };
+        if (!entity.defaultChildren || entity.defaultChildren.length === 0) entity.defaultChildren = null;
+        if (!entity.preloadedDynamicAffixes || entity.preloadedDynamicAffixes.length === 0) entity.preloadedDynamicAffixes = null;
+
         if (isNew) { await admin.createEntity(entity); showToast('实体创建成功'); }
         else { await admin.updateEntity(originalData.id, entity); showToast('实体保存成功'); }
         const [eRes, aRes, cRes] = await Promise.all([admin.listEntities(), admin.listAffixes(), admin.listCategories()]);
@@ -1305,56 +1315,65 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     });
 
     document.getElementById('af-btn-save')?.addEventListener('click', async () => {
-      const id = (document.getElementById('af-id') as HTMLInputElement).value.trim();
-      if (!id) { showToast('ID 不能为空'); return; }
-      const name = (document.getElementById('af-name') as HTMLInputElement).value.trim();
-      if (!name) { showToast('名称不能为空'); return; }
-      const onHitEffects = readOnHitEffectsFromDom('af-onhit');
-
-      const hasPB = (document.getElementById('af-hasPassiveBonuses') as HTMLSelectElement).value === '1';
-      const affix = {
-        id, name,
-        category: (document.getElementById('af-category') as HTMLSelectElement).value,
-        costValue: parseInt((document.getElementById('af-costValue') as HTMLInputElement).value) || 0,
-        slotCost: (() => {
-          const n = parseInt((document.getElementById('af-slotCost') as HTMLInputElement).value, 10);
-          return Number.isFinite(n) && n >= 0 ? n : 0;
-        })(),
-        repeatable: (document.getElementById('af-repeatable') as HTMLInputElement).checked,
-        prerequisite: getSelected('af-prerequisite'),
-        poolPrerequisite: getSelected('af-poolPrerequisite'),
-        effect: (document.getElementById('af-effect') as HTMLInputElement).value.trim(),
-        onHitEffects,
-        // 被动总开关：关则清零全部被动（含 loadBonus）
-        hasPassiveBonuses: hasPB,
-        staminaRegenerationBonus: hasPB ? (parseInt((document.getElementById('af-staminaRegenerationBonus') as HTMLInputElement).value) || 0) : 0,
-        staminaBonus: hasPB ? (parseInt((document.getElementById('af-staminaBonus') as HTMLInputElement).value) || 0) : 0,
-        hpRegenerationBonus: hasPB ? (parseInt((document.getElementById('af-hpRegenerationBonus') as HTMLInputElement).value) || 0) : 0,
-        hpBonus: hasPB ? (parseInt((document.getElementById('af-hpBonus') as HTMLInputElement).value) || 0) : 0,
-        loadBonus: hasPB ? (parseInt((document.getElementById('af-loadBonus') as HTMLInputElement).value) || 0) : 0,
-        targetingModifier: (() => {
-          const enabled = (document.getElementById('af-tm-enabled') as HTMLSelectElement).value === '1';
-          if (!enabled) return null;
-          const mod: any = {};
-          const sbVal = (document.getElementById('af-tm-sortBy') as HTMLSelectElement).value;
-          if (sbVal === 'none') mod.sortBy = null;
-          else if (sbVal) mod.sortBy = sbVal;
-          const clearFb = (document.getElementById('af-tm-filter-clear') as HTMLInputElement)?.checked;
-          if (clearFb) {
-            mod.filterBy = null;
-            mod.targetFaction = null;
-          } else {
-            const fb = readFilterCheckboxes('af-tm-filter');
-            if (fb.length) mod.filterBy = fb;
-          }
-          const tcVal = (document.getElementById('af-tm-targetCount') as HTMLSelectElement).value;
-          if (tcVal === 'none') mod.targetCount = null;
-          else if (tcVal === 'all') mod.targetCount = 'all';
-          else if (tcVal) mod.targetCount = parseInt(tcVal, 10);
-          return Object.keys(mod).length > 0 ? mod : null;
-        })(),
-      };
       try {
+        const id = (document.getElementById('af-id') as HTMLInputElement).value.trim();
+        if (!id) { showToast('ID 不能为空'); return; }
+        const name = (document.getElementById('af-name') as HTMLInputElement).value.trim();
+        if (!name) { showToast('名称不能为空'); return; }
+        const hitCollect = collectOnHitEffectsFromDom('af-onhit');
+        if (hitCollect.tickRequiredMissing > 0) {
+          showToast(`有 ${hitCollect.tickRequiredMissing} 条「HP/耐力/倒计时」的持续效果未填 Tick 间隔（毒式须填；底盘请改选生命恢复等数据），已阻止保存`);
+          return;
+        }
+        if (hitCollect.dropped > 0) {
+          showToast(`有 ${hitCollect.dropped} 条效果不合法（持续须填时长等），已阻止保存`);
+          return;
+        }
+        const onHitEffects = hitCollect.effects;
+
+        const hasPB = (document.getElementById('af-hasPassiveBonuses') as HTMLSelectElement).value === '1';
+        const affix = {
+          id, name,
+          category: (document.getElementById('af-category') as HTMLSelectElement).value,
+          costValue: parseInt((document.getElementById('af-costValue') as HTMLInputElement).value) || 0,
+          slotCost: (() => {
+            const n = parseInt((document.getElementById('af-slotCost') as HTMLInputElement).value, 10);
+            return Number.isFinite(n) && n >= 0 ? n : 0;
+          })(),
+          repeatable: (document.getElementById('af-repeatable') as HTMLInputElement).checked,
+          prerequisite: getSelected('af-prerequisite'),
+          poolPrerequisite: getSelected('af-poolPrerequisite'),
+          effect: (document.getElementById('af-effect') as HTMLInputElement).value.trim(),
+          onHitEffects,
+          // 被动总开关：关则清零全部被动（含 loadBonus）
+          hasPassiveBonuses: hasPB,
+          staminaRegenerationBonus: hasPB ? (parseInt((document.getElementById('af-staminaRegenerationBonus') as HTMLInputElement).value) || 0) : 0,
+          staminaBonus: hasPB ? (parseInt((document.getElementById('af-staminaBonus') as HTMLInputElement).value) || 0) : 0,
+          hpRegenerationBonus: hasPB ? (parseInt((document.getElementById('af-hpRegenerationBonus') as HTMLInputElement).value) || 0) : 0,
+          hpBonus: hasPB ? (parseInt((document.getElementById('af-hpBonus') as HTMLInputElement).value) || 0) : 0,
+          loadBonus: hasPB ? (parseInt((document.getElementById('af-loadBonus') as HTMLInputElement).value) || 0) : 0,
+          targetingModifier: (() => {
+            const enabled = (document.getElementById('af-tm-enabled') as HTMLSelectElement).value === '1';
+            if (!enabled) return null;
+            const mod: any = {};
+            const sbVal = (document.getElementById('af-tm-sortBy') as HTMLSelectElement).value;
+            if (sbVal === 'none') mod.sortBy = null;
+            else if (sbVal) mod.sortBy = sbVal;
+            const clearFb = (document.getElementById('af-tm-filter-clear') as HTMLInputElement)?.checked;
+            if (clearFb) {
+              mod.filterBy = null;
+              mod.targetFaction = null;
+            } else {
+              const fb = readFilterCheckboxes('af-tm-filter');
+              if (fb.length) mod.filterBy = fb;
+            }
+            const tcVal = (document.getElementById('af-tm-targetCount') as HTMLSelectElement).value;
+            if (tcVal === 'none') mod.targetCount = null;
+            else if (tcVal === 'all') mod.targetCount = 'all';
+            else if (tcVal) mod.targetCount = parseInt(tcVal, 10);
+            return Object.keys(mod).length > 0 ? mod : null;
+          })(),
+        };
         if (isNew) { await admin.createAffix(affix); showToast('词条创建成功'); }
         else { await admin.updateAffix(originalData.id, affix); showToast('词条保存成功'); }
         const [eRes, aRes, cRes] = await Promise.all([admin.listEntities(), admin.listAffixes(), admin.listCategories()]);
