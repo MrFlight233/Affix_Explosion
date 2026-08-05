@@ -269,9 +269,9 @@ export function showFullItemPool(onBack: () => void): void {
       field('负重上限', e.maxLoad),
     ].join(''));
 
-    // 可触发动作
+    // 主动动作
     {
-      let body = field('可触发动作', e.isActive ? '有' : '无');
+      let body = field('主动动作', e.isActive ? '有' : '无');
       if (e.isActive) {
         const tc = e.targetCondition;
         const effects = migrateLegacyDamageToOnHitEffects(e.onHitEffects, Number(e.damage) || 0);
@@ -279,7 +279,7 @@ export function showFullItemPool(onBack: () => void): void {
         body += [
           field('耐力消耗', e.staminaCost),
           field('触发耗时(ms)', e.actionTime),
-          field('目标', formatTargetingSummary({
+          field('主动目标', formatTargetingSummary({
             targetFaction: e.targetFaction,
             sortBy: tc?.sortBy,
             targetOrder: e.targetOrder,
@@ -287,10 +287,10 @@ export function showFullItemPool(onBack: () => void): void {
             filterBy: tc?.filterBy,
             targetCount: e.targetCount ?? tc?.targetCount,
           })),
-          field('效果', effectLines.length ? effectLines.join('<br>') : '无'),
+          field('主动效果', effectLines.length ? effectLines.join('<br>') : '无'),
         ].join('');
       }
-      h += section('可触发动作', body);
+      h += section('主动动作', body);
     }
 
     // 被动加成
@@ -299,8 +299,8 @@ export function showFullItemPool(onBack: () => void): void {
       let body = field('被动加成模式', e.hasPassiveBonuses === true ? '有' : '无');
       if (hasPB) {
         const pcfg = resolvePassiveForDisplay(e);
-        body += field('目标', formatPassiveTargetLine(pcfg));
-        body += field('效果', passiveEffectPlainLines(pcfg).join('<br>') || '—');
+        body += field('被动目标', formatPassiveTargetLine(pcfg));
+        body += field('被动效果', passiveEffectPlainLines(pcfg).join('<br>') || '—');
         const hint = passiveRootHint(pcfg);
         if (hint) body += field('说明', hint);
       }
@@ -349,8 +349,8 @@ export function showFullItemPool(onBack: () => void): void {
       let body = field('被动加成模式', a.hasPassiveBonuses === true ? '有' : '无');
       if (hasPB) {
         const pcfg = resolvePassiveForDisplay(a);
-        body += field('目标', formatPassiveTargetLine(pcfg));
-        body += field('效果', passiveEffectPlainLines(pcfg).join('<br>') || '—');
+        body += field('被动目标', formatPassiveTargetLine(pcfg));
+        body += field('被动效果', passiveEffectPlainLines(pcfg).join('<br>') || '—');
         const hint = passiveRootHint(pcfg);
         if (hint) body += field('说明', hint);
       }

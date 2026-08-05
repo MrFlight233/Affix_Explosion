@@ -100,7 +100,8 @@ export function renderTooltipTree(
         ? `倒计时: ${(remaining / 1000).toFixed(1)}s`
         : `间隔: ${(actionTime / 1000).toFixed(1)}s`;
       h += `<div class="sb-tip-fixed-row" style="${indent}">耐力: ${staminaCost}  ${timeLabel}</div>`;
-      h += `<div class="sb-tip-fixed-row" style="${indent}">目标: ${targeting}</div>`;
+      h += `<div class="sb-tip-fixed-row sb-block-gap" style="${indent}">主动目标: ${targeting}</div>`;
+      h += `<div class="sb-tip-fixed-row sb-block-gap" style="${indent}">主动效果</div>`;
       const lines = formatConfigEffectsBlock(effects);
       if (lines.length === 0) {
         h += `<div class="sb-tip-fixed-row" style="${indent}">无效果</div>`;
@@ -114,12 +115,11 @@ export function renderTooltipTree(
     if (hasPassive(def)) {
       const pcfg = resolvePassiveForDisplay(def);
       h += tipSection('被动加成');
-      h += `<div class="sb-tip-fixed-row" style="${indent}">目标: ${formatPassiveTargetLine(pcfg)}</div>`;
-      h += '<div class="sb-tip-grid">';
+      h += `<div class="sb-tip-fixed-row" style="${indent}">被动目标: ${formatPassiveTargetLine(pcfg)}</div>`;
+      h += `<div class="sb-tip-fixed-row sb-block-gap" style="${indent}">被动效果</div>`;
       for (const line of passiveEffectPlainLines(pcfg)) {
-        h += tipkv('效果', line);
+        h += `<div class="sb-tip-fixed-row" style="${indent}">${line}</div>`;
       }
-      h += '</div>';
       const hint = passiveRootHint(pcfg);
       if (hint) h += `<div class="sb-tip-fixed-row" style="${indent}">${hint}</div>`;
     }
@@ -290,7 +290,8 @@ export function showSimTooltip(
           targetCount: def.targetCount ?? def.targetCondition?.targetCount,
         });
         html += `<div class="sb-tip-fixed-row">耐力: ${def.staminaCost}  间隔: ${(def.actionTime / 1000).toFixed(1)}s</div>`;
-        html += `<div class="sb-tip-fixed-row">目标: ${targeting}</div>`;
+        html += `<div class="sb-tip-fixed-row sb-block-gap">主动目标: ${targeting}</div>`;
+        html += '<div class="sb-tip-fixed-row sb-block-gap">主动效果</div>';
         const lines = formatConfigEffectsBlock(effects);
         if (lines.length === 0) {
           html += '<div class="sb-tip-fixed-row">无效果</div>';
@@ -304,12 +305,11 @@ export function showSimTooltip(
       if (hasPassive(def)) {
         const pcfg = resolvePassiveForDisplay(def);
         html += tipSection('被动加成');
-        html += `<div class="sb-tip-fixed-row">目标: ${formatPassiveTargetLine(pcfg)}</div>`;
-        html += '<div class="sb-tip-grid">';
+        html += `<div class="sb-tip-fixed-row">被动目标: ${formatPassiveTargetLine(pcfg)}</div>`;
+        html += '<div class="sb-tip-fixed-row sb-block-gap">被动效果</div>';
         for (const line of passiveEffectPlainLines(pcfg)) {
-          html += tipkv('效果', line);
+          html += `<div class="sb-tip-fixed-row">${line}</div>`;
         }
-        html += '</div>';
         const hint = passiveRootHint(pcfg);
         if (hint) html += `<div class="sb-tip-fixed-row">${hint}</div>`;
       }
@@ -396,12 +396,11 @@ export function showSimTooltip(
     if (hasAffixPassive(def)) {
       const pcfg = resolvePassiveForDisplay(def);
       h += tipSection('被动加成');
-      h += `<div class="sb-tip-fixed-row">目标: ${formatPassiveTargetLine(pcfg)}</div>`;
-      h += '<div class="sb-tip-grid">';
+      h += `<div class="sb-tip-fixed-row">被动目标: ${formatPassiveTargetLine(pcfg)}</div>`;
+      h += '<div class="sb-tip-fixed-row sb-block-gap">被动效果</div>';
       for (const line of passiveEffectPlainLines(pcfg)) {
-        h += tipkv('效果', line);
+        h += `<div class="sb-tip-fixed-row">${line}</div>`;
       }
-      h += '</div>';
       const hint = passiveRootHint(pcfg);
       if (hint) h += `<div class="sb-tip-fixed-row">${hint}</div>`;
     }

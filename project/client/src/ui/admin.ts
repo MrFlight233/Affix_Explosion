@@ -919,9 +919,10 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     h += `<div class="admin-field"><label>负重上限</label><input id="ef-maxLoad" type="number" value="${v('maxLoad', 0)}"></div>`;
     h += `</div>`;
     const isActiveVal = v('isActive', false);
-    h += `<div class="admin-form-section"><h4>可触发动作</h4>`;
-    h += `<div class="admin-field"><label>可触发动作</label><select id="ef-isActive"><option value="有"${isActiveVal ? ' selected' : ''}>有</option><option value="无"${!isActiveVal ? ' selected' : ''}>无</option></select></div>`;
+    h += `<div class="admin-form-section"><h4>主动动作</h4>`;
+    h += `<div class="admin-field"><label>主动动作</label><select id="ef-isActive"><option value="有"${isActiveVal ? ' selected' : ''}>有</option><option value="无"${!isActiveVal ? ' selected' : ''}>无</option></select></div>`;
     h += `<div id="ef-action-fields" style="${isActiveVal ? '' : 'display:none;'}">`;
+    h += `<div class="adm-section-title">主动消耗</div>`;
     h += `<div class="admin-field"><label>耐力消耗</label><input id="ef-staminaCost" type="number" value="${v('staminaCost', 0)}"></div>`;
     h += `<div class="admin-field"><label>触发耗时(ms)</label><input id="ef-actionTime" type="number" value="${v('actionTime', 0)}"></div>`;
     const tc = v('targetCondition');
@@ -940,7 +941,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     const countNorm = normalizeTargetCount(countRaw);
     const countSel = countNorm === 'all' ? 'all' : String(countNorm);
     h += `<div class="admin-field"><label>目标数量</label><select id="ef-targetCount"><option value="1"${countSel==='1'?' selected':''}>1</option><option value="2"${countSel==='2'?' selected':''}>2</option><option value="3"${countSel==='3'?' selected':''}>3</option><option value="4"${countSel==='4'?' selected':''}>4</option><option value="5"${countSel==='5'?' selected':''}>5</option><option value="all"${countSel==='all'?' selected':''}>全部</option></select></div>`;
-    h += `<div class="admin-field"><label>效果</label></div>`;
+    h += `<div class="adm-section-title">主动效果</div>`;
     h += renderOnHitEffectsEditor('ef-onhit', entityInitialOnHitEffects(data));
     h += `</div>`;
     h += `</div>`;

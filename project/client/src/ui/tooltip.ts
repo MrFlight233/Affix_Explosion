@@ -62,12 +62,12 @@ function renderEntityTooltip(tip: HTMLElement, def: EntityDef) {
   html += `<div class="tt-row"><span class="tt-label">槽位消耗:</span>${def.slotCost}</div>`;
   if (!isSt) html += `<div class="tt-row"><span class="tt-label">重量:</span>${def.weight}g</div>`;
 
-  // 主动动作（方向 A：左对齐扁平行，无分节标题）
+  // 主动动作（方向 A：左对齐扁平行，无分节标题；行标签区分）
   if (def.isActive) {
     html += '<div class="tt-section">主动动作</div>';
     html += `<div class="tt-row"><span class="tt-label">耐力:</span>${def.staminaCost}</div>`;
     html += `<div class="tt-row"><span class="tt-label">间隔:</span>${(def.actionTime / 1000).toFixed(1)}s</div>`;
-    html += `<div class="tt-row"><span class="tt-label">目标:</span>${formatTargetingSummary({
+    html += `<div class="tt-row tt-block-gap"><span class="tt-label">主动目标:</span>${formatTargetingSummary({
       targetFaction: def.targetFaction,
       sortBy: def.targetCondition?.sortBy,
       targetOrder: def.targetOrder,
@@ -75,6 +75,7 @@ function renderEntityTooltip(tip: HTMLElement, def: EntityDef) {
       filterBy: def.targetCondition?.filterBy,
       targetCount: def.targetCount ?? def.targetCondition?.targetCount,
     })}</div>`;
+    html += '<div class="tt-row tt-block-gap">主动效果</div>';
     const effects = migrateLegacyDamageToOnHitEffects(def.onHitEffects, Number(def.damage) || 0);
     const lines = formatConfigEffectsBlock(effects);
     if (lines.length === 0) {
@@ -90,7 +91,8 @@ function renderEntityTooltip(tip: HTMLElement, def: EntityDef) {
   if (hasDisplayPassive(def)) {
     const pcfg = resolvePassiveForDisplay(def);
     html += '<div class="tt-section">被动加成</div>';
-    html += `<div class="tt-row"><span class="tt-label">目标:</span>${formatPassiveTargetLine(pcfg)}</div>`;
+    html += `<div class="tt-row"><span class="tt-label">被动目标:</span>${formatPassiveTargetLine(pcfg)}</div>`;
+    html += '<div class="tt-row tt-block-gap">被动效果</div>';
     for (const line of passiveEffectPlainLines(pcfg)) {
       html += `<div class="tt-row">${line}</div>`;
     }
@@ -140,7 +142,8 @@ function renderAffixTooltip(tip: HTMLElement, def: any) {
   if (hasDisplayPassive(def)) {
     const pcfg = resolvePassiveForDisplay(def);
     html += '<div class="tt-section">被动加成</div>';
-    html += `<div class="tt-row"><span class="tt-label">目标:</span>${formatPassiveTargetLine(pcfg)}</div>`;
+    html += `<div class="tt-row"><span class="tt-label">被动目标:</span>${formatPassiveTargetLine(pcfg)}</div>`;
+    html += '<div class="tt-row tt-block-gap">被动效果</div>';
     for (const line of passiveEffectPlainLines(pcfg)) {
       html += `<div class="tt-row">${line}</div>`;
     }

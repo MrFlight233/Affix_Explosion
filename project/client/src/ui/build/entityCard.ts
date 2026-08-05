@@ -265,7 +265,8 @@ export function renderEntityCard(
       const pcfg = resolvePassiveForDisplay(adef);
       h += '<div class="sb-card-block">';
       h += '<div class="sb-block-title">被动加成</div>';
-      h += `<div class="sb-card-stats">目标: ${formatPassiveTargetLine(pcfg)}</div>`;
+      h += `<div class="sb-card-stats">被动目标: ${formatPassiveTargetLine(pcfg)}</div>`;
+      h += '<div class="sb-card-stats sb-block-gap">被动效果</div>';
       h += '<div class="sb-card-stats">';
       h += pcfg.passiveEffects.map(formatPassiveEffectDisplay).join('  ');
       h += '</div>';
@@ -369,7 +370,8 @@ export function renderEntityCard(
   }
   if (edef && hasPassive(edef)) {
     const pcfg = resolvePassiveForDisplay(edef);
-    h += `<div class="sb-card-stats">被动目标: ${formatPassiveTargetLine(pcfg)}</div>`;
+    h += `<div class="sb-card-stats sb-block-gap">被动目标: ${formatPassiveTargetLine(pcfg)}</div>`;
+    h += '<div class="sb-card-stats sb-block-gap">被动效果</div>';
     h += '<div class="sb-card-stats">';
     h += pcfg.passiveEffects.map(formatPassiveEffectDisplay).join('  ');
     h += '</div>';
@@ -419,7 +421,8 @@ export function renderEntityCard(
       costLine += `  间隔: ${(actionTime / 1000).toFixed(1)}s`;
     }
     h += `<div class="sb-card-stats">${costLine}</div>`;
-    h += `<div class="sb-card-stats">目标: ${targeting}</div>`;
+    h += `<div class="sb-card-stats sb-block-gap">主动目标: ${targeting}</div>`;
+    h += '<div class="sb-card-stats sb-block-gap">主动效果</div>';
     const effectLines = formatConfigEffectsBlock(effects);
     if (effectLines.length === 0) {
       h += '<div class="sb-card-stats">无效果</div>';
