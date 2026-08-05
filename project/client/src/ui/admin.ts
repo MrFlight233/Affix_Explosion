@@ -1073,19 +1073,12 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     h += renderPopoverSelector('af-prerequisite','前置词条',v('prerequisite')||[],affixOpts);
     h += renderPopoverSelector('af-poolPrerequisite','池前置',v('poolPrerequisite')||[],affixOpts);
     h += `</div>`;
-    // v7+: 被动加成（目标 + 效果）
-    h += `<div class="admin-form-section"><h4>被动加成</h4>`;
-    h += renderPassiveBonusesEditor('af', data || {});
-    h += `</div>`;
-    h += `<div class="admin-form-section"><h4>效果</h4>`;
-    h += renderOnHitEffectsEditor('af-onhit', v('onHitEffects') || []);
-    h += `</div>`;
     const tm = v('targetingModifier');
     const tmEnabled = !!(tm?.sortBy !== undefined ||
       tm?.filterBy !== undefined || tm?.targetCount !== undefined ||
       tm?.targetFaction !== undefined ||
       tm?.targetOrder !== undefined || tm?.priorityTarget !== undefined);
-    h += `<div class="admin-form-section"><h4>Targeting 覆写（targeting_modifier）</h4>`;
+    h += `<div class="admin-form-section"><h4>主动目标覆写</h4>`;
     h += `<div class="admin-field"><label>覆写模式</label><select id="af-tm-enabled"><option value="0"${!tmEnabled?' selected':''}>不修改</option><option value="1"${tmEnabled?' selected':''}>修改</option></select></div>`;
     h += `<div id="af-tm-fields" style="${tmEnabled?'':'display:none'}">`;
     const tmSort = tm?.sortBy === null ? 'none' : (tm?.sortBy ?? (tm?.priorityTarget != null ? `站位${tm.priorityTarget}` : tm?.targetOrder) ?? '');
@@ -1097,6 +1090,12 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     const tmCountSel = tmCount === null ? 'none' : tmCount === undefined ? '' : (tmCount === 'all' || tmCount === -1 ? 'all' : String(tmCount));
     h += `<div class="admin-field"><label>目标数量</label><select id="af-tm-targetCount"><option value="">不修改</option><option value="1"${tmCountSel==='1'?' selected':''}>1</option><option value="2"${tmCountSel==='2'?' selected':''}>2</option><option value="3"${tmCountSel==='3'?' selected':''}>3</option><option value="4"${tmCountSel==='4'?' selected':''}>4</option><option value="5"${tmCountSel==='5'?' selected':''}>5</option><option value="all"${tmCountSel==='all'?' selected':''}>全部</option><option value="none"${tmCountSel==='none'?' selected':''}>无（清除）</option></select></div>`;
     h += `</div>`;
+    h += `</div>`;
+    h += `<div class="admin-form-section"><h4>主动效果</h4>`;
+    h += renderOnHitEffectsEditor('af-onhit', v('onHitEffects') || []);
+    h += `</div>`;
+    h += `<div class="admin-form-section"><h4>被动加成</h4>`;
+    h += renderPassiveBonusesEditor('af', data || {});
     h += `</div>`;
     h += `</div>`;
     return h;

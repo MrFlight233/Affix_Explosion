@@ -138,7 +138,34 @@ function renderAffixTooltip(tip: HTMLElement, def: any) {
   html += `<div class="tt-cat">${getCategoryName(def.category)}</div>`;
   html += '<div class="tt-section">效果描述</div>';
   html += `<div class="tt-row"><span class="tt-label">效果:</span>${def.effect}</div>`;
-  // 被动加成
+
+  html += '<div class="tt-section">基本信息</div>';
+  html += `<div class="tt-row"><span class="tt-label">槽位消耗:</span>${def.slotCost}</div>`;
+  html += `<div class="tt-row"><span class="tt-label">可重复:</span>${def.repeatable ? '是' : '否'}</div>`;
+  html += '<div class="tt-section">词条</div>';
+  html += `<div class="tt-row"><span class="tt-label">前置词条:</span>${resolvePrereq(def.prerequisite)}</div>`;
+  if (def.poolPrerequisite && def.poolPrerequisite.length > 0) {
+    html += `<div class="tt-row"><span class="tt-label">池前置:</span>${resolvePrereq(def.poolPrerequisite)}</div>`;
+  }
+  if (def.targetingModifier) {
+    const tm = def.targetingModifier;
+    html += '<div class="tt-section">主动目标覆写</div>';
+    html += `<div class="tt-row"><span class="tt-label">覆写:</span>${formatTargetingSummary({
+      targetFaction: tm.targetFaction,
+      sortBy: tm.sortBy,
+      targetOrder: tm.targetOrder,
+      priorityTarget: tm.priorityTarget,
+      filterBy: tm.filterBy,
+      targetCount: tm.targetCount,
+    })}</div>`;
+  }
+  const ohLines = formatConfigEffectsBlock(def.onHitEffects);
+  if (ohLines.length > 0) {
+    html += '<div class="tt-section">主动效果</div>';
+    for (const line of ohLines) {
+      html += `<div class="tt-row"><span class="tt-label"></span>${line}</div>`;
+    }
+  }
   if (hasDisplayPassive(def)) {
     const pcfg = resolvePassiveForDisplay(def);
     html += '<div class="tt-section">被动加成</div>';
@@ -149,34 +176,6 @@ function renderAffixTooltip(tip: HTMLElement, def: any) {
     }
     const hint = passiveRootHint(pcfg);
     if (hint) html += `<div class="tt-row tt-hint">${hint}</div>`;
-  }
-
-  html += '<div class="tt-section">基本信息</div>';
-  html += `<div class="tt-row"><span class="tt-label">槽位消耗:</span>${def.slotCost}</div>`;
-  html += `<div class="tt-row"><span class="tt-label">可重复:</span>${def.repeatable ? '是' : '否'}</div>`;
-  html += '<div class="tt-section">词条</div>';
-  html += `<div class="tt-row"><span class="tt-label">前置词条:</span>${resolvePrereq(def.prerequisite)}</div>`;
-  if (def.poolPrerequisite && def.poolPrerequisite.length > 0) {
-    html += `<div class="tt-row"><span class="tt-label">池前置:</span>${resolvePrereq(def.poolPrerequisite)}</div>`;
-  }
-  const ohLines = formatConfigEffectsBlock(def.onHitEffects);
-  if (ohLines.length > 0) {
-    html += '<div class="tt-section">效果</div>';
-    for (const line of ohLines) {
-      html += `<div class="tt-row"><span class="tt-label"></span>${line}</div>`;
-    }
-  }
-  if (def.targetingModifier) {
-    const tm = def.targetingModifier;
-    html += '<div class="tt-section">目标覆写</div>';
-    html += `<div class="tt-row"><span class="tt-label">覆写:</span>${formatTargetingSummary({
-      targetFaction: tm.targetFaction,
-      sortBy: tm.sortBy,
-      targetOrder: tm.targetOrder,
-      priorityTarget: tm.priorityTarget,
-      filterBy: tm.filterBy,
-      targetCount: tm.targetCount,
-    })}</div>`;
   }
   tip.innerHTML = html;
 }

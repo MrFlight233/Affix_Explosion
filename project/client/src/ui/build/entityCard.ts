@@ -261,20 +261,6 @@ export function renderEntityCard(
     h += `<div class="sb-card-stats">${adef.effect || '—'}</div>`;
     h += '</div>';
 
-    if (hasAffixPassive(adef)) {
-      const pcfg = resolvePassiveForDisplay(adef);
-      h += '<div class="sb-card-block">';
-      h += '<div class="sb-block-title">被动加成</div>';
-      h += `<div class="sb-card-stats">被动目标: ${formatPassiveTargetLine(pcfg)}</div>`;
-      h += '<div class="sb-card-stats sb-block-gap">被动效果</div>';
-      h += '<div class="sb-card-stats">';
-      h += pcfg.passiveEffects.map(formatPassiveEffectDisplay).join('  ');
-      h += '</div>';
-      const hint = passiveRootHint(pcfg);
-      if (hint) h += `<div class="sb-card-stats sb-hint">${hint}</div>`;
-      h += '</div>';
-    }
-
     h += '<div class="sb-card-block">';
     h += '<div class="sb-block-title">基本信息</div>';
     h += '<div class="sb-card-stats">';
@@ -293,15 +279,6 @@ export function renderEntityCard(
       h += '</div>';
     }
 
-    if (adef.onHitEffects && adef.onHitEffects.length > 0) {
-      h += '<div class="sb-card-block">';
-      h += '<div class="sb-block-title">效果</div>';
-      for (const line of formatConfigEffectsBlock(adef.onHitEffects)) {
-        h += `<div class="sb-card-stats">${line}</div>`;
-      }
-      h += '</div>';
-    }
-
     if (adef.targetingModifier) {
       const tm = adef.targetingModifier;
       const summary = formatTargetingSummary({
@@ -313,8 +290,31 @@ export function renderEntityCard(
         targetCount: tm.targetCount,
       });
       h += '<div class="sb-card-block">';
-      h += '<div class="sb-block-title">目标覆写</div>';
+      h += '<div class="sb-block-title">主动目标覆写</div>';
       h += `<div class="sb-card-stats">${summary}</div>`;
+      h += '</div>';
+    }
+
+    if (adef.onHitEffects && adef.onHitEffects.length > 0) {
+      h += '<div class="sb-card-block">';
+      h += '<div class="sb-block-title">主动效果</div>';
+      for (const line of formatConfigEffectsBlock(adef.onHitEffects)) {
+        h += `<div class="sb-card-stats">${line}</div>`;
+      }
+      h += '</div>';
+    }
+
+    if (hasAffixPassive(adef)) {
+      const pcfg = resolvePassiveForDisplay(adef);
+      h += '<div class="sb-card-block">';
+      h += '<div class="sb-block-title">被动加成</div>';
+      h += `<div class="sb-card-stats">被动目标: ${formatPassiveTargetLine(pcfg)}</div>`;
+      h += '<div class="sb-card-stats sb-block-gap">被动效果</div>';
+      h += '<div class="sb-card-stats">';
+      h += pcfg.passiveEffects.map(formatPassiveEffectDisplay).join('  ');
+      h += '</div>';
+      const hint = passiveRootHint(pcfg);
+      if (hint) h += `<div class="sb-card-stats sb-hint">${hint}</div>`;
       h += '</div>';
     }
 

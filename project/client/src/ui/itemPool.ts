@@ -343,30 +343,7 @@ export function showFullItemPool(onBack: () => void): void {
       h += section('前置条件', body);
     }
 
-    // 被动加成
-    {
-      const hasPB = hasDisplayPassive(a);
-      let body = field('被动加成模式', a.hasPassiveBonuses === true ? '有' : '无');
-      if (hasPB) {
-        const pcfg = resolvePassiveForDisplay(a);
-        body += field('被动目标', formatPassiveTargetLine(pcfg));
-        body += field('被动效果', passiveEffectPlainLines(pcfg).join('<br>') || '—');
-        const hint = passiveRootHint(pcfg);
-        if (hint) body += field('说明', hint);
-      }
-      h += section('被动加成', body);
-    }
-
-    // 效果
-    {
-      const effectLines = formatConfigEffectsBlock(a.onHitEffects);
-      let body = effectLines.length === 0
-        ? field('效果', '无')
-        : effectLines.map(line => field('效果', line)).join('');
-      h += section('效果', body);
-    }
-
-    // Targeting 覆写
+    // 主动目标覆写
     {
       const tm = a.targetingModifier;
       const tmEnabled = !!(
@@ -408,7 +385,30 @@ export function showFullItemPool(onBack: () => void): void {
           })),
         ].join('');
       }
-      h += section('Targeting 覆写（targeting_modifier）', body);
+      h += section('主动目标覆写', body);
+    }
+
+    // 主动效果
+    {
+      const effectLines = formatConfigEffectsBlock(a.onHitEffects);
+      let body = effectLines.length === 0
+        ? field('主动效果', '无')
+        : effectLines.map(line => field('主动效果', line)).join('');
+      h += section('主动效果', body);
+    }
+
+    // 被动加成
+    {
+      const hasPB = hasDisplayPassive(a);
+      let body = field('被动加成模式', a.hasPassiveBonuses === true ? '有' : '无');
+      if (hasPB) {
+        const pcfg = resolvePassiveForDisplay(a);
+        body += field('被动目标', formatPassiveTargetLine(pcfg));
+        body += field('被动效果', passiveEffectPlainLines(pcfg).join('<br>') || '—');
+        const hint = passiveRootHint(pcfg);
+        if (hint) body += field('说明', hint);
+      }
+      h += section('被动加成', body);
     }
 
     return h;

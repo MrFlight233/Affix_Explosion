@@ -393,17 +393,6 @@ export function showSimTooltip(
     h += `<div class="sb-tip-cat">${getCategoryName(def.category)}</div>`;
     h += tipSection('效果描述');
     h += `<div class="sb-tip-effect">${def.effect}</div>`;
-    if (hasAffixPassive(def)) {
-      const pcfg = resolvePassiveForDisplay(def);
-      h += tipSection('被动加成');
-      h += `<div class="sb-tip-fixed-row">被动目标: ${formatPassiveTargetLine(pcfg)}</div>`;
-      h += '<div class="sb-tip-fixed-row sb-block-gap">被动效果</div>';
-      for (const line of passiveEffectPlainLines(pcfg)) {
-        h += `<div class="sb-tip-fixed-row">${line}</div>`;
-      }
-      const hint = passiveRootHint(pcfg);
-      if (hint) h += `<div class="sb-tip-fixed-row">${hint}</div>`;
-    }
     h += tipSection('基本信息');
     h += '<div class="sb-tip-grid">';
     h += tipkv('槽位消耗', def.slotCost);
@@ -419,12 +408,35 @@ export function showSimTooltip(
         h += `<div class="sb-tip-fixed-row">池前置: ${resolveNames(def.poolPrerequisite)}</div>`;
       }
     }
+    if (def.targetingModifier) {
+      const tm = def.targetingModifier;
+      h += tipSection('主动目标覆写');
+      h += `<div class="sb-tip-fixed-row">${formatTargetingSummary({
+        targetFaction: tm.targetFaction,
+        sortBy: tm.sortBy,
+        targetOrder: tm.targetOrder,
+        priorityTarget: tm.priorityTarget,
+        filterBy: tm.filterBy,
+        targetCount: tm.targetCount,
+      })}</div>`;
+    }
     const ohLines = formatConfigEffectsBlock(def.onHitEffects);
     if (ohLines.length > 0) {
-      h += tipSection('效果');
+      h += tipSection('主动效果');
       for (const line of ohLines) {
         h += `<div class="sb-tip-fixed-row">${line}</div>`;
       }
+    }
+    if (hasAffixPassive(def)) {
+      const pcfg = resolvePassiveForDisplay(def);
+      h += tipSection('被动加成');
+      h += `<div class="sb-tip-fixed-row">被动目标: ${formatPassiveTargetLine(pcfg)}</div>`;
+      h += '<div class="sb-tip-fixed-row sb-block-gap">被动效果</div>';
+      for (const line of passiveEffectPlainLines(pcfg)) {
+        h += `<div class="sb-tip-fixed-row">${line}</div>`;
+      }
+      const hint = passiveRootHint(pcfg);
+      if (hint) h += `<div class="sb-tip-fixed-row">${hint}</div>`;
     }
     inner.innerHTML = h;
   }
