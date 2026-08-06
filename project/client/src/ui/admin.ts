@@ -911,13 +911,22 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     h += `</div>`;
     h += `</div>`;
 
-    h += `<div class="admin-form-section"><h4>战斗属性</h4>`;
-    h += `<div class="admin-field"><label>HP</label><input id="ef-hp" type="number" value="${v('hp', 0)}"></div>`;
-    h += `<div class="admin-field"><label>耐力上限</label><input id="ef-maxStamina" type="number" value="${v('maxStamina', 0)}"></div>`;
-    h += `<div class="admin-field"><label>耐力恢复/秒</label><input id="ef-staminaRegen" type="number" value="${v('staminaRegen', 0)}"></div>`;
-    h += `<div class="admin-field"><label>HP恢复/秒</label><input id="ef-hpRegen" type="number" value="${v('hpRegen', 0)}"></div>`;
-    h += `<div class="admin-field"><label>负重上限</label><input id="ef-maxLoad" type="number" value="${v('maxLoad', 0)}"></div>`;
-    h += `</div>`;
+    const combatHp = Number(v('hp', 0)) || 0;
+    const combatMaxSta = Number(v('maxStamina', 0)) || 0;
+    const combatStaRegen = Number(v('staminaRegen', 0)) || 0;
+    const combatHpRegen = Number(v('hpRegen', 0)) || 0;
+    const combatMaxLoad = Number(v('maxLoad', 0)) || 0;
+    const combatAllZero = combatHp === 0 && combatMaxSta === 0 && combatStaRegen === 0
+      && combatHpRegen === 0 && combatMaxLoad === 0;
+    h += `<div class="admin-form-section adm-foldable">`;
+    h += `<h4 class="adm-fold-h" data-adm-fold="combat" role="button" tabindex="0">战斗属性<span class="adm-fold-label">${combatAllZero ? '展开' : '收起'}</span></h4>`;
+    h += `<div class="adm-fold-body${combatAllZero ? ' folded' : ''}" data-adm-fold-body="combat">`;
+    h += `<div class="admin-field"><label>HP</label><input id="ef-hp" type="number" value="${combatHp}"></div>`;
+    h += `<div class="admin-field"><label>耐力上限</label><input id="ef-maxStamina" type="number" value="${combatMaxSta}"></div>`;
+    h += `<div class="admin-field"><label>耐力恢复/秒</label><input id="ef-staminaRegen" type="number" value="${combatStaRegen}"></div>`;
+    h += `<div class="admin-field"><label>HP恢复/秒</label><input id="ef-hpRegen" type="number" value="${combatHpRegen}"></div>`;
+    h += `<div class="admin-field"><label>负重上限</label><input id="ef-maxLoad" type="number" value="${combatMaxLoad}"></div>`;
+    h += `</div></div>`;
     const isActiveVal = v('isActive', false);
     h += `<div class="admin-form-section"><h4>主动动作</h4>`;
     h += `<div class="admin-field"><label>主动动作</label><select id="ef-isActive"><option value="有"${isActiveVal ? ' selected' : ''}>有</option><option value="无"${!isActiveVal ? ' selected' : ''}>无</option></select></div>`;
@@ -1116,6 +1125,24 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     bindPopoverSelector('ef-poolPrerequisite', affixOpts);
     bindOnHitEffectsEditor('ef-onhit', entityInitialOnHitEffects(originalData || {}));
     bindPassiveBonusesEditor('ef', originalData || {});
+
+    // 战斗属性等可折叠分区
+    document.querySelectorAll('#entity-form .adm-fold-h[data-adm-fold]').forEach(el => {
+      const h = el as HTMLElement;
+      const toggle = () => {
+        const key = h.dataset.admFold!;
+        const body = document.querySelector(`#entity-form [data-adm-fold-body="${key}"]`) as HTMLElement | null;
+        if (!body) return;
+        const next = !body.classList.contains('folded');
+        body.classList.toggle('folded', next);
+        const label = h.querySelector('.adm-fold-label');
+        if (label) label.textContent = next ? '展开' : '收起';
+      };
+      h.addEventListener('click', toggle);
+      h.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+      });
+    });
 
     // ── 动态词条槽位：始终绑定 + 动态显示/隐藏 ──
     bindPopoverSelector('ef-preloadedDynamicAffixes', affixOpts);

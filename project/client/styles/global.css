@@ -1368,6 +1368,31 @@ body.fg-resizing-row { cursor: row-resize !important; user-select: none; }
   border-radius: 5px 5px 0 0;
   display: flex; align-items: center; gap: 8px;
 }
+.admin-form-section.adm-foldable > h4.adm-fold-h {
+  cursor: pointer; user-select: none;
+  transition: background 100ms ease-out;
+}
+.admin-form-section.adm-foldable > h4.adm-fold-h:hover {
+  background: #f0f0f0; color: var(--adm-text-secondary);
+}
+.admin-form-section.adm-foldable > h4.adm-fold-h:focus-visible {
+  outline: 2px solid var(--adm-indicator); outline-offset: -2px;
+}
+.admin-form-section .adm-fold-label {
+  margin-left: auto;
+  font-weight: 400;
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--adm-text-muted);
+}
+.admin-form-section .adm-fold-body.folded {
+  display: none;
+}
+.admin-form-section.adm-foldable:has(> .adm-fold-body.folded) > h4.adm-fold-h {
+  border-bottom: none;
+  border-radius: 5px;
+}
 .admin-form-section h4 .adm-sec-sub {
   font-weight: 400; text-transform: none; letter-spacing: 0;
   font-size: 11px; color: var(--adm-text-muted);
