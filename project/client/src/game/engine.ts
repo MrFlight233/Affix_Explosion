@@ -688,6 +688,7 @@ export class GameEngine {
           if (entityName) stampPassiveEffectList(effects, entityName);
           into.push({
             ownerItemInstanceId: item.instanceId,
+            ownerName: entityName || undefined,
             effects,
             targetCondition: {
               sortBy: cfg.passiveTargetCondition.sortBy || 'random',
@@ -720,6 +721,7 @@ export class GameEngine {
         if (affixName) stampPassiveEffectList(effects, affixName);
         into.push({
           ownerItemInstanceId: item.instanceId,
+          ownerName: affixName || undefined,
           effects,
           targetCondition: {
             sortBy: cfg.passiveTargetCondition.sortBy || 'random',
@@ -968,7 +970,7 @@ export class GameEngine {
   previewBdRuntimes(slots: DeploySlot[]): CombatUnitRuntime[] {
     const { snapshots } = this.calculateCombatSnapshots(slots);
     const rts = buildCombatRuntime(snapshots);
-    recomputePassiveBonuses(rts, [], () => 0);
+    recomputePassiveBonuses(rts, [], () => 0, true);
     return rts;
   }
 

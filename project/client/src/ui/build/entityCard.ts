@@ -21,7 +21,7 @@ import {
   passiveRootHint,
   resolvePassiveForDisplay,
 } from '../passiveBonusDisplay';
-import { summarizePassiveMods } from '../../game/battle/passives';
+import { summarizePassiveModsBySource } from '../../game/battle/passives';
 
 function targetingFromWeaponOrDef(
   weapon: { targetFaction?: string; targetCount?: number | 'all'; targetCondition?: any } | null | undefined,
@@ -357,59 +357,44 @@ export function renderEntityCard(
     const stam = combatUnit ? `${Math.floor(combatUnit.currentStamina)}/${combatUnit.maxStamina}` : `${edef!.maxStamina}/${edef!.maxStamina}`;
     const sRegen = combatUnit ? combatUnit.staminaRegen : edef!.staminaRegen;
     const hRegen = combatUnit ? combatUnit.hpRegeneration : (edef!.hpRegen || 0);
-    h += '<div class="sb-card-stats">';
-    h += `HP: <span id="cu-hp-${sideFirst}-${item.instanceId}">${hp}</span>`;
-    h += `  耐力: <span id="cu-sta-${sideFirst}-${item.instanceId}">${stam}</span>`;
+    // HP 行
     if (mode === 'battle' && sideFirst) {
-      h += `  耐力恢复: <span id="cu-sregen-${sideFirst}-${item.instanceId}">${sRegen}</span>/s`;
-      h += `  生命恢复: <span id="cu-hregen-${sideFirst}-${item.instanceId}">${hRegen}</span>/s`;
+      h += `<div class="sb-card-stats">HP: <span id="cu-hp-${sideFirst}-${item.instanceId}">${hp}</span>  生命恢复: <span id="cu-hregen-${sideFirst}-${item.instanceId}">${hRegen}</span>/s</div>`;
     } else {
-      h += `  耐力恢复: ${sRegen}/s`;
-      h += `  生命恢复: ${hRegen}/s`;
+      h += `<div class="sb-card-stats">HP: ${hp}  生命恢复: ${hRegen}/s</div>`;
     }
-    h += '</div>';
-    h += '<div class="sb-card-stats">';
+    // 耐力行
+    if (mode === 'battle' && sideFirst) {
+      h += `<div class="sb-card-stats">耐力: <span id="cu-sta-${sideFirst}-${item.instanceId}">${stam}</span>  耐力恢复: <span id="cu-sregen-${sideFirst}-${item.instanceId}">${sRegen}</span>/s</div>`;
+    } else {
+      h += `<div class="sb-card-stats">耐力: ${stam}  耐力恢复: ${sRegen}/s</div>`;
+    }
+    // 负重行（新增重量）
     {
-      // 有 runtime（开战或 BD 被动预览）时用被动后负重，勿退回仅「仅自己」的 computeStarterLoad
       if (combatUnit) {
         const loadText = `${formatWeightG(combatUnit.currentLoad)}/${formatWeightG(combatUnit.maxLoad)}`;
         if (mode === 'battle' && sideFirst) {
-          h += `负重: <span id="cu-load-${sideFirst}-${item.instanceId}">${loadText}</span>  槽耗: ${edef!.slotCost}`;
+          h += `<div class="sb-card-stats">负重: <span id="cu-load-${sideFirst}-${item.instanceId}">${loadText}</span>  重量：${formatWeightG(edef!.weight)}</div>`;
         } else {
-          h += `负重: ${loadText}  槽耗: ${edef!.slotCost}`;
+          h += `<div class="sb-card-stats">负重: ${loadText}  重量：${formatWeightG(edef!.weight)}</div>`;
         }
       } else {
         const load = computeStarterLoad(item);
-        h += `负重: ${formatWeightG(load.current)}/${formatWeightG(load.max)}  槽耗: ${edef!.slotCost}`;
+        h += `<div class="sb-card-stats">负重: ${formatWeightG(load.current)}/${formatWeightG(load.max)}  重量：${formatWeightG(edef!.weight)}</div>`;
       }
     }
+    // 槽耗行
+    h += `<div class="sb-card-stats">槽耗: ${edef!.slotCost}`;
     if (mode === 'build') h += `  价值: ${getItemTradeValue(item)}`;
     h += `<span id="cu-ov-${sideFirst}-${item.instanceId}" style="${combatUnit?.isOverloaded ? '' : 'display:none'}">  超重</span>`;
     h += `<span id="cu-dead-${sideFirst}-${item.instanceId}" style="${combatUnit && combatUnit.currentHp <= 0 ? '' : 'display:none'}">  阵亡</span>`;
     h += '</div>';
   } else if (isEntity && edef) {
-    h += '<div class="sb-card-stats">';
-    h += `HP: ${edef.hp}  `;
-    h += `槽耗: ${edef.slotCost}  重: ${formatWeightG(edef.weight)}`;
+    const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${edef.hp}/${edef.hp}`;
+    h += `<div class="sb-card-stats">HP: ${hp}</div>`;
+    h += `<div class="sb-card-stats">槽耗: ${edef.slotCost}  重: ${formatWeightG(edef.weight)}`;
     if (mode === 'build') h += `  价值: ${getItemTradeValue(item)}`;
     h += '</div>';
-  }
-  if (edef && hasPassive(edef)) {
-    const pcfg = resolvePassiveForDisplay(edef);
-    h += `<div class="sb-card-stats sb-block-gap">被动目标: ${formatPassiveTargetLine(pcfg)}</div>`;
-    h += '<div class="sb-card-stats sb-block-gap">被动效果</div>';
-    h += '<div class="sb-card-stats">';
-    h += pcfg.passiveEffects.map(e => formatPassiveEffectDisplay(e)).join('  ');
-    h += '</div>';
-    const hint = passiveRootHint(pcfg);
-    if (hint) h += `<div class="sb-card-stats sb-hint">${hint}</div>`;
-  }
-  if (combatUnit) {
-    const modLines = summarizePassiveMods(combatUnit);
-    if (modLines.length > 0) {
-      const modId = sideFirst ? ` id="cu-pmods-${sideFirst}-${item.instanceId}"` : '';
-      h += `<div class="sb-card-stats"${modId}>战斗修饰: ${modLines.join('  ')}</div>`;
-    }
   }
   h += '</div>';
 
@@ -440,11 +425,11 @@ export function renderEntityCard(
       }
     }
     // 方向 A：左对齐扁平行，无副标题
-    let costLine = `耐力: ${staminaCost}`;
+    let costLine = `耐力消耗: ${staminaCost}`;
     if (cdSpan) {
       costLine += `  倒计时: ${cdSpan}`;
     } else {
-      costLine += `  间隔: ${(actionTime / 1000).toFixed(1)}s`;
+      costLine += `  动作耗时: ${(actionTime / 1000).toFixed(1)}s`;
     }
     h += `<div class="sb-card-stats">${costLine}</div>`;
     h += `<div class="sb-card-stats sb-block-gap">主动目标: ${targeting}</div>`;
@@ -458,6 +443,31 @@ export function renderEntityCard(
       }
     }
     h += '</div>';
+  }
+
+  if (edef && hasPassive(edef)) {
+    h += '<div class="sb-card-block">';
+    h += '<div class="sb-block-title">被动效果</div>';
+    const pcfg = resolvePassiveForDisplay(edef);
+    h += `<div class="sb-card-stats">被动目标: ${formatPassiveTargetLine(pcfg)}</div>`;
+    h += '<div class="sb-card-stats sb-block-gap">被动效果</div>';
+    h += '<div class="sb-card-stats">';
+    h += pcfg.passiveEffects.map(e => formatPassiveEffectDisplay(e)).join('  ');
+    h += '</div>';
+    const hint = passiveRootHint(pcfg);
+    if (hint) h += `<div class="sb-card-stats sb-hint">${hint}</div>`;
+    h += '</div>';
+  }
+  if (combatUnit) {
+    const modLines = summarizePassiveModsBySource(combatUnit);
+    if (modLines.length > 0) {
+      h += '<div class="sb-card-block">';
+      h += '<div class="sb-block-title">战斗修饰</div>';
+      for (const line of modLines) {
+        h += `<div class="sb-card-stats">${line}</div>`;
+      }
+      h += '</div>';
+    }
   }
 
   const dynAffixList = (item.children || []).filter(c => c.type === 'affix');

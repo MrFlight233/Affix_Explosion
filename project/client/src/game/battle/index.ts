@@ -1,7 +1,7 @@
 export * from './types';
 export * from './targeting';
 export * from './onhit';
-export { recomputePassiveBonuses, summarizePassiveMods } from './passives';
+export { recomputePassiveBonuses, summarizePassiveMods, summarizePassiveModsBySource } from './passives';
 export { BattleSimulator } from './simulator';
 export type { SimulatorOptions } from './simulator';
 export { playBattle, runBattleHeadless } from './playback';

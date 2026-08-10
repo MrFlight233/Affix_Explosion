@@ -6,6 +6,7 @@ import type { PassiveEffect } from '../passiveBonusUtil';
 
 export interface PassiveSourceRuntime {
   ownerItemInstanceId?: string;
+  ownerName?: string;
   effects: PassiveEffect[];
   targetCondition: TargetCondition;
   targetCount: number | 'all';

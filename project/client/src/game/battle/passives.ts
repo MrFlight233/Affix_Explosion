@@ -101,3 +101,26 @@ export function summarizePassiveMods(unit: CombatUnitRuntime): string[] {
   push('耐力恢复', m.staminaRegen);
   return lines;
 }
+
+/** 战斗修饰按来源逐条展示，含来源名 */
+export function summarizePassiveModsBySource(unit: CombatUnitRuntime): string[] {
+  const sources = unit.passiveSources || [];
+  const lines: string[] = [];
+  const statLabel: Record<string, string> = {
+    maxHp: 'HP上限',
+    maxStamina: '耐力上限',
+    maxLoad: '负重上限',
+    hpRegen: '生命恢复',
+    staminaRegen: '耐力恢复',
+  };
+  for (const src of sources) {
+    const srcName = src.ownerName || '未知来源';
+    for (const e of src.effects) {
+      const label = statLabel[e.stat] || e.stat;
+      const signed = e.op === 'loss' ? -e.params.amount : e.params.amount;
+      if (signed === 0) continue;
+      lines.push(`${srcName} ${label} ${signed > 0 ? '+' : ''}${signed}`);
+    }
+  }
+  return lines;
+}
