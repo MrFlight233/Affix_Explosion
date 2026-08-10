@@ -77,6 +77,7 @@ function sidePrefix(side: CardSide): string {
 export function renderCardKeyInfo(
   item: ItemInstance,
   mode: CardMode,
+  depth: number,
   combatUnit?: CombatUnitRuntime | null,
   sideFirst?: string,
 ): string {
@@ -150,7 +151,16 @@ export function renderCardKeyInfo(
         if (matched.onHitEffects?.length) effects = matched.onHitEffects;
       }
     }
-    let s = `${edef.name}  ${formatActiveActionCollapseSummary({
+    let hpPart = '';
+    if (depth === 0) {
+      const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${edef.hp}/${edef.hp}`;
+      if (mode === 'battle' && combatUnit && sideFirst) {
+        hpPart = `HP:<span id="cu-hp-${sideFirst}-${item.instanceId}">${hp}</span>  `;
+      } else {
+        hpPart = `HP:${hp}  `;
+      }
+    }
+    let s = `${edef.name}  ${hpPart}${formatActiveActionCollapseSummary({
       staminaCost,
       targetingSummary: targeting,
       effects,
@@ -179,10 +189,26 @@ export function renderCardKeyInfo(
     };
     if (hasDisplayPassive(pRaw)) {
       const summary = formatPassiveCollapseSummary(resolvePassiveForDisplay(pRaw));
-      return summary ? `${edef.name}  ${summary}` : edef.name;
+      let prefix = edef.name;
+      if (depth === 0) {
+        const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${edef.hp}/${edef.hp}`;
+        if (mode === 'battle' && combatUnit && sideFirst) {
+          prefix = `${edef.name}  HP:<span id="cu-hp-${sideFirst}-${item.instanceId}">${hp}</span>`;
+        } else {
+          prefix = `${edef.name}  HP:${hp}`;
+        }
+      }
+      return summary ? `${prefix}  ${summary}` : prefix;
     }
     const cat = getEntityCategory(edef).join(' / ');
-    return `${edef.name}  HP:${edef.hp}  重:${formatWeightG(edef.weight)}  ${cat}`;
+    if (depth === 0) {
+      const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${edef.hp}/${edef.hp}`;
+      if (mode === 'battle' && combatUnit && sideFirst) {
+        return `${edef.name}  HP:<span id="cu-hp-${sideFirst}-${item.instanceId}">${hp}</span>  重:${formatWeightG(edef.weight)}  ${cat}`;
+      }
+      return `${edef.name}  HP:${hp}  重:${formatWeightG(edef.weight)}  ${cat}`;
+    }
+    return `${edef.name}  重:${formatWeightG(edef.weight)}  ${cat}`;
   }
 }
 
@@ -199,7 +225,7 @@ export function renderCollapsedChildTree(
   if (!edef) return '';
   const ml = `margin-left:${Math.min(depth, 5) * 16}px;`;
   let h = `<div class="sb-collapsed-child" style="${ml}">`;
-  h += renderCardKeyInfo(item, mode, combatUnit, sideFirst);
+  h += renderCardKeyInfo(item, mode, depth, combatUnit, sideFirst);
   h += '</div>';
   const entityChildren = (item.children || []).filter(c => c.type === 'entity');
   for (const child of entityChildren) {
@@ -247,7 +273,7 @@ export function renderEntityCard(
   h += `<div class="sb-card-header" data-cardtoggle="${instanceId}" data-defid="${isEntity ? edef!.id : (def as AffixDef).id}" data-type="${isEntity ? 'entity' : 'affix'}"${dragHandleAttr} style="cursor:pointer;">`;
   h += `<span class="sb-card-header-name">${isEntity ? edef!.name : (def as AffixDef).name}</span>`;
   h += '<span class="sb-card-header-keyinfo sb-card-keyinfo">';
-  h += renderCardKeyInfo(item, mode, combatUnit, sideFirst);
+  h += renderCardKeyInfo(item, mode, depth, combatUnit, sideFirst);
   h += '</span>';
   h += ` <span class="sb-card-collapse-btn">${collapseLabel}</span></div>`;
 
