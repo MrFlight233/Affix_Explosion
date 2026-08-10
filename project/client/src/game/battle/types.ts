@@ -137,6 +137,10 @@ export interface CombatUnitRuntime {
   passiveSources: PassiveSourceRuntime[];
   /** 本 tick 被动修饰合计（全量重算写入） */
   passiveMods: PassiveModBag;
+  /** 上次 chassis 重算时的 totalHp，用于检测上限增量 */
+  _prevTotalHp: number;
+  /** 上次 chassis 重算时的 maxStamina，用于检测上限增量 */
+  _prevMaxStamina: number;
 }
 
 export interface CombatEvent {
@@ -212,6 +216,8 @@ export function buildCombatRuntime(units: CombatUnitSnapshot[]): CombatUnitRunti
         targetCount: s.targetCount,
       })),
       passiveMods: emptyPassiveMods(),
+      _prevTotalHp: u.totalHp,
+      _prevMaxStamina: u.maxStamina,
     };
   });
 }

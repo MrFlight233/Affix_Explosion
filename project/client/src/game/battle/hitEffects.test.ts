@@ -64,6 +64,8 @@ function unit(partial: Partial<CombatUnitRuntime> & { instanceId: string }): Com
     ...rest,
     passiveSources: rest.passiveSources ?? [],
     passiveMods: rest.passiveMods ?? { maxHp: 0, maxStamina: 0, maxLoad: 0, hpRegen: 0, staminaRegen: 0 },
+    _prevTotalHp: rest._prevTotalHp ?? rest.totalHp ?? totalHp,
+    _prevMaxStamina: rest._prevMaxStamina ?? rest.maxStamina ?? maxStamina,
   };
 }
 

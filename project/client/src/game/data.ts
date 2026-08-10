@@ -12,7 +12,7 @@ export type {
 } from '@shared/hitEffectUtil';
 import type { OnHitEffect } from '@shared/hitEffectUtil';
 import { normalizeOnHitEffects } from './hitEffectUtil';
-import { resolvePassiveBonusConfig, isSelfOnlyPassiveTarget } from './passiveBonusUtil';
+import { resolvePassiveBonusConfig, isRootOnlyPassiveTarget } from './passiveBonusUtil';
 import type { PassiveEffect } from './passiveBonusUtil';
 
 /** 条件 Targeting 配置（v8：多选过滤 + 统一排序 + 目标数量） */
@@ -371,7 +371,7 @@ export function computeStarterLoad(
   if (!def) return { current: 0, max: 0 };
 
   const maxLoadFromConfig = (cfg: ReturnType<typeof resolvePassiveBonusConfig>): number => {
-    if (!cfg.hasPassiveBonuses || !isSelfOnlyPassiveTarget(cfg.passiveTargetCondition)) return 0;
+    if (!cfg.hasPassiveBonuses || !isRootOnlyPassiveTarget(cfg.passiveTargetCondition)) return 0;
     let d = 0;
     for (const e of cfg.passiveEffects) {
       if (e.stat !== 'maxLoad') continue;

@@ -82,7 +82,7 @@ describe('resolveSortBy / normalize / faction', () => {
     expect(resolveSortBy({ priorityTarget: 2, sortBy: 'hp_asc' })).toBe('站位2');
   });
   it('filter 数组与旧 string', () => {
-    expect(normalizeFilterBy(['友方', 'not_self'])).toEqual(['友方', 'not_self']);
+    expect(normalizeFilterBy(['友方', 'not_root'])).toEqual(['友方', 'not_root']);
     expect(normalizeFilterBy('hp_below_50pct')).toEqual(['hp_below_50pct']);
   });
   it('targetCount all/-1', () => {
@@ -132,9 +132,9 @@ describe('selectTargets 场景', () => {
     expect(ids(t)).toEqual(['p0', 'p1', 'p2']);
   });
 
-  it('5 自己', () => {
+  it('5 根实体', () => {
     const t = selectTargets(
-      weapon({ filterBy: ['自己'], sortBy: '从上往下', count: 1 }),
+      weapon({ filterBy: ['根实体'], sortBy: '从上往下', count: 1 }),
       actor, players, enemies, true, () => 0,
     );
     expect(ids(t)).toEqual(['p0']);
@@ -201,9 +201,9 @@ describe('selectTargets 场景', () => {
     expect(t).toHaveLength(1);
   });
 
-  it('not_self 过滤', () => {
+  it('not_root 过滤', () => {
     const t = selectTargets(
-      weapon({ filterBy: ['友方', 'not_self'], sortBy: '从上往下', count: 1 }),
+      weapon({ filterBy: ['友方', 'not_root'], sortBy: '从上往下', count: 1 }),
       actor, players, enemies, true, () => 0,
     );
     expect(ids(t)).toEqual(['p1']);
@@ -212,7 +212,7 @@ describe('selectTargets 场景', () => {
   it('formatTargetingSummary 无阵营', () => {
     const s = formatTargetingSummary({ filterBy: [], sortBy: 'random', targetCount: 1 });
     expect(s).toContain('无阵营');
-    const label = buildTargetingLabel(weapon({ sortBy: 'hp_pct_asc', count: 2, filterBy: ['敌人', 'not_self'] }));
+    const label = buildTargetingLabel(weapon({ sortBy: 'hp_pct_asc', count: 2, filterBy: ['敌人', 'not_root'] }));
     expect(label).toContain('HP%最低');
   });
 });

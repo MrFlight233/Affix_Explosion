@@ -2,7 +2,7 @@
 
 import {
   formatPassiveEffectLine,
-  isSelfOnlyPassiveTarget,
+  isRootOnlyPassiveTarget,
   resolvePassiveBonusConfig,
   type PassiveBonusConfig,
   type PassiveEffect,
@@ -49,7 +49,7 @@ export function formatPassiveTargetLine(cfg: PassiveBonusConfig): string {
 /** 非「仅自己」时附加根维持说明 */
 export function passiveRootHint(cfg: PassiveBonusConfig): string | null {
   if (!cfg.hasPassiveBonuses || cfg.passiveEffects.length === 0) return null;
-  if (isSelfOnlyPassiveTarget(cfg.passiveTargetCondition)) return null;
+  if (isRootOnlyPassiveTarget(cfg.passiveTargetCondition)) return null;
   return '由所在第一层实体维持，其阵亡后失效';
 }
 

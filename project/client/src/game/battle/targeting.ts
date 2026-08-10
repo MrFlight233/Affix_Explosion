@@ -50,7 +50,7 @@ function matchesAttrFilter(
   actor: CombatUnitRuntime,
 ): boolean {
   switch (filter) {
-    case 'not_self':
+    case 'not_root':
       return unit.instanceId !== actor.instanceId;
     case 'is_starter':
       return !!unit.isStarter;
@@ -84,15 +84,16 @@ function buildFactionPool(
   playerUnits: CombatUnitRuntime[],
   enemyUnits: CombatUnitRuntime[],
   isPlayer: boolean,
+  includeDead = false,
 ): CombatUnitRuntime[] {
-  if (tag === '自己') {
-    return actor.currentHp > 0 ? [actor] : [];
+  if (tag === '根实体') {
+    return (includeDead || actor.currentHp > 0) ? [actor] : [];
   }
   if (tag === '友方') {
-    return (isPlayer ? playerUnits : enemyUnits).filter(u => u.currentHp > 0);
+    return (isPlayer ? playerUnits : enemyUnits).filter(u => includeDead || u.currentHp > 0);
   }
   if (tag === '敌人') {
-    return (isPlayer ? enemyUnits : playerUnits).filter(u => u.currentHp > 0);
+    return (isPlayer ? enemyUnits : playerUnits).filter(u => includeDead || u.currentHp > 0);
   }
   return [];
 }
@@ -191,6 +192,7 @@ export function selectTargets(
   enemyUnits: CombatUnitRuntime[],
   isPlayer: boolean,
   rng: () => number = Math.random,
+  includeDead = false,
 ): CombatUnitRuntime[] {
   const filters = weaponFilters(weapon);
   const factionTags = resolveFactionTags(filters);
@@ -199,7 +201,7 @@ export function selectTargets(
   const seen = new Set<string>();
   let pool: CombatUnitRuntime[] = [];
   for (const tag of factionTags) {
-    for (const u of buildFactionPool(tag, actor, playerUnits, enemyUnits, isPlayer)) {
+    for (const u of buildFactionPool(tag, actor, playerUnits, enemyUnits, isPlayer, includeDead)) {
       if (!seen.has(u.instanceId)) {
         seen.add(u.instanceId);
         pool.push(u);
@@ -226,10 +228,11 @@ export function selectTarget(
   isPlayer: boolean,
   rng: () => number = Math.random,
   actor?: CombatUnitRuntime,
+  includeDead = false,
 ): CombatUnitRuntime | null {
   const act = actor ?? (isPlayer ? playerUnits.find(u => u.currentHp > 0) : enemyUnits.find(u => u.currentHp > 0));
   if (!act) return null;
-  const list = selectTargets(weapon, act, playerUnits, enemyUnits, isPlayer, rng);
+  const list = selectTargets(weapon, act, playerUnits, enemyUnits, isPlayer, rng, includeDead);
   return list[0] ?? null;
 }
 

@@ -7,7 +7,7 @@ import {
   type PassiveOp,
   type PassiveStat,
   formatPassiveEffectLine,
-  isSelfOnlyPassiveTarget,
+  isRootOnlyPassiveTarget,
   normalizePassiveEffects,
   resolvePassiveBonusConfig,
 } from '../game/passiveBonusUtil';
@@ -52,7 +52,7 @@ export function renderPassiveBonusesEditor(
     <option value="3"${countVal === '3' ? ' selected' : ''}>3</option>
     <option value="all"${countVal === 'all' ? ' selected' : ''}>全部</option>
   </select></div>`;
-  if (!isSelfOnlyPassiveTarget(tc)) {
+  if (!isRootOnlyPassiveTarget(tc)) {
     h += `<div class="adm-field-hint">由所在第一层实体维持，其阵亡后失效</div>`;
   }
   h += `<div class="adm-section-title">被动效果</div>`;
@@ -103,7 +103,7 @@ export function readPassiveBonusesFromDom(prefix: string): {
     return {
       hasPassiveBonuses: false,
       passiveEffects: [],
-      passiveTargetCondition: { ...DEFAULT_PASSIVE_TARGET, filterBy: ['自己'] },
+      passiveTargetCondition: { ...DEFAULT_PASSIVE_TARGET, filterBy: ['根实体'] },
       passiveTargetCount: 1,
       hpBonus: 0, hpRegenerationBonus: 0, staminaBonus: 0, staminaRegenerationBonus: 0, loadBonus: 0,
     };

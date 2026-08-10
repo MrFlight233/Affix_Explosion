@@ -28,7 +28,7 @@ const OP_SET = new Set<PassiveOp>(['gain', 'loss']);
 
 export const DEFAULT_PASSIVE_TARGET: TargetCondition = {
   sortBy: 'random',
-  filterBy: ['自己'],
+  filterBy: ['根实体'],
 };
 
 export const PASSIVE_STAT_LABEL: Record<PassiveStat, string> = {
@@ -169,10 +169,10 @@ export function resolvePassiveBonusConfig(raw: {
   };
 }
 
-export function isSelfOnlyPassiveTarget(tc: TargetCondition | undefined): boolean {
+export function isRootOnlyPassiveTarget(tc: TargetCondition | undefined): boolean {
   const fb = tc?.filterBy || [];
   if (fb.length !== 1) return false;
-  return fb[0] === '自己';
+  return fb[0] === '根实体';
 }
 
 export function formatPassiveEffectLine(e: PassiveEffect, ownerName?: string): string {

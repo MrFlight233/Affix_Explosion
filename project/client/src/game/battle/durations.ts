@@ -61,15 +61,29 @@ export function recomputeChassis(unit: CombatUnitRuntime): void {
     }
   }
 
-  unit.totalHp = round6(Math.max(1, unit.baseTotalHp + dMaxHp + (unit.passiveMods?.maxHp || 0)));
+  unit.totalHp = round6(unit.baseTotalHp + dMaxHp + (unit.passiveMods?.maxHp || 0));
+  // 上限提升时同步补充当前值
+  const hpDelta = unit.totalHp - unit._prevTotalHp;
+  if (hpDelta > 0) {
+    unit.currentHp = round6(unit.currentHp + hpDelta);
+  }
   unit.currentHp = round6(Math.min(unit.currentHp, unit.totalHp));
-  unit.maxStamina = round6(Math.max(1, unit.baseMaxStamina + dMaxSta + (unit.passiveMods?.maxStamina || 0)));
+  unit.maxStamina = round6(unit.baseMaxStamina + dMaxSta + (unit.passiveMods?.maxStamina || 0));
+  // 上限提升时同步补充当前值
+  const staDelta = unit.maxStamina - unit._prevMaxStamina;
+  if (staDelta > 0) {
+    unit.currentStamina = round6(unit.currentStamina + staDelta);
+  }
   unit.currentStamina = round6(Math.min(Math.max(unit.currentStamina, 0), unit.maxStamina));
   unit.maxLoad = round6(Math.max(0, unit.baseMaxLoad + dMaxLoad + (unit.passiveMods?.maxLoad || 0)));
   unit.hpRegeneration = round6(Math.max(0, unit.baseHpRegeneration + dHpRegen + (unit.passiveMods?.hpRegen || 0)));
   unit.staminaRegen = round6(Math.max(0, unit.baseStaminaRegen + dStaRegen + (unit.passiveMods?.staminaRegen || 0)));
   unit.burden = round6(Math.max(0, dBurden));
   unit.isOverloaded = unit.currentLoad + unit.burden > unit.maxLoad;
+
+  // 更新追踪值
+  unit._prevTotalHp = unit.totalHp;
+  unit._prevMaxStamina = unit.maxStamina;
 
   unit.weapons.forEach((w, idx) => {
     w.actionTime = round6(Math.max(0, w.baseActionTime + (weaponDeltaAt.get(idx) || 0)));

@@ -33,7 +33,7 @@ describe('recomputePassiveBonuses', () => {
       totalHp: 100,
       passiveSources: [{
         effects: [{ displayName: '生命加成', stat: 'maxHp', op: 'gain', params: { amount: 50 } }],
-        targetCondition: { sortBy: 'random', filterBy: ['自己'] },
+        targetCondition: { sortBy: 'random', filterBy: ['根实体'] },
         targetCount: 1,
       }],
     });
@@ -129,7 +129,7 @@ describe('recomputePassiveBonuses', () => {
       totalHpRegeneration: 1,
       passiveSources: [{
         effects: [{ displayName: '生命恢复加成', stat: 'hpRegen', op: 'gain', params: { amount: 2 } }],
-        targetCondition: { sortBy: 'random', filterBy: ['自己'] },
+        targetCondition: { sortBy: 'random', filterBy: ['根实体'] },
         targetCount: 1,
       }],
     });

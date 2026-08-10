@@ -58,7 +58,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -118,7 +118,7 @@
     "passiveTargetCondition": {
       "sortBy": "从上往下",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -179,7 +179,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -243,7 +243,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -304,7 +304,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -345,7 +345,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -396,7 +396,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -447,7 +447,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -511,7 +511,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -575,7 +575,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -638,7 +638,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -691,7 +691,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -745,7 +745,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -791,7 +791,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -844,7 +844,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -897,7 +897,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -955,7 +955,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -1001,7 +1001,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -1128,7 +1128,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -1182,7 +1182,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -1242,7 +1242,7 @@
     "passiveTargetCondition": {
       "sortBy": "从上往下",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -1296,7 +1296,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -1360,7 +1360,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -1414,7 +1414,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -1468,7 +1468,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -1522,7 +1522,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -1563,7 +1563,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -1627,7 +1627,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -1685,7 +1685,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -1758,7 +1758,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -1813,7 +1813,7 @@
     "passiveTargetCondition": {
       "sortBy": "从上往下",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -1867,7 +1867,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1
@@ -1920,7 +1920,7 @@
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
-        "自己"
+        "根实体"
       ]
     },
     "passiveTargetCount": 1

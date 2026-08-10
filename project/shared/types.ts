@@ -62,7 +62,7 @@ export type TargetType = '近战' | '远程';
 /** @deprecated 已并入 TargetSortBy */
 export type TargetOrder = '从上往下' | '从下往上';
 /** 针对目标 */
-export type TargetFaction = '友方' | '敌人' | '所有' | '自己';
+export type TargetFaction = '友方' | '敌人' | '所有' | '根实体';
 /** @deprecated 已并入 sortBy 站位k */
 export type PriorityTarget = 1 | 2 | 3 | 4 | 5 | null;
 

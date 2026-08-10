@@ -2,7 +2,7 @@
 // 目标选择：归一化 / 展示摘要（实体·词条·战斗共用）
 // ============================================================
 
-export const FACTION_FILTERS = new Set(['友方', '敌人', '自己']);
+export const FACTION_FILTERS = new Set(['友方', '敌人', '根实体']);
 
 export type TargetCount = number | 'all';
 
@@ -40,8 +40,8 @@ export const SORT_BY_LABELS: Record<string, string> = {
 export const FILTER_LABELS: Record<string, string> = {
   '友方': '友方',
   '敌人': '敌人',
-  '自己': '自己',
-  not_self: '排除自己',
+  '根实体': '根实体',
+  not_root: '排除根实体',
   is_starter: '仅启动端',
   is_stake: '仅木桩',
   hp_below_50pct: 'HP低于50%',
@@ -97,7 +97,7 @@ export function splitFilters(filters: string[]): { factions: string[]; attrs: st
 /** 遗留 targetFaction → 阵营过滤标签（所有=友方+敌人） */
 export function factionTagsFromLegacy(targetFaction: string | null | undefined): string[] {
   if (!targetFaction) return [];
-  if (targetFaction === '自己') return ['自己'];
+  if (targetFaction === '根实体') return ['根实体'];
   if (targetFaction === '友方') return ['友方'];
   if (targetFaction === '所有') return ['友方', '敌人'];
   if (targetFaction === '敌人') return ['敌人'];
@@ -161,8 +161,8 @@ export function formatTargetingSummary(input: TargetingSummaryInput): string {
 export const ATTR_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: '友方', label: '友方' },
   { value: '敌人', label: '敌人' },
-  { value: '自己', label: '自己' },
-  { value: 'not_self', label: '排除自己' },
+  { value: '根实体', label: '根实体' },
+  { value: 'not_root', label: '排除根实体' },
   { value: 'is_starter', label: '仅启动端' },
   { value: 'is_stake', label: '仅木桩' },
   { value: 'hp_below_50pct', label: 'HP低于50%' },

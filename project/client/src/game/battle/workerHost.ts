@@ -82,6 +82,8 @@ function applyUnitState(dst: CombatUnitRuntime[], src: CombatUnitRuntime[]) {
     if (!s) continue;
     u.currentHp = s.currentHp;
     u.currentStamina = s.currentStamina;
+    u._prevTotalHp = s._prevTotalHp;
+    u._prevMaxStamina = s._prevMaxStamina;
     for (let i = 0; i < u.weapons.length; i++) {
       if (s.weapons[i]) u.weapons[i].remainingTime = s.weapons[i].remainingTime;
     }

@@ -44,6 +44,7 @@ export function recomputePassiveBonuses(
   playerUnits: CombatUnitRuntime[],
   enemyUnits: CombatUnitRuntime[],
   rng?: () => number,
+  includeDead = false,
 ): void {
   const all = [...playerUnits, ...enemyUnits];
   for (const u of all) {
@@ -52,7 +53,7 @@ export function recomputePassiveBonuses(
 
   const applyFromSide = (side: CombatUnitRuntime[], isPlayer: boolean) => {
     for (const actor of side) {
-      if (actor.currentHp <= 0) continue;
+      if (!includeDead && actor.currentHp <= 0) continue;
       const sources = actor.passiveSources || [];
       for (const src of sources) {
         if (!src.effects || src.effects.length === 0) continue;
@@ -64,9 +65,10 @@ export function recomputePassiveBonuses(
           enemyUnits,
           isPlayer,
           rng,
+          includeDead,
         );
         for (const t of targets) {
-          if (t.currentHp <= 0) continue;
+          if (!includeDead && t.currentHp <= 0) continue;
           for (const e of src.effects) {
             const signed = e.op === 'gain' ? e.params.amount : -e.params.amount;
             addMod(t.passiveMods, e.stat, signed);

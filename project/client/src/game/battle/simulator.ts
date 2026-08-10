@@ -50,8 +50,8 @@ export class BattleSimulator {
     this.playerOnHitEffects = opts.playerOnHitEffects;
     this.enemyOnHitEffects = opts.enemyOnHitEffects;
     this.rng = opts.rng ?? Math.random;
-    // 开战即挂被动
-    recomputePassiveBonuses(this.playerUnits, this.enemyUnits, this.rng);
+    // 预初始化阶段：所有被动先算（包括 hp=0 的单位）
+    recomputePassiveBonuses(this.playerUnits, this.enemyUnits, this.rng, true);
   }
 
   get isFinished(): boolean { return this.finished; }

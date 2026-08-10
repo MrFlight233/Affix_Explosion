@@ -37,7 +37,7 @@ describe('passiveBonusUtil', () => {
       hpBonus: 20,
     });
     expect(cfg.passiveEffects[0].stat).toBe('maxHp');
-    expect(cfg.passiveTargetCondition.filterBy).toEqual(['自己']);
+    expect(cfg.passiveTargetCondition.filterBy).toEqual(['根实体']);
   });
 
   it('hasPassiveBonuses false clears', () => {

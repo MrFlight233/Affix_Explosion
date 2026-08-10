@@ -546,7 +546,7 @@ function migratePassiveEffectsV10(db: ReturnType<typeof getDB>): void {
       if (effects.length === 0 && !hasLegacy) continue;
       if (!hasLegacy && row.passive_effects && row.passive_effects !== '[]') continue;
       const tc = row.passive_target_condition
-        || JSON.stringify({ ...DEFAULT_PASSIVE_TARGET, filterBy: ['自己'] });
+        || JSON.stringify({ ...DEFAULT_PASSIVE_TARGET, filterBy: ['根实体'] });
       const count = row.passive_target_count != null ? row.passive_target_count : 1;
       upd.run({
         id: row.id,
