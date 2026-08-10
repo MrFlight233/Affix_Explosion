@@ -21,7 +21,7 @@ import {
   passiveRootHint,
   resolvePassiveForDisplay,
 } from '../passiveBonusDisplay';
-import { summarizePassiveMods } from '../../game/battle/passives';
+import { summarizePassiveModsBySource } from '../../game/battle/passives';
 
 export function tipkv(k: string, v: string | number): string {
   return `<span class="sb-tip-kv"><span class="sb-tip-key">${k}</span><span class="sb-tip-val">${v}</span></span>`;
@@ -51,26 +51,26 @@ export function renderTooltipTree(
     const cat = getEntityCategory(def).join(' / ');
     h += `<div class="sb-tip-cat">${cat}</div>`;
 
-    h += tipSection('基本信息');
-    h += '<div class="sb-tip-grid">';
+    h += tipSection('属性');
+    h += '<div class="sb-tip-rows">';
     if (isSt) {
       const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${def.hp}/${def.hp}`;
       const stam = combatUnit ? `${Math.floor(combatUnit.currentStamina)}/${combatUnit.maxStamina}` : `${def.maxStamina}/${def.maxStamina}`;
       const sRegen = combatUnit ? combatUnit.staminaRegen : def.staminaRegen;
       const hRegen = combatUnit ? combatUnit.hpRegeneration : (def.hpRegen || 0);
-      h += tipkv('生命', hp) + tipkv('耐力', stam);
-      h += tipkv('耐力恢复', sRegen + '/s') + tipkv('生命恢复', hRegen + '/s');
+      h += `<div class="sb-tip-fixed-row">HP: ${hp}  生命恢复: ${hRegen}/s</div>`;
+      h += `<div class="sb-tip-fixed-row">耐力: ${stam}  耐力恢复: ${sRegen}/s</div>`;
       const load = combatUnit
         ? `${formatWeightG(combatUnit.currentLoad)}/${formatWeightG(combatUnit.maxLoad)}`
         : (() => {
           const l = computeStarterLoad(item);
           return `${formatWeightG(l.current)}/${formatWeightG(l.max)}`;
         })();
-      h += tipkv('负重', load);
+      h += `<div class="sb-tip-fixed-row">负重: ${load}  重量：${formatWeightG(def.weight)}</div>`;
     }
-    h += tipkv('槽位消耗', def.slotCost);
-    if (!isSt) h += tipkv('重量', formatWeightG(def.weight));
-    h += '</div>';
+    h += `<div class="sb-tip-fixed-row">槽耗: ${def.slotCost}`;
+    if (!isSt) h += `  重: ${formatWeightG(def.weight)}`;
+    h += '</div></div>';
 
     if (def.isActive) {
       h += tipSection('主动动作');
@@ -98,8 +98,8 @@ export function renderTooltipTree(
       // 方向 A：左对齐扁平行，不用 tipkv 拉开
       const timeLabel = remaining !== undefined
         ? `倒计时: ${(remaining / 1000).toFixed(1)}s`
-        : `间隔: ${(actionTime / 1000).toFixed(1)}s`;
-      h += `<div class="sb-tip-fixed-row" style="${indent}">耐力: ${staminaCost}  ${timeLabel}</div>`;
+        : `动作耗时: ${(actionTime / 1000).toFixed(1)}s`;
+      h += `<div class="sb-tip-fixed-row" style="${indent}">耐力消耗: ${staminaCost}  ${timeLabel}</div>`;
       h += `<div class="sb-tip-fixed-row sb-block-gap" style="${indent}">主动目标: ${targeting}</div>`;
       h += `<div class="sb-tip-fixed-row sb-block-gap" style="${indent}">主动效果</div>`;
       const lines = formatConfigEffectsBlock(effects);
@@ -114,7 +114,7 @@ export function renderTooltipTree(
 
     if (hasPassive(def)) {
       const pcfg = resolvePassiveForDisplay(def);
-      h += tipSection('被动加成');
+      h += tipSection('被动效果');
       h += `<div class="sb-tip-fixed-row" style="${indent}">被动目标: ${formatPassiveTargetLine(pcfg)}</div>`;
       h += `<div class="sb-tip-fixed-row sb-block-gap" style="${indent}">被动效果</div>`;
       for (const line of passiveEffectPlainLines(pcfg)) {
@@ -125,10 +125,12 @@ export function renderTooltipTree(
     }
 
     if (combatUnit) {
-      const modLines = summarizePassiveMods(combatUnit);
+      const modLines = summarizePassiveModsBySource(combatUnit);
       if (modLines.length > 0) {
         h += tipSection('战斗修饰');
-        h += `<div class="sb-tip-fixed-row" style="${indent}">${modLines.join('  ')}</div>`;
+        for (const line of modLines) {
+          h += `<div class="sb-tip-fixed-row" style="${indent}">${line}</div>`;
+        }
       }
     }
 
@@ -207,7 +209,7 @@ export function renderTooltipTree(
       row += `  <span class="sb-tip-muted">槽耗${cd.slotCost}</span>`;
       row += '</div>';
       h += row;
-      h += renderTooltipTree(child, cd, depth + 1, sideFirst, combatUnit);
+      h += renderTooltipTree(child, cd, depth + 1, sideFirst, null);
     }
   }
 
@@ -267,16 +269,16 @@ export function showSimTooltip(
       const cat = getEntityCategory(def).join(' / ');
       html += `<div class="sb-tip-cat">${cat}</div>`;
 
-      html += tipSection('基本信息');
-      html += '<div class="sb-tip-grid">';
+      html += tipSection('属性');
+      html += '<div class="sb-tip-rows">';
       if (isSt) {
-        html += tipkv('生命', def.hp) + tipkv('耐力', def.maxStamina);
-        html += tipkv('耐力恢复', def.staminaRegen + '/s') + tipkv('生命恢复', (def.hpRegen || 0) + '/s');
-        html += tipkv('负重', `${formatWeightG(0)}/${formatWeightG(def.maxLoad)}`);
+        html += `<div class="sb-tip-fixed-row">HP: ${def.hp}/${def.hp}  生命恢复: ${(def.hpRegen || 0)}/s</div>`;
+        html += `<div class="sb-tip-fixed-row">耐力: ${def.maxStamina}/${def.maxStamina}  耐力恢复: ${def.staminaRegen}/s</div>`;
+        html += `<div class="sb-tip-fixed-row">负重: ${formatWeightG(0)}/${formatWeightG(def.maxLoad)}  重量：${formatWeightG(def.weight)}</div>`;
       }
-      html += tipkv('槽位消耗', def.slotCost);
-      if (!isSt) html += tipkv('重量', formatWeightG(def.weight));
-      html += '</div>';
+      html += `<div class="sb-tip-fixed-row">槽耗: ${def.slotCost}`;
+      if (!isSt) html += `  重: ${formatWeightG(def.weight)}`;
+      html += '</div></div>';
 
       if (def.isActive) {
         html += tipSection('主动动作');
@@ -289,7 +291,7 @@ export function showSimTooltip(
           filterBy: def.targetCondition?.filterBy,
           targetCount: def.targetCount ?? def.targetCondition?.targetCount,
         });
-        html += `<div class="sb-tip-fixed-row">耐力: ${def.staminaCost}  间隔: ${(def.actionTime / 1000).toFixed(1)}s</div>`;
+        html += `<div class="sb-tip-fixed-row">耐力消耗: ${def.staminaCost}  动作耗时: ${(def.actionTime / 1000).toFixed(1)}s</div>`;
         html += `<div class="sb-tip-fixed-row sb-block-gap">主动目标: ${targeting}</div>`;
         html += '<div class="sb-tip-fixed-row sb-block-gap">主动效果</div>';
         const lines = formatConfigEffectsBlock(effects);
@@ -304,7 +306,7 @@ export function showSimTooltip(
 
       if (hasPassive(def)) {
         const pcfg = resolvePassiveForDisplay(def);
-        html += tipSection('被动加成');
+        html += tipSection('被动效果');
         html += `<div class="sb-tip-fixed-row">被动目标: ${formatPassiveTargetLine(pcfg)}</div>`;
         html += '<div class="sb-tip-fixed-row sb-block-gap">被动效果</div>';
         for (const line of passiveEffectPlainLines(pcfg)) {
@@ -429,7 +431,7 @@ export function showSimTooltip(
     }
     if (hasAffixPassive(def)) {
       const pcfg = resolvePassiveForDisplay(def);
-      h += tipSection('被动加成');
+      h += tipSection('被动效果');
       h += `<div class="sb-tip-fixed-row">被动目标: ${formatPassiveTargetLine(pcfg)}</div>`;
       h += '<div class="sb-tip-fixed-row sb-block-gap">被动效果</div>';
       for (const line of passiveEffectPlainLines(pcfg)) {
