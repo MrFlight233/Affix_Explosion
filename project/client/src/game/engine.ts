@@ -860,7 +860,7 @@ export class GameEngine {
       units.push({
         instanceId: slot.entity.instanceId,
         entityId: edef.id,
-        entityName: edef.name + (isStarter(edef) ? '' : '(木桩)'),
+        entityName: edef.name,
         totalHp: hp,
         currentHp: hp,
         totalStaminaRegen,
