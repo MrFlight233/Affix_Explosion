@@ -9,6 +9,7 @@ import {
   normalizeOnHitEffects,
   opSymbol,
   resolveApplyTo,
+  resolveHitDisplayName,
   statLabel,
 } from './hitEffectUtil';
 import { formatTargetingSummary } from './targetingUtil';
@@ -32,10 +33,10 @@ export interface CombatLogHeaderInput {
 }
 
 /** 配置面效果行：每条效果一行；多 applyTo 用 / 合并角色；持续用「每/总」时长 */
-export function formatConfigEffectLines(effect: OnHitEffect): string[] {
+export function formatConfigEffectLines(effect: OnHitEffect, ownerName?: string): string[] {
   const n = normalizeOnHitEffect(effect);
   if (!n) return [];
-  const name = n.displayName || defaultDisplayName(n.stat, n.op);
+  const name = n.displayName || (ownerName ? resolveHitDisplayName(n, ownerName) : defaultDisplayName(n.stat, n.op));
   const mag = formatHitEffectMagnitude(n);
   const sym = opSymbol(n.op);
   const st = statLabel(n.stat);
@@ -60,10 +61,10 @@ export function formatConfigEffectLines(effect: OnHitEffect): string[] {
   return [base];
 }
 
-export function formatConfigEffectsBlock(effects: OnHitEffect[] | undefined): string[] {
+export function formatConfigEffectsBlock(effects: OnHitEffect[] | undefined, ownerName?: string): string[] {
   const out: string[] = [];
   for (const e of normalizeOnHitEffects(effects || [])) {
-    out.push(...formatConfigEffectLines(e));
+    out.push(...formatConfigEffectLines(e, ownerName));
   }
   return out;
 }
@@ -92,13 +93,14 @@ export function formatActiveActionCollapseSummary(opts: {
   staminaCost: number;
   targetingSummary: string;
   effects: OnHitEffect[] | undefined;
+  ownerName?: string;
 }): string {
   const list = normalizeOnHitEffects(opts.effects || []);
   let effectPart = '无效果';
   if (list.length === 1) {
-    effectPart = list[0].displayName || defaultDisplayName(list[0].stat, list[0].op);
+    effectPart = list[0].displayName || (opts.ownerName ? resolveHitDisplayName(list[0], opts.ownerName) : defaultDisplayName(list[0].stat, list[0].op));
   } else if (list.length > 1) {
-    const first = list[0].displayName || defaultDisplayName(list[0].stat, list[0].op);
+    const first = list[0].displayName || (opts.ownerName ? resolveHitDisplayName(list[0], opts.ownerName) : defaultDisplayName(list[0].stat, list[0].op));
     effectPart = `${first}等${list.length}条`;
   }
   return `耐耗${opts.staminaCost} · ${opts.targetingSummary} · ${effectPart}`;

@@ -3,6 +3,8 @@ import {
   migrateLegacyPassiveScalars,
   resolvePassiveBonusConfig,
   normalizePassiveEffect,
+  stampPassiveEffectList,
+  formatPassiveEffectLine,
 } from '@shared/passiveBonusUtil';
 
 describe('passiveBonusUtil', () => {
@@ -50,5 +52,35 @@ describe('passiveBonusUtil', () => {
     expect(normalizePassiveEffect({
       stat: 'maxHp', op: 'gain', params: { amount: 0 },
     })).toBeNull();
+  });
+
+  it('normalize allows empty displayName (no longer fills defaultPassiveDisplayName)', () => {
+    const e = normalizePassiveEffect({ stat: 'maxHp', op: 'gain', params: { amount: 10 } });
+    expect(e).not.toBeNull();
+    expect(e!.displayName).toBe('');
+  });
+
+  it('formatPassiveEffectLine falls back to ownerName when displayName is empty', () => {
+    const line = formatPassiveEffectLine({ displayName: '', stat: 'maxHp', op: 'gain', params: { amount: 10 } }, '拳头');
+    expect(line).toContain('拳头');
+    expect(line).toContain('+10');
+  });
+
+  it('formatPassiveEffectLine uses displayName when provided', () => {
+    const line = formatPassiveEffectLine({ displayName: '生命加成', stat: 'maxHp', op: 'gain', params: { amount: 10 } }, '拳头');
+    expect(line).toContain('生命加成');
+    expect(line).not.toContain('拳头');
+  });
+
+  it('stampPassiveEffectList fills empty displayName with ownerName', () => {
+    const effects = [{ displayName: '', stat: 'maxHp' as const, op: 'gain' as const, params: { amount: 10 } }];
+    stampPassiveEffectList(effects, '毒刃');
+    expect(effects[0].displayName).toBe('毒刃');
+  });
+
+  it('stampPassiveEffectList does not overwrite non-empty displayName', () => {
+    const effects = [{ displayName: '生命加成', stat: 'maxHp' as const, op: 'gain' as const, params: { amount: 10 } }];
+    stampPassiveEffectList(effects, '毒刃');
+    expect(effects[0].displayName).toBe('生命加成');
   });
 });

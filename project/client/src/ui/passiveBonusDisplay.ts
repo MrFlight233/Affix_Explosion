@@ -30,12 +30,12 @@ export function hasDisplayPassive(raw: Parameters<typeof resolvePassiveForDispla
 }
 
 /** maxLoad 用克制单位展示，其余用数值 */
-export function formatPassiveEffectDisplay(e: PassiveEffect): string {
+export function formatPassiveEffectDisplay(e: PassiveEffect, ownerName?: string): string {
   if (e.stat === 'maxLoad') {
     const signed = e.op === 'loss' ? -e.params.amount : e.params.amount;
-    return `${e.displayName} ${formatWeightBonusG(signed)}`;
+    return `${e.displayName || ownerName || '未命名效果'} ${formatWeightBonusG(signed)}`;
   }
-  return formatPassiveEffectLine(e);
+  return formatPassiveEffectLine(e, ownerName);
 }
 
 export function formatPassiveTargetLine(cfg: PassiveBonusConfig): string {
@@ -53,16 +53,17 @@ export function passiveRootHint(cfg: PassiveBonusConfig): string | null {
   return '由所在第一层实体维持，其阵亡后失效';
 }
 
-export function passiveEffectPlainLines(cfg: PassiveBonusConfig): string[] {
-  return cfg.passiveEffects.map(formatPassiveEffectDisplay);
+export function passiveEffectPlainLines(cfg: PassiveBonusConfig, ownerName?: string): string[] {
+  return cfg.passiveEffects.map(e => formatPassiveEffectDisplay(e, ownerName));
 }
 
 /** 折叠摘要：目标 · 首条效果名（多条则「等N条」） */
-export function formatPassiveCollapseSummary(cfg: PassiveBonusConfig): string {
+export function formatPassiveCollapseSummary(cfg: PassiveBonusConfig, ownerName?: string): string {
   if (!cfg.hasPassiveBonuses || cfg.passiveEffects.length === 0) return '';
   const targeting = formatPassiveTargetLine(cfg);
   const list = cfg.passiveEffects;
-  let effectPart = list[0].displayName || formatPassiveEffectDisplay(list[0]);
+  const owner = ownerName?.trim();
+  let effectPart = list[0].displayName || owner || formatPassiveEffectDisplay(list[0]);
   if (list.length > 1) {
     effectPart = `${effectPart}等${list.length}条`;
   }

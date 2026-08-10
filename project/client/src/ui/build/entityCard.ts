@@ -311,7 +311,7 @@ export function renderEntityCard(
       h += `<div class="sb-card-stats">被动目标: ${formatPassiveTargetLine(pcfg)}</div>`;
       h += '<div class="sb-card-stats sb-block-gap">被动效果</div>';
       h += '<div class="sb-card-stats">';
-      h += pcfg.passiveEffects.map(formatPassiveEffectDisplay).join('  ');
+      h += pcfg.passiveEffects.map(e => formatPassiveEffectDisplay(e)).join('  ');
       h += '</div>';
       const hint = passiveRootHint(pcfg);
       if (hint) h += `<div class="sb-card-stats sb-hint">${hint}</div>`;
@@ -373,7 +373,7 @@ export function renderEntityCard(
     h += `<div class="sb-card-stats sb-block-gap">被动目标: ${formatPassiveTargetLine(pcfg)}</div>`;
     h += '<div class="sb-card-stats sb-block-gap">被动效果</div>';
     h += '<div class="sb-card-stats">';
-    h += pcfg.passiveEffects.map(formatPassiveEffectDisplay).join('  ');
+    h += pcfg.passiveEffects.map(e => formatPassiveEffectDisplay(e)).join('  ');
     h += '</div>';
     const hint = passiveRootHint(pcfg);
     if (hint) h += `<div class="sb-card-stats sb-hint">${hint}</div>`;

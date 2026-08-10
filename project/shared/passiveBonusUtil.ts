@@ -1,6 +1,7 @@
 // 被动加成：规范化、旧五列迁移、展示（与主动同构目标，无耐耗/耗时）
 
 import type { TargetCondition } from './types';
+import { resolveEffectIdentityRaw } from './effectIdentityUtil';
 
 export type PassiveStat = 'maxHp' | 'maxStamina' | 'maxLoad' | 'hpRegen' | 'staminaRegen';
 export type PassiveOp = 'gain' | 'loss';
@@ -69,7 +70,6 @@ export function normalizePassiveEffect(raw: unknown): PassiveEffect | null {
   const amount = Number(params.amount);
   if (!Number.isFinite(amount) || amount === 0) return null;
   let displayName = String(o.displayName || '').trim();
-  if (!displayName) displayName = defaultPassiveDisplayName(stat, op);
   return { displayName, stat, op, params: { amount: Math.abs(amount) } };
 }
 
@@ -175,9 +175,28 @@ export function isSelfOnlyPassiveTarget(tc: TargetCondition | undefined): boolea
   return fb[0] === '自己';
 }
 
-export function formatPassiveEffectLine(e: PassiveEffect): string {
+export function formatPassiveEffectLine(e: PassiveEffect, ownerName?: string): string {
+  const displayName = e.displayName || (ownerName ? resolveEffectIdentityRaw(e.displayName, undefined, ownerName).displayName : e.displayName);
   const sign = e.op === 'loss' ? '-' : '+';
-  return `${e.displayName} ${PASSIVE_STAT_LABEL[e.stat]} ${sign}${e.params.amount}`;
+  return `${displayName} ${PASSIVE_STAT_LABEL[e.stat]} ${sign}${e.params.amount}`;
+}
+
+export function resolvePassiveDisplayName(e: PassiveEffect, ownerName?: string): string {
+  return resolveEffectIdentityRaw(e.displayName, undefined, ownerName).displayName;
+}
+
+export function resolvePassiveBuffKey(e: PassiveEffect, ownerName?: string): string {
+  // 被动效果没有 buffKey 字段，但提供统一接口供 symmetry
+  return resolveEffectIdentityRaw(e.displayName, undefined, ownerName).displayName;
+}
+
+/** 战斗侧：遍历被动效果列表，对空 displayName 回填来源名 */
+export function stampPassiveEffectList(list: PassiveEffect[], ownerName: string): void {
+  for (const e of list) {
+    if (!e.displayName.trim()) {
+      e.displayName = resolvePassiveDisplayName(e, ownerName);
+    }
+  }
 }
 
 export function clonePassiveEffects(list: PassiveEffect[]): PassiveEffect[] {

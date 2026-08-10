@@ -121,7 +121,7 @@ export function readPassiveBonusesFromDom(prefix: string): {
     const amount = parseFloat((row.querySelector(`.${prefix}-pe-amount`) as HTMLInputElement)?.value || '0') || 0;
     if (!stat || amount === 0) return;
     effects.push({
-      displayName: name || PASSIVE_STAT_LABEL[stat],
+      displayName: name,
       stat,
       op: op === 'loss' ? 'loss' : 'gain',
       params: { amount: Math.abs(amount) },
@@ -172,7 +172,7 @@ export function bindPassiveBonusesEditor(prefix: string, initial: Parameters<typ
     const cur = readPassiveBonusesFromDom(prefix);
     effects = cur.passiveEffects;
     effects.push({
-      displayName: '生命加成',
+      displayName: '',
       stat: 'maxHp',
       op: 'gain',
       params: { amount: 10 },

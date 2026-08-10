@@ -1,5 +1,7 @@
 // 命中效果：规范化、迁移、展示（即时 / 持续数值管道）
 
+import { resolveEffectIdentityRaw } from './effectIdentityUtil';
+
 export type OnHitApplyTo = 'starter' | 'actionOwner' | 'target';
 export type OnHitKind = 'instant' | 'duration';
 export type OnHitOp = 'gain' | 'loss' | 'set';
@@ -149,7 +151,7 @@ function validateKindStatOp(effect: OnHitEffect): OnHitEffect | null {
   // duration
   if (effect.op === 'set') return null;
   if ((effect.durationMs ?? 0) <= 0) return null;
-  if (!effect.buffKey || !String(effect.buffKey).trim()) return null;
+  if (effect.buffKey == null) return null;
   const tick = effect.tickIntervalMs ?? 0;
   if (tick > 0) {
     if (!isInstantStat(effect.stat)) return null;
@@ -186,7 +188,7 @@ export function normalizeOnHitEffect(raw: any): OnHitEffect | null {
   if (raw.kind === undefined && Number(raw.durationMs) > 0) kind = 'duration';
 
   const effect: OnHitEffect = {
-    displayName: name || defaultDisplayName(stat, op),
+    displayName: name,
     kind,
     stat,
     op,
@@ -198,7 +200,7 @@ export function normalizeOnHitEffect(raw: any): OnHitEffect | null {
     const tick = Number(raw.tickIntervalMs) || 0;
     if (tick > 0) effect.tickIntervalMs = tick;
     const key = typeof raw.buffKey === 'string' ? raw.buffKey.trim() : '';
-    effect.buffKey = key || effect.displayName;
+    effect.buffKey = key;
   }
 
   if (Array.isArray(raw.applyTo) && raw.applyTo.length > 0) {
@@ -298,6 +300,31 @@ export function opSymbol(op: OnHitOp): string {
   return '→';
 }
 
+// ---- 空展示名 / buffKey 回退 ----
+
+export function resolveHitDisplayName(effect: OnHitEffect, ownerName?: string): string {
+  return resolveEffectIdentityRaw(effect.displayName, undefined, ownerName).displayName;
+}
+
+export function resolveHitBuffKey(effect: OnHitEffect, ownerName?: string): string {
+  const result = resolveEffectIdentityRaw(effect.displayName, effect.buffKey, ownerName);
+  return result.buffKey || '';
+}
+
+/** 战斗侧：遍历效果列表，对空 displayName / 空 buffKey 回填来源名。不写回模板库，仅操作内存中的 clone 副本 */
+export function stampOnHitEffectList(list: OnHitEffect[], ownerName: string): void {
+  for (const e of list) {
+    if (!e.displayName.trim()) {
+      e.displayName = resolveHitDisplayName(e, ownerName);
+    }
+    if (effectKind(e) === 'duration' && (!e.buffKey || !e.buffKey.trim())) {
+      e.buffKey = resolveHitBuffKey(e, ownerName);
+    }
+  }
+}
+
+// ---- format ----
+
 /** 配置面量：`10` / `20%` / `5 + 10%`；时间类固定值显示为秒 */
 export function formatHitEffectMagnitude(effect: OnHitEffect): string {
   const n = normalizeOnHitEffect(effect) || effect;
@@ -319,9 +346,9 @@ export function formatHitEffectMagnitude(effect: OnHitEffect): string {
   return mag.join(' + ');
 }
 
-export function formatHitEffectLine(effect: OnHitEffect, opts?: { showApplyTo?: boolean }): string {
+export function formatHitEffectLine(effect: OnHitEffect, opts?: { showApplyTo?: boolean; ownerName?: string }): string {
   const n = normalizeOnHitEffect(effect) || effect;
-  const parts: string[] = [n.displayName || defaultDisplayName(n.stat, n.op)];
+  const parts: string[] = [n.displayName || (opts?.ownerName ? resolveHitDisplayName(n, opts.ownerName) : defaultDisplayName(n.stat, n.op))];
   if (opts?.showApplyTo) {
     const roles = resolveApplyTo(n);
     if (!(roles.length === 1 && roles[0] === 'target')) {

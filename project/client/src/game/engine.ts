@@ -18,10 +18,12 @@ import {
   cloneOnHitEffects,
   migrateLegacyDamageToOnHitEffects,
   normalizeOnHitEffects,
+  stampOnHitEffectList,
 } from './hitEffectUtil';
 import {
   resolvePassiveBonusConfig,
   clonePassiveEffects,
+  stampPassiveEffectList,
 } from './passiveBonusUtil';
 import type { PassiveSourceRuntime } from './battle/types';
 import { data as dataApi, saves as savesApi } from '../api/client';
@@ -644,12 +646,17 @@ export class GameEngine {
     const raw = (host.overrides?.onHitEffects ?? def.onHitEffects) as OnHitEffect[] | undefined;
     const damage = Number(getEffectiveValue(host, 'damage') ?? def.damage ?? 0);
     const bag = migrateLegacyDamageToOnHitEffects(raw, damage);
+    const entityName = def.name?.trim();
+    if (entityName) stampOnHitEffectList(bag, entityName);
     for (const list of [host.children || [], ...extraChildLists]) {
       for (const c of list) {
         if (c.type !== 'affix') continue;
         const adef = getAffixDef(c.defId);
         if (adef?.onHitEffects?.length) {
-          bag.push(...cloneOnHitEffects(normalizeOnHitEffects(adef.onHitEffects)));
+          const affixEffects = cloneOnHitEffects(normalizeOnHitEffects(adef.onHitEffects));
+          const affixName = adef.name?.trim();
+          if (affixName) stampOnHitEffectList(affixEffects, affixName);
+          bag.push(...affixEffects);
         }
       }
     }
@@ -676,9 +683,12 @@ export class GameEngine {
           loadBonus: Number(getEffectiveValue(item, 'loadBonus') ?? cdef.loadBonus ?? 0),
         });
         if (cfg.hasPassiveBonuses && cfg.passiveEffects.length > 0) {
+          const effects = clonePassiveEffects(cfg.passiveEffects);
+          const entityName = cdef.name?.trim();
+          if (entityName) stampPassiveEffectList(effects, entityName);
           into.push({
             ownerItemInstanceId: item.instanceId,
-            effects: clonePassiveEffects(cfg.passiveEffects),
+            effects,
             targetCondition: {
               sortBy: cfg.passiveTargetCondition.sortBy || 'random',
               filterBy: [...(cfg.passiveTargetCondition.filterBy || [])],
@@ -705,9 +715,12 @@ export class GameEngine {
         loadBonus: adef.loadBonus,
       });
       if (cfg.hasPassiveBonuses && cfg.passiveEffects.length > 0) {
+        const effects = clonePassiveEffects(cfg.passiveEffects);
+        const affixName = adef.name?.trim();
+        if (affixName) stampPassiveEffectList(effects, affixName);
         into.push({
           ownerItemInstanceId: item.instanceId,
-          effects: clonePassiveEffects(cfg.passiveEffects),
+          effects,
           targetCondition: {
             sortBy: cfg.passiveTargetCondition.sortBy || 'random',
             filterBy: [...(cfg.passiveTargetCondition.filterBy || [])],

@@ -7,6 +7,9 @@ import {
   migrateLegacyDamageToOnHitEffects,
   normalizeOnHitEffect,
   normalizeOnHitEffects,
+  resolveHitDisplayName,
+  resolveHitBuffKey,
+  stampOnHitEffectList,
 } from '@shared/hitEffectUtil';
 import { attachOrRefreshDuration, clearDurationsOnDeath, recomputeChassis } from './durations';
 import { resolveWeaponOnHitEffects } from './onhit';
@@ -266,6 +269,77 @@ describe('resolveWeaponOnHitEffects', () => {
     clearDurationsOnDeath(u);
     expect(u.durations).toHaveLength(0);
     expect(u.hpRegeneration).toBe(0);
+  });
+});
+
+describe('resolveHitDisplayName / resolveHitBuffKey', () => {
+  it('returns displayName when non-empty', () => {
+    const result = resolveHitDisplayName({ displayName: '毒', stat: 'hp', op: 'loss', params: {} }, '拳头');
+    expect(result).toBe('毒');
+  });
+
+  it('falls back to ownerName when displayName is empty', () => {
+    const result = resolveHitDisplayName({ displayName: '', stat: 'hp', op: 'loss', params: {} }, '拳头');
+    expect(result).toBe('拳头');
+  });
+
+  it('resolves buffKey to displayName when buffKey is empty', () => {
+    const effect = { displayName: '毒', buffKey: '', kind: 'instant' as const, stat: 'hp' as const, op: 'loss' as const, params: {} };
+    const result = resolveHitBuffKey(effect, '拳头');
+    expect(result).toBe('毒');
+  });
+});
+
+describe('normalizeOnHitEffect displayName allowed empty', () => {
+  it('allows empty displayName (no longer fills defaultDisplayName)', () => {
+    const e = normalizeOnHitEffect({ stat: 'hp', op: 'loss', params: { amount: 1 } });
+    expect(e).not.toBeNull();
+    expect(e!.displayName).toBe('');
+  });
+
+  it('duration with empty displayName and empty buffKey passes validation (stamp fills later)', () => {
+    const e = normalizeOnHitEffect({
+      kind: 'duration',
+      durationMs: 1000,
+      stat: 'maxHp',
+      op: 'loss',
+      params: { amount: 1 },
+    });
+    expect(e).not.toBeNull();
+    expect(e!.buffKey).toBe('');
+    expect(e!.displayName).toBe('');
+  });
+});
+
+describe('stampOnHitEffectList', () => {
+  it('fills empty displayName with ownerName', () => {
+    const effects = [{ displayName: '', stat: 'hp' as const, op: 'loss' as const, params: { amount: 1 } }];
+    stampOnHitEffectList(effects, '拳头');
+    expect(effects[0].displayName).toBe('拳头');
+  });
+
+  it('fills empty buffKey on duration effects with ownerName', () => {
+    const effects = [{
+      displayName: '毒', kind: 'duration' as const, durationMs: 1000, buffKey: '',
+      stat: 'hp' as const, op: 'loss' as const, params: { amount: 1 },
+    }];
+    stampOnHitEffectList(effects, '拳头');
+    expect(effects[0].buffKey).toBe('毒');
+  });
+
+  it('does not overwrite non-empty displayName', () => {
+    const effects = [{ displayName: '吸血', stat: 'hp' as const, op: 'gain' as const, params: { amount: 1 } }];
+    stampOnHitEffectList(effects, '拳头');
+    expect(effects[0].displayName).toBe('吸血');
+  });
+
+  it('does not overwrite non-empty buffKey', () => {
+    const effects = [{
+      displayName: '', kind: 'duration' as const, durationMs: 1000, buffKey: 'customKey',
+      stat: 'hp' as const, op: 'loss' as const, params: { amount: 1 },
+    }];
+    stampOnHitEffectList(effects, '拳头');
+    expect(effects[0].buffKey).toBe('customKey');
   });
 });
 

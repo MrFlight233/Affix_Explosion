@@ -816,27 +816,23 @@
       "fighter"
     ],
     "effect": "伤害加成 2",
-    "onHitEffects": [
-      {
-        "displayName": "伤害",
-        "kind": "instant",
-        "stat": "hp",
-        "op": "loss",
-        "params": {
-          "amount": 2
-        },
-        "applyTo": [
-          "target"
-        ]
-      }
-    ],
+    "onHitEffects": [],
     "hasPassiveBonuses": true,
     "staminaRegenerationBonus": 0,
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "passiveEffects": [],
+    "passiveEffects": [
+      {
+        "displayName": "负重训练",
+        "stat": "maxLoad",
+        "op": "gain",
+        "params": {
+          "amount": 10000
+        }
+      }
+    ],
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [

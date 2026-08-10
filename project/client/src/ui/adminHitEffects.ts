@@ -7,6 +7,8 @@ import {
   migrateLegacyDamageToOnHitEffects,
   normalizeOnHitEffect,
   normalizeOnHitEffects,
+  resolveHitDisplayName,
+  resolveHitBuffKey,
   type OnHitEffect,
   type OnHitKind,
   type OnHitOp,
@@ -119,6 +121,7 @@ function renderOnHitRow(prefix: string, i: number, e: OnHitEffect): string {
     <div class="admin-field ${prefix}-buffkey-wrap" style="${showDuration ? '' : 'display:none'}">
       <label>buffKey</label>
       <input class="${prefix}-buffkey" value="${escapeAttr(e.buffKey || '')}" placeholder="默认=展示名">
+      <div class="adm-field-hint" style="padding-top:2px;font-size:0.85em;color:#888">空展示名/空 buffKey 会共用宿主名；多条持续请填不同展示名或 buffKey</div>
     </div>
     <div class="admin-field"><label>影响数据</label><select class="${prefix}-stat">${allStatOptionsHtml(stat)}</select></div>
     <div class="admin-field"><label>类型</label>${kindSelect}</div>
@@ -182,7 +185,6 @@ function readOnHitEffectFromRow(prefix: string, row: Element): OnHitEffect {
     applyTo!.push((cb as HTMLInputElement).value as NonNullable<OnHitEffect['applyTo']>[number]);
   });
   let displayName = (nameEl?.value || '').trim();
-  if (!displayName) displayName = defaultDisplayName(stat, op);
   const effect: OnHitEffect = { displayName, kind, stat, op, params };
   if (kind === 'duration') {
     effect.durationMs = parseFloat(durationInput?.value || '') || 0;
@@ -192,7 +194,7 @@ function readOnHitEffectFromRow(prefix: string, row: Element): OnHitEffect {
       if (tick > 0) effect.tickIntervalMs = tick;
     }
     const key = (buffKeyInput?.value || '').trim();
-    effect.buffKey = key || displayName;
+    effect.buffKey = key;
   }
   if (applyTo && applyTo.length > 0) effect.applyTo = applyTo;
   return effect;
@@ -366,7 +368,7 @@ export function bindOnHitEffectsEditor(prefix: string, initial: OnHitEffect[]): 
   addBtn?.addEventListener('click', () => {
     effects = readOnHitEffectsFromDom(prefix);
     effects.push({
-      displayName: '伤害',
+      displayName: '',
       kind: 'instant',
       stat: 'hp',
       op: 'loss',

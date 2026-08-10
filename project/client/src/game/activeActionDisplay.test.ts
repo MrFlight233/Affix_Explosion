@@ -121,3 +121,30 @@ describe('collapse summary', () => {
     })).toBe('耐耗10 · 敌人·随机·1 · 伤害等2条');
   });
 });
+
+describe('format with ownerName fallback', () => {
+  it('formatConfigEffectLines uses ownerName when displayName is empty', () => {
+    const lines = formatConfigEffectLines({
+      displayName: '',
+      stat: 'hp',
+      op: 'loss',
+      params: { amount: 5 },
+      applyTo: ['target'],
+    }, '拳头');
+    expect(lines[0]).toContain('拳头');
+    expect(lines[0]).not.toContain('伤害');
+  });
+
+  it('formatActiveActionCollapseSummary uses ownerName when displayName is empty', () => {
+    const summary = formatActiveActionCollapseSummary({
+      staminaCost: 10,
+      targetingSummary: '敌人·随机·1',
+      ownerName: '拳头',
+      effects: [
+        { displayName: '', stat: 'hp', op: 'loss', params: { amount: 1 } },
+      ],
+    });
+    expect(summary).toContain('拳头');
+    expect(summary).toContain('耐耗10');
+  });
+});
