@@ -928,6 +928,11 @@
     "targetOrder": null,
     "priorityTarget": null,
     "targetFaction": null,
+    "targetCount": 1,
+    "targetCondition": {
+      "sortBy": "random",
+      "filterBy": []
+    },
     "staminaRegenerationBonus": 0,
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
@@ -1082,18 +1087,6 @@
     "actionTime": 1000,
     "damage": 0,
     "onHitEffects": [
-      {
-        "displayName": "伤害",
-        "kind": "instant",
-        "stat": "hp",
-        "op": "loss",
-        "params": {
-          "amount": 10
-        },
-        "applyTo": [
-          "target"
-        ]
-      },
       {
         "displayName": "伤害",
         "kind": "instant",
@@ -1658,6 +1651,11 @@
     "targetOrder": null,
     "priorityTarget": null,
     "targetFaction": null,
+    "targetCount": 1,
+    "targetCondition": {
+      "sortBy": "random",
+      "filterBy": []
+    },
     "staminaRegenerationBonus": 0,
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
@@ -1775,7 +1773,7 @@
     ],
     "dynamicAffixSlots": 0,
     "poolPrerequisite": [],
-    "hp": 500,
+    "hp": 0,
     "maxStamina": 0,
     "staminaRegen": 0,
     "hpRegen": 0,
