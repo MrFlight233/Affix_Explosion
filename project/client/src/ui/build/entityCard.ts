@@ -390,8 +390,10 @@ export function renderEntityCard(
     h += `<span id="cu-dead-${sideFirst}-${item.instanceId}" style="${combatUnit && combatUnit.currentHp <= 0 ? '' : 'display:none'}">  阵亡</span>`;
     h += '</div>';
   } else if (isEntity && edef) {
-    const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${edef.hp}/${edef.hp}`;
-    h += `<div class="sb-card-stats">HP: ${hp}</div>`;
+    if (depth === 0) {
+      const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${edef.hp}/${edef.hp}`;
+      h += `<div class="sb-card-stats">HP: ${hp}</div>`;
+    }
     h += `<div class="sb-card-stats">槽耗: ${edef.slotCost}  重: ${formatWeightG(edef.weight)}`;
     if (mode === 'build') h += `  价值: ${getItemTradeValue(item)}`;
     h += '</div>';
@@ -553,7 +555,7 @@ export function renderEntityCard(
       h += '<div class="sb-child-area">';
     }
     for (const child of entityChildren) {
-      h += renderEntityCard(child, depth + 1, side, mode, collapse, combatUnit);
+      h += renderEntityCard(child, depth + 1, side, mode, collapse, null);
     }
     if (mode === 'build') {
       const remaining = effSlots - usedSlots;
@@ -571,7 +573,7 @@ export function renderEntityCard(
   h += '<div class="sb-card-body-collapsed">';
   const foldedEntityChildren = (item.children || []).filter(c => c.type === 'entity');
   for (const child of foldedEntityChildren) {
-    h += renderCollapsedChildTree(child, depth + 1, side, mode, combatUnit, sideFirst);
+    h += renderCollapsedChildTree(child, depth + 1, side, mode, null, sideFirst);
   }
   h += '</div>';
 

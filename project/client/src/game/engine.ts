@@ -667,9 +667,11 @@ export class GameEngine {
     item: ItemInstance,
     rootInstanceId: string,
     into: PassiveSourceRuntime[],
+    parentEntityName?: string,
   ): void {
     if (item.type === 'entity') {
       const cdef = getEntityDef(item.defId);
+      const entityName = cdef?.name?.trim();
       if (cdef) {
         const cfg = resolvePassiveBonusConfig({
           hasPassiveBonuses: Boolean(getEffectiveValue(item, 'hasPassiveBonuses') ?? cdef.hasPassiveBonuses),
@@ -684,7 +686,6 @@ export class GameEngine {
         });
         if (cfg.hasPassiveBonuses && cfg.passiveEffects.length > 0) {
           const effects = clonePassiveEffects(cfg.passiveEffects);
-          const entityName = cdef.name?.trim();
           if (entityName) stampPassiveEffectList(effects, entityName);
           into.push({
             ownerItemInstanceId: item.instanceId,
@@ -699,7 +700,7 @@ export class GameEngine {
         }
       }
       for (const c of item.children || []) {
-        this.collectPassiveSourcesFromTree(c, rootInstanceId, into);
+        this.collectPassiveSourcesFromTree(c, rootInstanceId, into, entityName || undefined);
       }
     } else if (item.type === 'affix') {
       const adef = getAffixDef(item.defId);
@@ -721,7 +722,7 @@ export class GameEngine {
         if (affixName) stampPassiveEffectList(effects, affixName);
         into.push({
           ownerItemInstanceId: item.instanceId,
-          ownerName: affixName || undefined,
+          ownerName: parentEntityName || affixName || undefined,
           effects,
           targetCondition: {
             sortBy: cfg.passiveTargetCondition.sortBy || 'random',

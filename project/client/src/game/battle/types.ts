@@ -209,6 +209,7 @@ export function buildCombatRuntime(units: CombatUnitSnapshot[]): CombatUnitRunti
       durations: [],
       passiveSources: (u.passiveSources || []).map(s => ({
         ownerItemInstanceId: s.ownerItemInstanceId,
+        ownerName: s.ownerName,
         effects: s.effects.map(e => ({ ...e, params: { ...e.params } })),
         targetCondition: {
           sortBy: s.targetCondition?.sortBy || 'random',
