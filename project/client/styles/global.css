@@ -2303,7 +2303,7 @@ body.sb-pointer-dragging [data-drag-handle] { cursor: grabbing; }
 
 /* 逐行容器 */
 .sb-tip-rows {
-  padding: 2px 12px 6px;
+  padding: 2px 0 6px;
 }
 
 /* 键值网格 */
