@@ -7,6 +7,13 @@
     "showInFilter": false
   },
   {
+    "id": "cursed",
+    "name": "诅咒",
+    "sortOrder": 11,
+    "isEntityClass": false,
+    "showInFilter": true
+  },
+  {
     "id": "entity_class",
     "name": "分类",
     "sortOrder": 2,

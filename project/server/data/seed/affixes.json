@@ -140,6 +140,48 @@
     "passiveTargetCount": 1
   },
   {
+    "id": "bleed_3",
+    "name": "流血-3-6s",
+    "category": "on_hit_effect",
+    "costValue": 12,
+    "slotCost": 1,
+    "repeatable": true,
+    "prerequisite": [],
+    "poolPrerequisite": [],
+    "effect": "命中造成流血，每秒3点持续6秒",
+    "onHitEffects": [
+      {
+        "displayName": "流血",
+        "kind": "duration",
+        "stat": "hp",
+        "op": "loss",
+        "params": {
+          "amount": 3
+        },
+        "durationMs": 6000,
+        "tickIntervalMs": 1000,
+        "buffKey": "bleed",
+        "applyTo": [
+          "target"
+        ]
+      }
+    ],
+    "hasPassiveBonuses": false,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "根实体"
+      ]
+    },
+    "passiveTargetCount": 1
+  },
+  {
     "id": "blood_for_blood",
     "name": "以血还血-40",
     "category": "on_hit_effect",
@@ -161,6 +203,47 @@
         "applyTo": [
           "target",
           "starter"
+        ]
+      }
+    ],
+    "hasPassiveBonuses": false,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "根实体"
+      ]
+    },
+    "passiveTargetCount": 1
+  },
+  {
+    "id": "cripple",
+    "name": "致残",
+    "category": "on_hit_effect",
+    "costValue": 15,
+    "slotCost": 1,
+    "repeatable": false,
+    "prerequisite": [],
+    "poolPrerequisite": [],
+    "effect": "命中降低目标耐力恢复5点持续8秒",
+    "onHitEffects": [
+      {
+        "displayName": "致残",
+        "kind": "duration",
+        "stat": "staminaRegen",
+        "op": "loss",
+        "params": {
+          "amount": 5
+        },
+        "durationMs": 8000,
+        "buffKey": "cripple",
+        "applyTo": [
+          "target"
         ]
       }
     ],
@@ -203,6 +286,121 @@
         ]
       }
     ],
+    "hasPassiveBonuses": false,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "根实体"
+      ]
+    },
+    "passiveTargetCount": 1
+  },
+  {
+    "id": "double_edge",
+    "name": "双刃剑",
+    "category": "cursed",
+    "costValue": 15,
+    "slotCost": 0,
+    "repeatable": false,
+    "prerequisite": [],
+    "poolPrerequisite": [],
+    "effect": "+10耐力恢复，每次攻击自损8HP",
+    "onHitEffects": [
+      {
+        "displayName": "双刃剑-反噬",
+        "kind": "instant",
+        "stat": "hp",
+        "op": "loss",
+        "params": {
+          "amount": 8
+        },
+        "applyTo": [
+          "starter"
+        ]
+      }
+    ],
+    "hasPassiveBonuses": true,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0,
+    "passiveEffects": [
+      {
+        "displayName": "双刃剑-狂涌",
+        "stat": "staminaRegen",
+        "op": "gain",
+        "params": {
+          "amount": 10
+        }
+      }
+    ],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "根实体"
+      ]
+    },
+    "passiveTargetCount": 1
+  },
+  {
+    "id": "execute_25",
+    "name": "处决-25%",
+    "category": "on_hit_effect",
+    "costValue": 20,
+    "slotCost": 1,
+    "repeatable": true,
+    "prerequisite": [],
+    "poolPrerequisite": [],
+    "effect": "命中附加目标25%生命上限的伤害",
+    "onHitEffects": [
+      {
+        "displayName": "处决",
+        "kind": "instant",
+        "stat": "hp",
+        "op": "loss",
+        "params": {
+          "percent": 25
+        },
+        "applyTo": [
+          "target"
+        ]
+      }
+    ],
+    "hasPassiveBonuses": false,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "根实体"
+      ]
+    },
+    "passiveTargetCount": 1
+  },
+  {
+    "id": "expansion",
+    "name": "扩容",
+    "category": "special",
+    "costValue": 0,
+    "slotCost": 0,
+    "repeatable": false,
+    "prerequisite": [],
+    "poolPrerequisite": [
+      "admin"
+    ],
+    "effect": "扩充实体槽位",
+    "onHitEffects": [],
     "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
     "staminaBonus": 0,
@@ -269,6 +467,132 @@
     "hpBonus": 0,
     "loadBonus": 0,
     "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "根实体"
+      ]
+    },
+    "passiveTargetCount": 1
+  },
+  {
+    "id": "glass_cannon",
+    "name": "玻璃大炮",
+    "category": "cursed",
+    "costValue": 15,
+    "slotCost": 0,
+    "repeatable": false,
+    "prerequisite": [],
+    "poolPrerequisite": [],
+    "effect": "命中附加20%HP上限伤害，自身HP上限-100点",
+    "onHitEffects": [
+      {
+        "displayName": "玻璃大炮",
+        "kind": "instant",
+        "stat": "hp",
+        "op": "loss",
+        "params": {
+          "percent": 20
+        },
+        "applyTo": [
+          "target"
+        ]
+      }
+    ],
+    "hasPassiveBonuses": true,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0,
+    "passiveEffects": [
+      {
+        "displayName": "生命削减-100",
+        "stat": "maxHp",
+        "op": "loss",
+        "params": {
+          "amount": 100
+        }
+      }
+    ],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "根实体"
+      ]
+    },
+    "passiveTargetCount": 1
+  },
+  {
+    "id": "greedy_soul",
+    "name": "贪婪之魂",
+    "category": "cursed",
+    "costValue": 20,
+    "slotCost": 0,
+    "repeatable": false,
+    "prerequisite": [],
+    "poolPrerequisite": [],
+    "effect": "+5000负重上限，-30HP上限",
+    "onHitEffects": [],
+    "hasPassiveBonuses": true,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0,
+    "passiveEffects": [
+      {
+        "displayName": "贪婪-负重+5000",
+        "stat": "maxLoad",
+        "op": "gain",
+        "params": {
+          "amount": 5000
+        }
+      },
+      {
+        "displayName": "贪婪-代价-30HP",
+        "stat": "maxHp",
+        "op": "loss",
+        "params": {
+          "amount": 30
+        }
+      }
+    ],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "根实体"
+      ]
+    },
+    "passiveTargetCount": 1
+  },
+  {
+    "id": "hp_bonus_40",
+    "name": "生命加成 40",
+    "category": "passive_bonus",
+    "costValue": 20,
+    "slotCost": 1,
+    "repeatable": true,
+    "prerequisite": [],
+    "poolPrerequisite": [],
+    "effect": "增加最上层实体生命上限40点",
+    "onHitEffects": [],
+    "hasPassiveBonuses": true,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0,
+    "passiveEffects": [
+      {
+        "displayName": "生命加成",
+        "stat": "maxHp",
+        "op": "gain",
+        "params": {
+          "amount": 40
+        }
+      }
+    ],
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
@@ -455,6 +779,80 @@
     "passiveTargetCount": 1
   },
   {
+    "id": "knockback",
+    "name": "击退",
+    "category": "on_hit_effect",
+    "costValue": 12,
+    "slotCost": 1,
+    "repeatable": true,
+    "prerequisite": [],
+    "poolPrerequisite": [],
+    "effect": "命中增加目标武器冷却1秒",
+    "onHitEffects": [
+      {
+        "displayName": "击退",
+        "kind": "instant",
+        "stat": "remainingTime",
+        "op": "gain",
+        "params": {
+          "amount": 1000
+        },
+        "applyTo": [
+          "target"
+        ]
+      }
+    ],
+    "hasPassiveBonuses": false,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "根实体"
+      ]
+    },
+    "passiveTargetCount": 1
+  },
+  {
+    "id": "load_bonus_5000",
+    "name": "负重加成 5000",
+    "category": "passive_bonus",
+    "costValue": 20,
+    "slotCost": 1,
+    "repeatable": true,
+    "prerequisite": [],
+    "poolPrerequisite": [],
+    "effect": "增加最上层实体负重上限5000g",
+    "onHitEffects": [],
+    "hasPassiveBonuses": true,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0,
+    "passiveEffects": [
+      {
+        "displayName": "负重加成",
+        "stat": "maxLoad",
+        "op": "gain",
+        "params": {
+          "amount": 5000
+        }
+      }
+    ],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "根实体"
+      ]
+    },
+    "passiveTargetCount": 1
+  },
+  {
     "id": "mechanic",
     "name": "机械",
     "category": "path",
@@ -525,6 +923,49 @@
     "passiveTargetCount": 1
   },
   {
+    "id": "reckless_charge",
+    "name": "鲁莽冲锋",
+    "category": "cursed",
+    "costValue": 20,
+    "slotCost": 0,
+    "repeatable": false,
+    "prerequisite": [],
+    "poolPrerequisite": [],
+    "effect": "+15耐力恢复，-3生命恢复",
+    "onHitEffects": [],
+    "hasPassiveBonuses": true,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0,
+    "passiveEffects": [
+      {
+        "displayName": "鲁莽-狂涌",
+        "stat": "staminaRegen",
+        "op": "gain",
+        "params": {
+          "amount": 15
+        }
+      },
+      {
+        "displayName": "鲁莽-失血",
+        "stat": "hpRegen",
+        "op": "loss",
+        "params": {
+          "amount": 3
+        }
+      }
+    ],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "根实体"
+      ]
+    },
+    "passiveTargetCount": 1
+  },
+  {
     "id": "slavery",
     "name": "奴役",
     "category": "path",
@@ -563,6 +1004,45 @@
     "poolPrerequisite": [],
     "effect": "开启施法路线",
     "onHitEffects": [],
+    "hasPassiveBonuses": false,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0,
+    "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "根实体"
+      ]
+    },
+    "passiveTargetCount": 1
+  },
+  {
+    "id": "splash_3",
+    "name": "溅射-3",
+    "category": "on_hit_effect",
+    "costValue": 15,
+    "slotCost": 1,
+    "repeatable": true,
+    "prerequisite": [],
+    "poolPrerequisite": [],
+    "effect": "命中后附带3点溅射伤害",
+    "onHitEffects": [
+      {
+        "displayName": "溅射",
+        "kind": "instant",
+        "stat": "hp",
+        "op": "loss",
+        "params": {
+          "amount": 3
+        },
+        "applyTo": [
+          "target"
+        ]
+      }
+    ],
     "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
     "staminaBonus": 0,
@@ -645,6 +1125,41 @@
     "hpBonus": 0,
     "loadBonus": 0,
     "passiveEffects": [],
+    "passiveTargetCondition": {
+      "sortBy": "random",
+      "filterBy": [
+        "根实体"
+      ]
+    },
+    "passiveTargetCount": 1
+  },
+  {
+    "id": "stamina_regen_6",
+    "name": "耐力恢复 6",
+    "category": "passive_bonus",
+    "costValue": 15,
+    "slotCost": 1,
+    "repeatable": true,
+    "prerequisite": [],
+    "poolPrerequisite": [],
+    "effect": "增加最上层实体耐力恢复6点",
+    "onHitEffects": [],
+    "hasPassiveBonuses": true,
+    "staminaRegenerationBonus": 0,
+    "staminaBonus": 0,
+    "hpRegenerationBonus": 0,
+    "hpBonus": 0,
+    "loadBonus": 0,
+    "passiveEffects": [
+      {
+        "displayName": "耐力恢复加成",
+        "stat": "staminaRegen",
+        "op": "gain",
+        "params": {
+          "amount": 6
+        }
+      }
+    ],
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
@@ -816,23 +1331,27 @@
       "fighter"
     ],
     "effect": "伤害加成 2",
-    "onHitEffects": [],
-    "hasPassiveBonuses": true,
+    "onHitEffects": [
+      {
+        "displayName": "武器训练",
+        "kind": "instant",
+        "stat": "hp",
+        "op": "loss",
+        "params": {
+          "amount": 2
+        },
+        "applyTo": [
+          "target"
+        ]
+      }
+    ],
+    "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "passiveEffects": [
-      {
-        "displayName": "负重训练",
-        "stat": "maxLoad",
-        "op": "gain",
-        "params": {
-          "amount": 10000
-        }
-      }
-    ],
+    "passiveEffects": [],
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
