@@ -392,7 +392,11 @@ export function renderEntityCard(
   } else if (isEntity && edef) {
     if (depth === 0) {
       const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${edef.hp}/${edef.hp}`;
-      h += `<div class="sb-card-stats">HP: ${hp}</div>`;
+      if (mode === 'battle' && sideFirst) {
+        h += `<div class="sb-card-stats">HP: <span id="cu-hp-${sideFirst}-${item.instanceId}">${hp}</span></div>`;
+      } else {
+        h += `<div class="sb-card-stats">HP: ${hp}</div>`;
+      }
     }
     h += `<div class="sb-card-stats">槽耗: ${edef.slotCost}  重: ${formatWeightG(edef.weight)}`;
     if (mode === 'build') h += `  价值: ${getItemTradeValue(item)}`;

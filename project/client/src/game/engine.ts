@@ -1222,7 +1222,7 @@ export class GameEngine {
     const playerUnits = this.buildCombatRuntime(snapshots);
     const enemyUnits = this.buildCombatRuntime(enemySnaps);
     // 开战即重算被动，供 UI 首帧与 Simulator 共用（勿等 Simulator 构造）
-    recomputePassiveBonuses(playerUnits, enemyUnits);
+    recomputePassiveBonuses(playerUnits, enemyUnits, undefined, true);
 
     this.combatPlayerUnits = playerUnits;
     this.combatEnemyUnits = enemyUnits;
@@ -1303,7 +1303,7 @@ export class GameEngine {
 
     const playerUnits = this.buildCombatRuntime(playerSnaps);
     const enemyUnits = this.buildCombatRuntime(enemySnaps);
-    recomputePassiveBonuses(playerUnits, enemyUnits);
+    recomputePassiveBonuses(playerUnits, enemyUnits, undefined, true);
 
     this.combatPlayerUnits = playerUnits;
     this.combatEnemyUnits = enemyUnits;
