@@ -2,6 +2,9 @@
 // 目标选择：归一化 / 展示摘要（实体·词条·战斗共用）
 // ============================================================
 
+import type { SubtreeCondition } from '@shared/types';
+import { renderPopoverSelector } from '../ui/admin/popoverSelector';
+
 export const FACTION_FILTERS = new Set(['友方', '敌人', '根实体']);
 
 export type TargetCount = number | 'all';
@@ -48,6 +51,16 @@ export const FILTER_LABELS: Record<string, string> = {
   has_debuff: '有负面状态',
   most_buffs: '有增益状态',
 };
+
+/** 解析 has_affix: 类过滤标签的展示名 */
+export function filterLabelFor(key: string): string {
+  if (FILTER_LABELS[key]) return FILTER_LABELS[key];
+  if (key.startsWith('has_affix:')) {
+    const ids = key.slice('has_affix:'.length).split(',').filter(Boolean);
+    return `拥有词条：${ids.join(', ')}`;
+  }
+  return key;
+}
 
 /** 旧 string / 新数组 → string[] */
 export function normalizeFilterBy(raw: unknown): string[] {
@@ -151,23 +164,31 @@ export function formatTargetingSummary(input: TargetingSummaryInput): string {
   const count = normalizeTargetCount(input.targetCount);
   const countLabel = count === 'all' ? '全部' : `×${count}`;
   const parts: string[] = [];
-  parts.push(factions.length ? factions.map(f => FILTER_LABELS[f] || f).join('+') : '无阵营');
+  parts.push(factions.length ? factions.map(f => filterLabelFor(f)).join('+') : '无阵营');
   parts.push(SORT_BY_LABELS[sort] || sort);
-  if (attrs.length) parts.push(attrs.map(a => FILTER_LABELS[a] || a).join('+'));
+  if (attrs.length) parts.push(attrs.map(a => filterLabelFor(a)).join('+'));
   parts.push(countLabel);
   return parts.join(' · ');
 }
 
-export const ATTR_FILTER_OPTIONS: { value: string; label: string }[] = [
+export const FACTION_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: '友方', label: '友方' },
   { value: '敌人', label: '敌人' },
   { value: '根实体', label: '根实体' },
+];
+
+export const EXTRA_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: 'not_root', label: '排除根实体' },
   { value: 'is_starter', label: '仅启动端' },
   { value: 'is_stake', label: '仅木桩' },
   { value: 'hp_below_50pct', label: 'HP低于50%' },
   { value: 'has_debuff', label: '有负面状态' },
   { value: 'most_buffs', label: '有增益状态' },
+];
+
+export const ATTR_FILTER_OPTIONS: { value: string; label: string }[] = [
+  ...FACTION_FILTER_OPTIONS,
+  ...EXTRA_FILTER_OPTIONS,
 ];
 
 export const SORT_BY_OPTIONS: { value: string; label: string }[] = Object.entries(SORT_BY_LABELS).map(
@@ -191,9 +212,63 @@ export function filterCheckboxesHtml(name: string, selected: string[]): string {
   ).join('');
 }
 
+export function filterCheckboxesRow(name: string, selected: string[], options: { value: string; label: string }[]): string {
+  const set = new Set(selected);
+  return options.map(o =>
+    `<label style="margin-right:8px;white-space:nowrap;width:auto;flex-shrink:1"><input type="checkbox" name="${name}" value="${o.value}"${set.has(o.value) ? ' checked' : ''}> ${o.label}</label>`,
+  ).join('');
+}
+
+/** 从 filterBy 中解析 has_affix: 词条 ID */
+export function parseHasAffixFromFilterBy(filterBy: string[]): Set<string> {
+  const ids = new Set<string>();
+  for (const f of filterBy) {
+    if (f.startsWith('has_affix:')) {
+      f.slice('has_affix:'.length).split(',').filter(Boolean).forEach(id => ids.add(id));
+    }
+  }
+  return ids;
+}
+
+/** 将 SubtreeCondition 转为预览前缀，如 "需: 斗士 ≥ 2 → " */
+export function conditionPreviewPrefix(
+  cond: SubtreeCondition | undefined,
+  affixOpts: { id: string; name: string }[],
+): string {
+  if (!cond || !cond.matchIds?.length) return '';
+  const names = cond.matchIds.map(id => affixOpts.find(o => o.id === id)?.name || id).join(', ');
+  const op = cond.max !== undefined ? '≤' : '≥';
+  const val = cond.max !== undefined ? cond.max : cond.min ?? 1;
+  return `需: ${names} ${op} ${val} → `;
+}
+
 /** 读表单多选过滤 */
 export function readFilterCheckboxes(name: string, root: Document | ParentNode = document): string[] {
   return Array.from(root.querySelectorAll(`input[name="${name}"]:checked`))
     .map(el => (el as HTMLInputElement).value)
     .filter(Boolean);
+}
+
+export function renderFilterSectionHtml(params: {
+  name: string;
+  filterBy: string[];
+  affixPopoverId: string;
+  affixOpts: { id: string; name: string; cat?: string }[];
+  hint?: string;
+  extra?: string;
+}): string {
+  const { name, filterBy, affixPopoverId, affixOpts, hint, extra } = params;
+  const affixSelectedIds = [...parseHasAffixFromFilterBy(filterBy)];
+  let h = '';
+  if (hint) h += `<div class="adm-field-hint">${hint}</div>`;
+  h += `<div style="display:flex;flex-wrap:wrap;gap:2px 0;">
+    <label style="margin-right:8px;white-space:nowrap;font-weight:600">目标</label>
+    ${filterCheckboxesRow(name, filterBy, FACTION_FILTER_OPTIONS)}
+    <label style="margin-right:8px;white-space:nowrap;font-weight:600;margin-left:12px">条件</label>
+    ${filterCheckboxesRow(name, filterBy, EXTRA_FILTER_OPTIONS)}
+  </div>`;
+  if (extra) h += extra;
+  h += `<div class="adm-field-hint" style="margin-top:2px">拥有词条（任意一个即匹配）：</div>`;
+  h += renderPopoverSelector(affixPopoverId, '', affixSelectedIds, affixOpts);
+  return h;
 }

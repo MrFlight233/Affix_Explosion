@@ -65,6 +65,8 @@ export interface CombatUnitSnapshot {
   }[];
   /** 归属于本第一层实体的被动源（子树聚合） */
   passiveSources?: PassiveSourceRuntime[];
+  /** 本子树所有词条的 defId 列表（供 filterBy has_affix:* 匹配） */
+  affixIds?: string[];
 }
 
 export interface OnHitContext {
@@ -132,6 +134,8 @@ export interface CombatUnitRuntime {
   baseMaxLoad: number;
   slotIndex: number;
   isStarter: boolean;
+  /** 本子树所有词条的 defId 列表（供 filterBy has_affix:* 匹配） */
+  affixIds: string[];
   weapons: CombatWeaponRuntime[];
   durations: ActiveDuration[];
   /** 子树聚合的被动源；来源=本单位 */
@@ -205,6 +209,7 @@ export function buildCombatRuntime(units: CombatUnitSnapshot[]): CombatUnitRunti
       baseMaxLoad: u.maxLoad,
       slotIndex: u.slotIndex ?? 0,
       isStarter: u.isStarter ?? false,
+      affixIds: [...(u.affixIds || [])],
       weapons,
       durations: [],
       passiveSources: (u.passiveSources || []).map(s => ({

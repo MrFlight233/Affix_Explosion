@@ -14,7 +14,20 @@ import {
   type OnHitOp,
   type OnHitStat,
 } from '../game/hitEffectUtil';
+import type { SubtreeCondition } from '@shared/types';
 import { formatConfigEffectLines } from '../game/activeActionDisplay';
+import { conditionPreviewPrefix } from '../game/targetingUtil';
+import {
+  renderPopoverSelector,
+  bindPopoverSelector,
+  getSelected,
+} from './admin/popoverSelector';
+
+let _hitAffixOpts: { id: string; name: string; cat?: string }[] = [];
+
+export function setHitAffixOpts(opts: { id: string; name: string; cat?: string }[]) {
+  _hitAffixOpts = opts;
+}
 
 const STAT_OPTIONS: { value: OnHitStat; label: string }[] = [
   { value: 'hp', label: 'HP' },
@@ -72,9 +85,11 @@ export function renderOnHitEffectsEditor(prefix: string, effects: OnHitEffect[])
   return h;
 }
 
-function previewLines(e: OnHitEffect): string {
+function previewLines(e: OnHitEffect, cond?: SubtreeCondition): string {
+  const prefix = conditionPreviewPrefix(cond, _hitAffixOpts);
   const lines = formatConfigEffectLines(e);
-  return lines.length ? lines.join('；') : '（未配置量或配置不合法）';
+  const body = lines.length ? lines.join('；') : '（未配置量或配置不合法）';
+  return prefix + body;
 }
 
 function renderOnHitRow(prefix: string, i: number, e: OnHitEffect): string {
@@ -114,7 +129,7 @@ function renderOnHitRow(prefix: string, i: number, e: OnHitEffect): string {
         ...e, kind, stat, op,
         tickIntervalMs: showTick && tick > 0 ? tick : undefined,
         durationMs: showDuration ? e.durationMs : undefined,
-      }))}</span>
+      }, (e as any).condition as SubtreeCondition | undefined))}</span>
       <button type="button" class="btn btn-danger ${prefix}-del" data-idx="${i}">删除</button>
     </div>
     <div class="admin-field"><label>展示名称</label><input class="${prefix}-name" value="${escapeAttr(e.displayName || '')}"></div>
@@ -145,11 +160,33 @@ function renderOnHitRow(prefix: string, i: number, e: OnHitEffect): string {
       <label><input type="checkbox" class="${prefix}-apply" value="actionOwner"${apply.has('actionOwner') ? ' checked' : ''}> 被触发</label>
       <label><input type="checkbox" class="${prefix}-apply" value="starter"${apply.has('starter') ? ' checked' : ''}> 启动端</label>
     </div>
+    ${renderHitConditionEditor(prefix, i, e)}
   </div>`;
 }
 
 function escapeAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+function renderHitConditionEditor(prefix: string, i: number, e: OnHitEffect): string {
+  const cond = (e as any).condition as SubtreeCondition | undefined;
+  const hasCond = !!cond;
+  const matchIds = cond?.matchIds || [];
+  const direction = cond?.max !== undefined ? '<=' : '>=';
+  const val = cond?.min !== undefined ? String(cond.min) : cond?.max !== undefined ? String(cond.max) : '1';
+
+  return `<div class="admin-field"><label>触发条件</label><select class="${prefix}-cond-sel" data-idx="${i}">
+    <option value="有"${hasCond ? ' selected' : ''}>有</option>
+    <option value="无"${!hasCond ? ' selected' : ''}>无</option>
+  </select></div>
+  <div id="${prefix}-cond-body-${i}" style="${hasCond ? '' : 'display:none'}">
+    ${renderPopoverSelector(`${prefix}-cond-ids-${i}`, '需求词条', matchIds, _hitAffixOpts)}
+    <div class="admin-field" style="display:flex;gap:4px;align-items:center"><label>条件</label><select class="${prefix}-cond-dir">
+      <option value=">=" ${direction === '>=' ? 'selected' : ''}>≥</option>
+      <option value="<=" ${direction === '<=' ? 'selected' : ''}>≤</option>
+    </select></div>
+    <div class="admin-field"><label>数量</label><input class="${prefix}-cond-val" type="number" value="${escapeAttr(val)}" min="0" style="width:80px"></div>
+  </div>`;
 }
 
 function readKind(prefix: string, row: Element): OnHitKind {
@@ -197,6 +234,24 @@ function readOnHitEffectFromRow(prefix: string, row: Element): OnHitEffect {
     effect.buffKey = key;
   }
   if (applyTo && applyTo.length > 0) effect.applyTo = applyTo;
+
+  // 触发条件读取
+  const selEl = (row.querySelector(`.${prefix}-cond-sel`) as HTMLSelectElement);
+  if (selEl?.value === '有') {
+    const idx = (row as HTMLElement).dataset.idx || '0';
+    const matchIds = getSelected(`${prefix}-cond-ids-${idx}`);
+    if (matchIds.length > 0) {
+      const dir = (row.querySelector(`.${prefix}-cond-dir`) as HTMLSelectElement)?.value || '>=';
+      const val = parseInt(((row.querySelector(`.${prefix}-cond-val`) as HTMLInputElement)?.value || ''), 10);
+      const cond: SubtreeCondition = { matchIds };
+      if (!isNaN(val)) {
+        if (dir === '<=') cond.max = val;
+        else cond.min = val;
+      }
+      (effect as any).condition = cond;
+    }
+  }
+
   return effect;
 }
 
@@ -271,7 +326,8 @@ function syncKindTickUi(prefix: string, row: Element): void {
 function updateRowPreview(prefix: string, row: Element): void {
   const previewEl = row.querySelector('.admin-onhit-preview');
   if (!previewEl) return;
-  previewEl.textContent = `预览：${previewLines(readOnHitEffectFromRow(prefix, row))}`;
+  const effect = readOnHitEffectFromRow(prefix, row);
+  previewEl.textContent = `预览：${previewLines(effect, (effect as any).condition as SubtreeCondition | undefined)}`;
 }
 
 /** 原始 DOM 读取（不做 normalize） */
@@ -352,12 +408,39 @@ export function bindOnHitEffectsEditor(prefix: string, initial: OnHitEffect[]): 
   const addBtn = document.getElementById(`${prefix}-add`);
   if (!listEl) return;
 
+  const rebindConditions = () => {
+    listEl.querySelectorAll(`.${prefix}-cond-sel`).forEach((sel) => {
+      const row = (sel as HTMLElement).closest('.admin-onhit-row') as HTMLElement;
+      if (!row) return;
+      const idx = row.dataset.idx || '0';
+      const body = document.getElementById(`${prefix}-cond-body-${idx}`);
+
+      (sel as HTMLSelectElement).addEventListener('change', () => {
+        if (body) body.style.display = (sel as HTMLSelectElement).value === '有' ? '' : 'none';
+        updateRowPreview(prefix, row);
+      });
+
+      row.querySelectorAll(`.${prefix}-cond-dir, .${prefix}-cond-val`).forEach(el => {
+        el.addEventListener('input', () => updateRowPreview(prefix, row));
+        el.addEventListener('change', () => updateRowPreview(prefix, row));
+      });
+
+      const fieldId = `${prefix}-cond-ids-${idx}`;
+      if (document.getElementById(fieldId)) {
+        bindPopoverSelector(fieldId, _hitAffixOpts, undefined, () => {
+          updateRowPreview(prefix, row);
+        });
+      }
+    });
+  };
+
   const rerender = () => {
     if (effects.length === 0) {
       listEl.innerHTML = `<div class="adm-field-hint">暂无效果</div>`;
     } else {
       listEl.innerHTML = effects.map((e, i) => renderOnHitRow(prefix, i, e)).join('');
     }
+    rebindConditions();
     bindRowInteractions(prefix, listEl, (idx) => {
       effects = readOnHitEffectsFromDom(prefix);
       effects.splice(idx, 1);

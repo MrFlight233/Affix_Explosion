@@ -320,3 +320,15 @@ export interface BattlePoolEntry {
   bd_json: string;
   power_score: number;
 }
+
+// ---- 子树条件触发（主动+被动共用） ----
+
+/** 效果生效的子树条件：启动端全局统计指定词条数量 */
+export interface SubtreeCondition {
+  /** 要检测的词条 ID 列表 */
+  matchIds: string[];
+  /** 至少多少个才生效 */
+  min?: number;
+  /** 不超过多少个才生效 */
+  max?: number;
+}

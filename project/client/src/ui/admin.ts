@@ -11,8 +11,9 @@ import {
   mergeFiltersWithLegacyFaction,
   splitFilters,
   sortByOptionsHtml,
-  filterCheckboxesHtml,
   readFilterCheckboxes,
+  renderFilterSectionHtml,
+  parseHasAffixFromFilterBy,
 } from '../game/targetingUtil';
 import { mountAdminList, type AdminListBridge } from './admin/mountAdminList';
 import type { AdminListItem } from './admin/AdminListPanel';
@@ -21,12 +22,20 @@ import {
   collectOnHitEffectsFromDom,
   entityInitialOnHitEffects,
   renderOnHitEffectsEditor,
+  setHitAffixOpts,
 } from './adminHitEffects';
 import {
   bindPassiveBonusesEditor,
   readPassiveBonusesFromDom,
   renderPassiveBonusesEditor,
 } from './adminPassiveBonuses';
+import {
+  renderPopoverSelector,
+  bindPopoverSelector,
+  updatePopoverField,
+  getSelected,
+  initPopoverDocClick,
+} from './admin/popoverSelector';
 
 type TabType = 'entities' | 'affixes';
 
@@ -360,7 +369,6 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     listBridge?.dispose();
     listBridge = null;
     document.removeEventListener('keydown', onAdminKeydown);
-    document.removeEventListener('click', onAdminDocClick);
     onBack();
   });
   document.getElementById('adm-btn-clear-all')!.addEventListener('click', async () => {
@@ -660,196 +668,25 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     updateSelectAllState();
   }
 
-  // ========== POPOVER SELECTOR（方向A：替代 tag selector 的 select 下拉） ==========
+  initPopoverDocClick();
 
-  /** 当前打开的 popover 面板 ID，用于全局单选关闭 */
-  let _openPopoverId: string | null = null;
+  function escAttr(s: string): string {
+    return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
 
-  function openPopover(fieldId: string) {
-    // 关闭之前打开的 popover
-    if (_openPopoverId && _openPopoverId !== fieldId) {
-      const prev = document.getElementById(_openPopoverId + '-panel');
-      if (prev) prev.classList.remove('open');
+  /** 读回"拥有词条"多选值 */
+  function readAffixMultiSelect(ctrlName: string): string[] {
+    return getSelected(ctrlName);
+  }
+
+  /** 合并 has_affix 到 filterBy：先移除旧 has_affix 条目，再按选中追加新条目 */
+  function mergeHasAffixFilterBy(filterBy: string[], selectedAffixIds: string[]): string[] {
+    const cleaned = filterBy.filter(f => !f.startsWith('has_affix:'));
+    if (selectedAffixIds.length > 0) {
+      cleaned.push('has_affix:' + selectedAffixIds.join(','));
     }
-    _openPopoverId = fieldId;
-    const panel = document.getElementById(fieldId + '-panel');
-    if (panel) {
-      panel.classList.add('open');
-      // 聚焦搜索输入
-      const si = document.getElementById(fieldId + '-pop-search') as HTMLInputElement;
-      setTimeout(() => si?.focus(), 50);
-    }
+    return cleaned;
   }
-
-  function closePopover(fieldId: string) {
-    const panel = document.getElementById(fieldId + '-panel');
-    if (panel) panel.classList.remove('open');
-    if (_openPopoverId === fieldId) _openPopoverId = null;
-  }
-
-  function closeAllPopovers() {
-    if (_openPopoverId) {
-      const panel = document.getElementById(_openPopoverId + '-panel');
-      if (panel) panel.classList.remove('open');
-      _openPopoverId = null;
-    }
-  }
-
-  // 全局点击关闭 popover
-  const onAdminDocClick = (e: MouseEvent) => {
-    if (_openPopoverId) {
-      const target = e.target as HTMLElement;
-      const panel = document.getElementById(_openPopoverId + '-panel');
-      const trigger = document.getElementById(_openPopoverId);
-      if (panel && !panel.contains(target) && trigger && !trigger.contains(target)) {
-        closePopover(_openPopoverId);
-      }
-    }
-  };
-  document.addEventListener('click', onAdminDocClick);
-
-  function renderPopoverSelector(fieldId: string, label: string, selected: string[], options: { id: string; name: string; cat?: string; }[], slotText?: string, popoverOpts?: { allowDuplicates?: boolean }): string {
-    const selJson = JSON.stringify(selected).replace(/"/g, '&quot;');
-    const resolve = (id: string) => {
-      const o = options.find(x => x.id === id);
-      if (o) return { name: o.name, cat: o.cat || '' };
-      const a = state.affixes.find((x: any) => x.id === id);
-      return a ? { name: a.name, cat: a.category || '' } : { name: id, cat: '' };
-    };
-    const dup = popoverOpts?.allowDuplicates;
-    return `<div class="popover-selector" id="${fieldId}" data-selected="${selJson}">
-      <label>${label}${slotText ? ` <span style="font-weight:400;color:var(--adm-text-muted);">${slotText}</span>` : ''}</label>
-      <div class="popover-trigger">
-        <div class="popover-chips" id="${fieldId}-chips">${selected.map((s, i) => { const r = resolve(s); const idxAttr = dup ? ` data-chipidx="${i}"` : ''; return `<span class="popover-chip" data-val="${s}"${idxAttr} title="${r.name}${r.cat ? ' · ' + r.cat : ''}">${r.name}<span class="popover-chip-x" data-remove="${s}"${idxAttr}>×</span></span>`; }).join('')}</div>
-        <button class="popover-open-btn" id="${fieldId}-open-btn">+ 添加</button>
-      </div>
-      <div class="popover-panel" id="${fieldId}-panel" style="position:absolute;">
-        <div class="popover-panel-search"><input type="text" id="${fieldId}-pop-search" placeholder="搜索…" autocomplete="off"></div>
-        <div class="popover-panel-list" id="${fieldId}-pop-list"></div>
-      </div>
-    </div>`;
-  }
-
-  function refreshPopoverList(fieldId: string, options: { id: string; name: string; cat?: string; }[], popoverOpts?: { allowDuplicates?: boolean }) {
-    const listEl = document.getElementById(fieldId + '-pop-list');
-    const searchInput = document.getElementById(fieldId + '-pop-search') as HTMLInputElement;
-    if (!listEl) return;
-    const q = (searchInput?.value || '').toLowerCase();
-    const selected = getSelected(fieldId);
-    const filtered = options.filter(o => {
-      if (q) {
-        const matchName = o.name.toLowerCase().includes(q);
-        const matchId = o.id.toLowerCase().includes(q);
-        const matchCat = (o.cat || '').toLowerCase().includes(q);
-        if (!matchName && !matchId && !matchCat) return false;
-      }
-      return true;
-    });
-    if (filtered.length === 0) {
-      listEl.innerHTML = '<div class="popover-panel-empty">无匹配项</div>';
-      return;
-    }
-    const dup = popoverOpts?.allowDuplicates;
-    listEl.innerHTML = filtered.map(o => {
-      const isAdded = !dup && selected.includes(o.id);
-      return `<div class="popover-panel-item${isAdded ? ' already-added' : ''}" data-popval="${o.id}" data-field="${fieldId}">
-        <span class="popover-item-name">${o.name}</span>
-        ${o.cat ? `<span class="popover-item-cat">${o.cat}</span>` : ''}
-        ${isAdded ? '<span class="popover-item-added">已添加</span>' : ''}
-      </div>`;
-    }).join('');
-  }
-
-  function bindPopoverSelector(fieldId: string, options: { id: string; name: string; cat?: string; }[], popoverOpts?: { allowDuplicates?: boolean }) {
-    const el = document.getElementById(fieldId)!;
-    const dup = popoverOpts?.allowDuplicates;
-
-    // 打开按钮
-    const openBtn = document.getElementById(fieldId + '-open-btn');
-    openBtn?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (_openPopoverId === fieldId) { closePopover(fieldId); return; }
-      refreshPopoverList(fieldId, options, popoverOpts);
-      openPopover(fieldId);
-    });
-
-    // Trigger 区域点击也打开
-    const trigger = el.querySelector('.popover-trigger') as HTMLElement;
-    trigger?.addEventListener('click', (e) => {
-      if ((e.target as HTMLElement).closest('.popover-chip-x')) return; // 移除按钮自己处理
-      if (_openPopoverId === fieldId) return;
-      e.stopPropagation();
-      refreshPopoverList(fieldId, options, popoverOpts);
-      openPopover(fieldId);
-    });
-
-    // 搜索输入
-    const searchInput = document.getElementById(fieldId + '-pop-search') as HTMLInputElement;
-    searchInput?.addEventListener('input', () => refreshPopoverList(fieldId, options, popoverOpts));
-    searchInput?.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') { closePopover(fieldId); return; }
-      if (e.key === 'Enter') {
-        // 选择第一个可见项（allowDuplicates 时不排除已有项）
-        const sel = dup ? '.popover-panel-item' : '.popover-panel-item:not(.already-added)';
-        const first = document.querySelector(`#${fieldId}-pop-list ${sel}`) as HTMLElement;
-        if (first) {
-          const val = first.dataset.popval!;
-          addPopoverItem(fieldId, val, options, popoverOpts);
-        }
-      }
-    });
-
-    // 面板内点击
-    const panel = document.getElementById(fieldId + '-panel');
-    panel?.addEventListener('click', (e) => {
-      const item = (e.target as HTMLElement).closest('.popover-panel-item') as HTMLElement;
-      if (!item || (!dup && item.classList.contains('already-added'))) return;
-      const val = item.dataset.popval!;
-      addPopoverItem(fieldId, val, options, popoverOpts);
-    });
-
-    // chip 移除按钮
-    bindPopoverChipRemoval(fieldId, options, popoverOpts);
-  }
-
-  function addPopoverItem(fieldId: string, val: string, options: { id: string; name: string; cat?: string; }[], popoverOpts?: { allowDuplicates?: boolean }) {
-    const cur = getSelected(fieldId);
-    if (!popoverOpts?.allowDuplicates && cur.includes(val)) return;
-    updatePopoverField(fieldId, [...cur, val], options, popoverOpts);
-  }
-
-  function bindPopoverChipRemoval(fieldId: string, options: { id: string; name: string; cat?: string; }[], popoverOpts?: { allowDuplicates?: boolean }) {
-    document.querySelectorAll(`#${fieldId} .popover-chip-x`).forEach(rm => {
-      rm.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (popoverOpts?.allowDuplicates) {
-          const idx = parseInt((rm as HTMLElement).dataset.chipidx!);
-          updatePopoverField(fieldId, getSelected(fieldId).filter((_, i) => i !== idx), options, popoverOpts);
-        } else {
-          const val = (rm as HTMLElement).dataset.remove!;
-          updatePopoverField(fieldId, getSelected(fieldId).filter(s => s !== val), options, popoverOpts);
-        }
-      });
-    });
-  }
-
-  function updatePopoverField(fieldId: string, updated: string[], options: { id: string; name: string; cat?: string; }[], popoverOpts?: { allowDuplicates?: boolean }) {
-    const el = document.getElementById(fieldId)!;
-    el.dataset.selected = JSON.stringify(updated);
-    const resolve = (id: string) => {
-      const o = options.find(x => x.id === id);
-      if (o) return { name: o.name, cat: o.cat || '' };
-      const a = state.affixes.find((x: any) => x.id === id);
-      return a ? { name: a.name, cat: a.category || '' } : { name: id, cat: '' };
-    };
-    const chipsEl = document.getElementById(fieldId + '-chips')!;
-    const dup = popoverOpts?.allowDuplicates;
-    chipsEl.innerHTML = updated.map((s, i) => { const r = resolve(s); const idxAttr = dup ? ` data-chipidx="${i}"` : ''; return `<span class="popover-chip" data-val="${s}"${idxAttr} title="${r.name}${r.cat ? ' · ' + r.cat : ''}">${r.name}<span class="popover-chip-x" data-remove="${s}"${idxAttr}>×</span></span>`; }).join('');
-    bindPopoverChipRemoval(fieldId, options, popoverOpts);
-    refreshPopoverList(fieldId, options, popoverOpts);
-  }
-
-  function getSelected(fieldId: string): string[] { const el = document.getElementById(fieldId); if (!el) return []; try { return JSON.parse((el.dataset.selected || '[]').replace(/&quot;/g, '"')); } catch { return []; } }
 
   // ========== FORM RENDERING ==========
 
@@ -945,18 +782,21 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     h += `<div class="admin-field"><label>统一排序</label><select id="ef-tc-sortBy">${sortByOptionsHtml(hasExplicitSort ? sortSelected : '', true, '随机（缺省）')}</select></div>`;
     let filters = mergeFiltersWithLegacyFaction(tc?.filterBy, v('targetFaction'));
     if (isNew && splitFilters(filters).factions.length === 0) filters = ['敌人'];
-    h += `<div class="admin-field"><label>过滤(多选)</label><div class="adm-field-hint">阵营未勾选则空放耗耐</div><div id="ef-tc-filters" style="display:flex;flex-wrap:wrap;gap:4px 0;">${filterCheckboxesHtml('ef-tc-filter', filters)}</div></div>`;
+    h += `<div class="admin-field"><label>过滤(多选)</label>
+${renderFilterSectionHtml({ name: 'ef-tc-filter', filterBy: filters, affixPopoverId: 'ef-tc-has-affix', affixOpts: state.affixes.map(a => ({ id: a.id, name: a.name, cat: getCategoryName(a.category) })), hint: '阵营未勾选则空放耗耐' })}
+</div>`;
     const countRaw = v('targetCount') ?? tc?.targetCount;
     const countNorm = normalizeTargetCount(countRaw);
     const countSel = countNorm === 'all' ? 'all' : String(countNorm);
     h += `<div class="admin-field"><label>目标数量</label><select id="ef-targetCount"><option value="1"${countSel==='1'?' selected':''}>1</option><option value="2"${countSel==='2'?' selected':''}>2</option><option value="3"${countSel==='3'?' selected':''}>3</option><option value="4"${countSel==='4'?' selected':''}>4</option><option value="5"${countSel==='5'?' selected':''}>5</option><option value="all"${countSel==='all'?' selected':''}>全部</option></select></div>`;
     h += `<div class="adm-section-title">主动效果</div>`;
+    setHitAffixOpts(state.affixes.map((a: any) => ({ id: a.id, name: a.name, cat: getCategoryName(a.category) })));
     h += renderOnHitEffectsEditor('ef-onhit', entityInitialOnHitEffects(data));
     h += `</div>`;
     h += `</div>`;
     // 被动加成（目标 + 效果，与主动同构；上下分区）
     h += `<div class="admin-form-section"><h4>被动加成</h4>`;
-    h += renderPassiveBonusesEditor('ef', data || {});
+    h += renderPassiveBonusesEditor('ef', data || {}, affixOpts);
     h += `</div>`;
     h += `</div>`;
     return h;
@@ -1094,17 +934,20 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     h += `<div class="admin-field"><label>统一排序</label><select id="af-tm-sortBy"><option value="">不修改</option>${sortByOptionsHtml(tmSort && tmSort !== 'none' ? String(tmSort) : null, false)}<option value="none"${tmSort==='none'?' selected':''}>无（清除排序）</option></select></div>`;
     const tmFilters = mergeFiltersWithLegacyFaction(tm?.filterBy, tm?.targetFaction);
     const tmFilterClear = tm?.filterBy === null && tm?.targetFaction === null;
-    h += `<div class="admin-field"><label>过滤(多选)</label><div class="adm-field-hint">含阵营；未勾阵营且清除则空池</div><div>${filterCheckboxesHtml('af-tm-filter', tmFilterClear ? [] : tmFilters)}<label style="margin-left:8px"><input type="checkbox" id="af-tm-filter-clear"${tmFilterClear?' checked':''}> 清除过滤</label></div></div>`;
+    h += `<div class="admin-field"><label>过滤(多选)</label>
+${renderFilterSectionHtml({ name: 'af-tm-filter', filterBy: tmFilterClear ? [] : tmFilters, affixPopoverId: 'af-tm-has-affix', affixOpts: state.affixes.map(a => ({ id: a.id, name: a.name, cat: getCategoryName(a.category) })), hint: '含阵营；未勾阵营且清除则空池', extra: `<label style="margin-left:8px"><input type="checkbox" id="af-tm-filter-clear"${tmFilterClear?' checked':''}> 清除过滤</label>` })}
+</div>`;
     const tmCount = tm?.targetCount;
     const tmCountSel = tmCount === null ? 'none' : tmCount === undefined ? '' : (tmCount === 'all' || tmCount === -1 ? 'all' : String(tmCount));
     h += `<div class="admin-field"><label>目标数量</label><select id="af-tm-targetCount"><option value="">不修改</option><option value="1"${tmCountSel==='1'?' selected':''}>1</option><option value="2"${tmCountSel==='2'?' selected':''}>2</option><option value="3"${tmCountSel==='3'?' selected':''}>3</option><option value="4"${tmCountSel==='4'?' selected':''}>4</option><option value="5"${tmCountSel==='5'?' selected':''}>5</option><option value="all"${tmCountSel==='all'?' selected':''}>全部</option><option value="none"${tmCountSel==='none'?' selected':''}>无（清除）</option></select></div>`;
     h += `</div>`;
     h += `</div>`;
     h += `<div class="admin-form-section"><h4>主动效果</h4>`;
+    setHitAffixOpts(state.affixes.map((a: any) => ({ id: a.id, name: a.name, cat: getCategoryName(a.category) })));
     h += renderOnHitEffectsEditor('af-onhit', v('onHitEffects') || []);
     h += `</div>`;
     h += `<div class="admin-form-section"><h4>被动加成</h4>`;
-    h += renderPassiveBonusesEditor('af', data || {});
+    h += renderPassiveBonusesEditor('af', data || {}, affixOpts);
     h += `</div>`;
     h += `</div>`;
     return h;
@@ -1123,6 +966,8 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     const affixOpts = state.affixes.map((a: any) => ({ id: a.id, name: a.name, cat: getCategoryName(a.category) }));
     bindPopoverSelector('ef-fixedAffixes', affixOpts);
     bindPopoverSelector('ef-poolPrerequisite', affixOpts);
+    bindPopoverSelector('ef-tc-has-affix', affixOpts);
+    setHitAffixOpts(affixOpts);
     bindOnHitEffectsEditor('ef-onhit', entityInitialOnHitEffects(originalData || {}));
     bindPassiveBonusesEditor('ef', originalData || {});
 
@@ -1260,7 +1105,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
           })(),
           targetCondition: (() => {
             const sortBy = (document.getElementById('ef-tc-sortBy') as HTMLSelectElement).value || null;
-            const filterBy = readFilterCheckboxes('ef-tc-filter');
+            const filterBy = mergeHasAffixFilterBy(readFilterCheckboxes('ef-tc-filter'), readAffixMultiSelect('ef-tc-has-affix'));
             return {
               sortBy: sortBy || 'random',
               filterBy,
@@ -1309,6 +1154,8 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     const affixOpts = state.affixes.map((a: any) => ({ id: a.id, name: a.name, cat: getCategoryName(a.category) }));
     bindPopoverSelector('af-prerequisite', affixOpts);
     bindPopoverSelector('af-poolPrerequisite', affixOpts);
+    bindPopoverSelector('af-tm-has-affix', affixOpts);
+    setHitAffixOpts(affixOpts);
     bindOnHitEffectsEditor('af-onhit', originalData?.onHitEffects || []);
     bindPassiveBonusesEditor('af', originalData || {});
 
@@ -1376,7 +1223,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
               mod.filterBy = null;
               mod.targetFaction = null;
             } else {
-              const fb = readFilterCheckboxes('af-tm-filter');
+              const fb = mergeHasAffixFilterBy(readFilterCheckboxes('af-tm-filter'), readAffixMultiSelect('af-tm-has-affix'));
               if (fb.length) mod.filterBy = fb;
             }
             const tcVal = (document.getElementById('af-tm-targetCount') as HTMLSelectElement).value;

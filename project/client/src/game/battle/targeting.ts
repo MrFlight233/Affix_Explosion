@@ -2,6 +2,7 @@
 
 import type { CombatUnitRuntime, CombatWeaponRuntime } from './types';
 import {
+  filterLabelFor,
   normalizeFilterBy,
   normalizeTargetCount,
   resolveFactionTags,
@@ -14,6 +15,7 @@ import {
 } from '../targetingUtil';
 
 export {
+  filterLabelFor,
   normalizeFilterBy,
   normalizeTargetCount,
   resolveFactionTags,
@@ -63,6 +65,11 @@ function matchesAttrFilter(
     case 'most_buffs':
       return ((unit as any)._activeBuffs?.length ?? 0) > 0;
     default:
+      // has_affix:fighter,spell_casting → 目标拥有其中任意一个词条即匹配
+      if (filter.startsWith('has_affix:')) {
+        const ids = filter.slice('has_affix:'.length).split(',').filter(Boolean);
+        return ids.some(id => (unit.affixIds || []).includes(id));
+      }
       return true;
   }
 }
@@ -247,9 +254,9 @@ export function buildTargetingLabel(weapon: CombatWeaponRuntime): string {
   if (count === 'all') bits.push('全部');
   else if (count > 1) bits.push(`×${count}`);
   const fac = factions.length
-    ? factions.map(f => FILTER_LABELS[f] || f).join('+')
+    ? factions.map(f => filterLabelFor(f)).join('+')
     : '无阵营';
   bits.push(`→ ${fac}`);
-  if (attrs.length) bits.push(attrs.map(a => FILTER_LABELS[a] || a).join('+'));
+  if (attrs.length) bits.push(attrs.map(a => filterLabelFor(a)).join('+'));
   return bits.join(' ');
 }

@@ -1,6 +1,7 @@
 // 被动加成：规范化、旧五列迁移、展示（与主动同构目标，无耐耗/耗时）
 
 import type { TargetCondition } from './types';
+import type { SubtreeCondition } from './types';
 import { resolveEffectIdentityRaw } from './effectIdentityUtil';
 
 export type PassiveStat = 'maxHp' | 'maxStamina' | 'maxLoad' | 'hpRegen' | 'staminaRegen';
@@ -11,6 +12,8 @@ export interface PassiveEffect {
   stat: PassiveStat;
   op: PassiveOp;
   params: { amount: number };
+  /** 可选：子树条件（满足后才生效） */
+  condition?: SubtreeCondition;
 }
 
 export interface PassiveBonusConfig {
@@ -70,7 +73,12 @@ export function normalizePassiveEffect(raw: unknown): PassiveEffect | null {
   const amount = Number(params.amount);
   if (!Number.isFinite(amount) || amount === 0) return null;
   let displayName = String(o.displayName || '').trim();
-  return { displayName, stat, op, params: { amount: Math.abs(amount) } };
+  const result: PassiveEffect = { displayName, stat, op, params: { amount: Math.abs(amount) } };
+  // 子树条件透传
+  if (o.condition && typeof o.condition === 'object' && !Array.isArray(o.condition)) {
+    result.condition = o.condition as SubtreeCondition;
+  }
+  return result;
 }
 
 export function normalizePassiveEffects(raw: unknown): PassiveEffect[] {
@@ -205,5 +213,6 @@ export function clonePassiveEffects(list: PassiveEffect[]): PassiveEffect[] {
     stat: e.stat,
     op: e.op,
     params: { amount: e.params.amount },
+    condition: e.condition ? { ...e.condition } : undefined,
   }));
 }

@@ -59,6 +59,7 @@ function unit(partial: Partial<CombatUnitRuntime> & { instanceId: string }): Com
     baseMaxLoad: rest.baseMaxLoad ?? maxLoad,
     slotIndex: 0,
     isStarter: true,
+    affixIds: rest.affixIds ?? [],
     weapons,
     durations: rest.durations ?? [],
     ...rest,

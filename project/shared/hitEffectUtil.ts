@@ -35,6 +35,8 @@ export interface OnHitEffect {
   op: OnHitOp;
   params: { amount?: number; percent?: number };
   applyTo?: OnHitApplyTo[];
+  /** 可选：子树条件（满足后才触发） */
+  condition?: import('./types').SubtreeCondition;
 }
 
 const APPLY_TO_SET = new Set<OnHitApplyTo>(['starter', 'actionOwner', 'target']);
@@ -207,6 +209,11 @@ export function normalizeOnHitEffect(raw: any): OnHitEffect | null {
     effect.applyTo = raw.applyTo.filter((r: string) => APPLY_TO_SET.has(r as OnHitApplyTo));
   }
 
+  // 子树条件透传
+  if (raw.condition && typeof raw.condition === 'object' && !Array.isArray(raw.condition)) {
+    effect.condition = raw.condition as import('./types').SubtreeCondition;
+  }
+
   return validateKindStatOp(effect);
 }
 
@@ -263,6 +270,7 @@ export function cloneOnHitEffects(list: OnHitEffect[]): OnHitEffect[] {
     op: e.op,
     params: { ...e.params },
     applyTo: e.applyTo ? [...e.applyTo] : undefined,
+    condition: e.condition ? { ...e.condition } : undefined,
   }));
 }
 

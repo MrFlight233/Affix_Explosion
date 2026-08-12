@@ -512,6 +512,10 @@
         "op": "loss",
         "params": {
           "amount": 100
+        },
+        "condition": {
+          "matchIds": [],
+          "min": 2
         }
       }
     ],
