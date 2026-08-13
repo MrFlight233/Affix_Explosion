@@ -91,7 +91,7 @@ describe('hitEffectUtil', () => {
     expect(list[0].params.amount).toBe(7);
   });
 
-  it('缺省展示名', () => {
+  it('缺省名称', () => {
     expect(defaultDisplayName('stamina', 'set')).toBe('耐力变为');
     expect(defaultDisplayName('burden', 'gain')).toBe('加重压');
   });
@@ -128,7 +128,7 @@ describe('hitEffectUtil', () => {
       op: 'gain',
       params: { amount: 2 },
     });
-    expect(e?.buffKey).toBe('inspire');
+    expect(e?.buffKey).toBe('鼓舞');
     expect(e?.tickIntervalMs).toBeUndefined();
   });
 });
@@ -178,7 +178,7 @@ describe('resolveWeaponOnHitEffects', () => {
     expect(n[0].op).toBe('loss');
   });
 
-  it('Tick 壳挂上立即首跳；同键刷新不重跳且数值取 max', () => {
+  it('Tick 壳施加立即首跳；同名覆盖再跳且数值全覆盖', () => {
     const w = makeWeapon();
     const starter = unit({ instanceId: 's', weapons: [w] });
     const target = unit({ instanceId: 't', currentHp: 100, totalHp: 100 });
@@ -187,7 +187,7 @@ describe('resolveWeaponOnHitEffects', () => {
       kind: 'duration' as const,
       durationMs: 5000,
       tickIntervalMs: 1000,
-      buffKey: 'poison',
+      buffKey: 'ignored-key',
       stat: 'hp' as const,
       op: 'loss' as const,
       params: { amount: 5 },
@@ -198,17 +198,54 @@ describe('resolveWeaponOnHitEffects', () => {
     });
     expect(target.currentHp).toBe(95);
     expect(target.durations).toHaveLength(1);
-    expect(r1.lines.some(l => l.label.includes('挂上'))).toBe(true);
+    expect(target.durations[0].buffKey).toBe('毒');
+    expect(r1.lines.some(l => l.label.includes('施加'))).toBe(true);
 
-    const poisonStrong = { ...poison, params: { amount: 8 } };
-    const hpAfterFirst = target.currentHp;
-    resolveWeaponOnHitEffects([poisonStrong], {
+    const poisonWeakLong = { ...poison, durationMs: 10000, params: { amount: 1 } };
+    resolveWeaponOnHitEffects([poisonWeakLong], {
       starter, actionOwner: starter, target, firingWeapon: w,
     });
-    // 刷新不重跳
-    expect(target.currentHp).toBe(hpAfterFirst);
-    expect(target.durations[0].value).toBe(8);
-    expect(target.durations[0].remainingMs).toBe(5000);
+    // 覆盖立即再跳；数值与时长全覆盖（弱盖强）
+    expect(target.currentHp).toBe(94);
+    expect(target.durations[0].value).toBe(1);
+    expect(target.durations[0].remainingMs).toBe(10000);
+  });
+
+  it('同名弱盖强：数值与时长均为后写', () => {
+    const w = makeWeapon();
+    const starter = unit({ instanceId: 's', weapons: [w] });
+    const target = unit({ instanceId: 't', baseHpRegeneration: 0, hpRegeneration: 0 });
+    resolveWeaponOnHitEffects([{
+      displayName: '鼓舞', kind: 'duration', durationMs: 2000, buffKey: 'x',
+      stat: 'hpRegen', op: 'gain', params: { amount: 10 }, applyTo: ['target'],
+    }], { starter, actionOwner: starter, target, firingWeapon: w });
+    expect(target.hpRegeneration).toBe(10);
+    const r2 = resolveWeaponOnHitEffects([{
+      displayName: '鼓舞', kind: 'duration', durationMs: 8000, buffKey: 'y',
+      stat: 'hpRegen', op: 'gain', params: { amount: 2 }, applyTo: ['target'],
+    }], { starter, actionOwner: starter, target, firingWeapon: w });
+    expect(target.hpRegeneration).toBe(2);
+    expect(target.durations).toHaveLength(1);
+    expect(target.durations[0].remainingMs).toBe(8000);
+    expect(r2.lines.some(l => l.label.includes('覆盖'))).toBe(true);
+  });
+
+  it('异名并行不互盖', () => {
+    const w = makeWeapon();
+    const starter = unit({ instanceId: 's', weapons: [w] });
+    const target = unit({ instanceId: 't', baseHpRegeneration: 0, hpRegeneration: 0 });
+    resolveWeaponOnHitEffects([
+      {
+        displayName: '毒', kind: 'duration', durationMs: 1000, buffKey: 'same',
+        stat: 'hpRegen', op: 'gain', params: { amount: 2 }, applyTo: ['target'],
+      },
+      {
+        displayName: '剧毒', kind: 'duration', durationMs: 1000, buffKey: 'same',
+        stat: 'hpRegen', op: 'gain', params: { amount: 3 }, applyTo: ['target'],
+      },
+    ], { starter, actionOwner: starter, target, firingWeapon: w });
+    expect(target.durations).toHaveLength(2);
+    expect(target.hpRegeneration).toBe(5);
   });
 
   it('重压计入超重', () => {
@@ -321,7 +358,7 @@ describe('stampOnHitEffectList', () => {
     expect(effects[0].displayName).toBe('拳头');
   });
 
-  it('fills empty buffKey on duration effects with ownerName', () => {
+  it('fills empty buffKey on duration effects with displayName', () => {
     const effects = [{
       displayName: '毒', kind: 'duration' as const, durationMs: 1000, buffKey: '',
       stat: 'hp' as const, op: 'loss' as const, params: { amount: 1 },
@@ -336,13 +373,14 @@ describe('stampOnHitEffectList', () => {
     expect(effects[0].displayName).toBe('吸血');
   });
 
-  it('does not overwrite non-empty buffKey', () => {
+  it('forces duration buffKey to align with displayName', () => {
     const effects = [{
-      displayName: '', kind: 'duration' as const, durationMs: 1000, buffKey: 'customKey',
+      displayName: '毒', kind: 'duration' as const, durationMs: 1000, buffKey: 'customKey',
       stat: 'hp' as const, op: 'loss' as const, params: { amount: 1 },
     }];
     stampOnHitEffectList(effects, '拳头');
-    expect(effects[0].buffKey).toBe('customKey');
+    expect(effects[0].displayName).toBe('毒');
+    expect(effects[0].buffKey).toBe('毒');
   });
 });
 

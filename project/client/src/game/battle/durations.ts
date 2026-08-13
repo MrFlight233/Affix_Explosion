@@ -1,4 +1,4 @@
-// 持续效果：挂载、刷新、底盘重算、tick、到期、死亡清理
+// 持续效果：施加、覆盖、底盘重算、tick、到期、死亡清理
 
 import type { OnHitOp, OnHitStat } from '../data';
 import { isChassisStat, isWeaponStat } from '../hitEffectUtil';
@@ -92,8 +92,8 @@ export function recomputeChassis(unit: CombatUnitRuntime): void {
 }
 
 /**
- * 挂上或刷新持续。同键：满时长 + 数值 max；Tick 不重跳、不重置间隔。
- * 返回是否为新挂载（true=新挂或首挂，需立即首跳）。
+ * 施加或覆盖持续。同名称轨道：后写全量覆盖；Tick 重置间隔（立即跳由 onhit 负责）。
+ * 返回是否为新挂载（true=首次施加，false=同名覆盖）。
  */
 export function attachOrRefreshDuration(
   unit: CombatUnitRuntime,
@@ -102,13 +102,17 @@ export function attachOrRefreshDuration(
   const existing = unit.durations.find(d => d.buffKey === input.buffKey);
   if (existing) {
     existing.remainingMs = input.durationMs;
-    existing.value = Math.max(existing.value, input.value);
+    existing.value = input.value;
     existing.displayName = input.displayName;
     existing.stat = input.stat;
     existing.op = input.op;
     existing.weaponIndices = [...input.weaponIndices];
-    // Tick：不重置 msUntilNextTick、不重跳
-    if (!existing.isTickShell) {
+    existing.tickIntervalMs = input.tickIntervalMs;
+    existing.isTickShell = input.isTickShell;
+    if (existing.isTickShell) {
+      existing.msUntilNextTick = input.tickIntervalMs || 0;
+    } else {
+      existing.msUntilNextTick = undefined;
       recomputeChassis(unit);
     }
     return { isNew: false, duration: existing };

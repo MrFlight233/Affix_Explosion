@@ -29,7 +29,7 @@ export interface OnHitEffect {
   durationMs?: number;
   /** 有则 Tick 壳，无则底盘修饰（互斥） */
   tickIntervalMs?: number;
-  /** duration 必填；可用展示名默认填充 */
+  /** duration 时与名称对齐存储；结算以名称为轨道，配置独立键已废弃 */
   buffKey?: string;
   stat: OnHitStat;
   op: OnHitOp;
@@ -201,8 +201,8 @@ export function normalizeOnHitEffect(raw: any): OnHitEffect | null {
     effect.durationMs = Math.max(0, Number(raw.durationMs) || 0);
     const tick = Number(raw.tickIntervalMs) || 0;
     if (tick > 0) effect.tickIntervalMs = tick;
-    const key = typeof raw.buffKey === 'string' ? raw.buffKey.trim() : '';
-    effect.buffKey = key;
+    // 轨道 = 名称；配置 buffKey 忽略，仅跟名存储（兼容旧字段）
+    effect.buffKey = name;
   }
 
   if (Array.isArray(raw.applyTo) && raw.applyTo.length > 0) {
@@ -308,7 +308,7 @@ export function opSymbol(op: OnHitOp): string {
   return '→';
 }
 
-// ---- 空展示名 / buffKey 回退 ----
+// ---- 空名称 / buffKey 回退 ----
 
 export function resolveHitDisplayName(effect: OnHitEffect, ownerName?: string): string {
   return resolveEffectIdentityRaw(effect.displayName, undefined, ownerName).displayName;
@@ -319,14 +319,14 @@ export function resolveHitBuffKey(effect: OnHitEffect, ownerName?: string): stri
   return result.buffKey || '';
 }
 
-/** 战斗侧：遍历效果列表，对空 displayName / 空 buffKey 回填来源名。不写回模板库，仅操作内存中的 clone 副本 */
+/** 战斗侧：遍历效果列表，对空 displayName 回填来源名；持续轨道键强制对齐名称。不写回模板库 */
 export function stampOnHitEffectList(list: OnHitEffect[], ownerName: string): void {
   for (const e of list) {
     if (!e.displayName.trim()) {
       e.displayName = resolveHitDisplayName(e, ownerName);
     }
-    if (effectKind(e) === 'duration' && (!e.buffKey || !e.buffKey.trim())) {
-      e.buffKey = resolveHitBuffKey(e, ownerName);
+    if (effectKind(e) === 'duration') {
+      e.buffKey = e.displayName;
     }
   }
 }

@@ -1,4 +1,4 @@
-// 效果身份：空展示名 / 空 buffKey 的统一回退解析
+// 效果身份：空名称 / 空 buffKey 的统一回退解析
 // displayName → ownerName → 「未命名效果」
 
 export const FALLBACK_DISPLAY_NAME = '未命名效果';

@@ -41,7 +41,7 @@ export interface HitEffectLineResult {
   label: string;
   /** 对 target 的净 HP 变化（loss 为正伤害，gain 为负）；其它对象为 0 */
   targetHpDelta: number;
-  /** 是否为持续挂载/刷新日志 */
+  /** 是否为持续施加/覆盖日志 */
   isDuration?: boolean;
 }
 
@@ -290,9 +290,13 @@ export function resolveWeaponOnHitEffects(
         }
         if (effect.op !== 'set' && value <= 0) continue;
 
+        // 轨道 = 名称（忽略配置 buffKey）
+        const trackKey = (effect.displayName || '').trim() || (effect.buffKey || '').trim();
+        if (!trackKey) continue;
+
         const { isNew, duration } = attachOrRefreshDuration(unit, {
-          buffKey: effect.buffKey!,
-          displayName: effect.displayName,
+          buffKey: trackKey,
+          displayName: effect.displayName || trackKey,
           durationMs: effect.durationMs!,
           tickIntervalMs: effect.tickIntervalMs,
           isTickShell: tick,
@@ -316,7 +320,7 @@ export function resolveWeaponOnHitEffects(
         });
         // 修正持续日志
         lines[lines.length - 1].label = formatDurationLogLine(
-          effect.displayName,
+          effect.displayName || trackKey,
           unit.entityName,
           effect.stat,
           effect.op,
@@ -325,11 +329,11 @@ export function resolveWeaponOnHitEffects(
           isNew,
         );
 
-        // Tick 壳：新挂载立即首跳
-        if (tick && isNew) {
+        // Tick 壳：施加与同名覆盖均立即跳
+        if (tick) {
           const tickLines = applyInstantEffectToUnit(
             {
-              displayName: effect.displayName,
+              displayName: effect.displayName || trackKey,
               stat: effect.stat,
               op: effect.op,
               params: { amount: duration.value },
@@ -386,7 +390,7 @@ function formatDurationLogLine(
   const sym = opSymbol(op);
   const st = statLabel(stat);
   const sec = (durationMs / 1000).toFixed(1);
-  const verb = isNew ? '挂上' : '刷新';
+  const verb = isNew ? '施加' : '覆盖';
   return `${displayName} ${unitName} ${verb} ${st} ${sym} ${value}  (${sec}s)`;
 }
 

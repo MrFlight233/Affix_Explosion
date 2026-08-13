@@ -105,7 +105,7 @@ function renderPassiveEffectRow(prefix: string, i: number, e: PassiveEffect): st
       <span class="admin-onhit-preview">预览：${escapeAttr(conditionPreviewPrefix(cond, _affixOpts) + formatPassiveEffectLine(e))}</span>
       <button type="button" class="btn btn-danger ${prefix}-pe-del" data-idx="${i}">删除</button>
     </div>
-    <div class="admin-field"><label>展示名称</label><input class="${prefix}-pe-name" value="${escapeAttr(e.displayName || '')}"></div>
+    <div class="admin-field"><label>名称</label><input class="${prefix}-pe-name" value="${escapeAttr(e.displayName || '')}"></div>
     <div class="admin-field"><label>影响数据</label><select class="${prefix}-pe-stat">${statOpts}</select></div>
     <div class="admin-field"><label>方向</label><select class="${prefix}-pe-op">
       <option value="gain"${e.op === 'gain' ? ' selected' : ''}>增加</option>

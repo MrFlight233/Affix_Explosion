@@ -1060,6 +1060,14 @@ ${renderFilterSectionHtml({ name: 'af-tm-filter', filterBy: tmFilters, affixPopo
         if (!name) { showToast('名称不能为空'); return; }
 
         const hitCollect = collectOnHitEffectsFromDom('ef-onhit');
+        if (hitCollect.durationNameMissing > 0) {
+          showToast(`有 ${hitCollect.durationNameMissing} 条持续效果未填名称（同名互抢轨道），已阻止保存`);
+          return;
+        }
+        if (hitCollect.durationNameDuplicate) {
+          showToast('同一物品内持续效果名称不可重复（同名会互相覆盖），已阻止保存');
+          return;
+        }
         if (hitCollect.tickRequiredMissing > 0) {
           showToast(`有 ${hitCollect.tickRequiredMissing} 条「HP/耐力/倒计时」的持续效果未填 Tick 间隔（毒式须填；底盘请改选生命恢复等数据），已阻止保存`);
           return;
@@ -1179,6 +1187,14 @@ ${renderFilterSectionHtml({ name: 'af-tm-filter', filterBy: tmFilters, affixPopo
         const name = (document.getElementById('af-name') as HTMLInputElement).value.trim();
         if (!name) { showToast('名称不能为空'); return; }
         const hitCollect = collectOnHitEffectsFromDom('af-onhit');
+        if (hitCollect.durationNameMissing > 0) {
+          showToast(`有 ${hitCollect.durationNameMissing} 条持续效果未填名称（同名互抢轨道），已阻止保存`);
+          return;
+        }
+        if (hitCollect.durationNameDuplicate) {
+          showToast('同一物品内持续效果名称不可重复（同名会互相覆盖），已阻止保存');
+          return;
+        }
         if (hitCollect.tickRequiredMissing > 0) {
           showToast(`有 ${hitCollect.tickRequiredMissing} 条「HP/耐力/倒计时」的持续效果未填 Tick 间隔（毒式须填；底盘请改选生命恢复等数据），已阻止保存`);
           return;

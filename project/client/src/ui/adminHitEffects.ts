@@ -132,11 +132,11 @@ function renderOnHitRow(prefix: string, i: number, e: OnHitEffect): string {
       }, (e as any).condition as SubtreeCondition | undefined))}</span>
       <button type="button" class="btn btn-danger ${prefix}-del" data-idx="${i}">删除</button>
     </div>
-    <div class="admin-field"><label>展示名称</label><input class="${prefix}-name" value="${escapeAttr(e.displayName || '')}"></div>
-    <div class="admin-field ${prefix}-buffkey-wrap" style="${showDuration ? '' : 'display:none'}">
-      <label>buffKey</label>
-      <input class="${prefix}-buffkey" value="${escapeAttr(e.buffKey || '')}" placeholder="默认=展示名">
-      <div class="adm-field-hint" style="padding-top:2px;font-size:0.85em;color:#888">空展示名/空 buffKey 会共用宿主名；多条持续请填不同展示名或 buffKey</div>
+    <div class="admin-field"><label class="${prefix}-name-label">${showDuration ? '名称（同名互抢）' : '名称'}</label><input class="${prefix}-name" value="${escapeAttr(e.displayName || '')}" placeholder="${showDuration ? '持续必填' : ''}">
+      <div class="adm-field-hint ${prefix}-name-hint" style="padding-top:2px;font-size:0.85em;color:#888;${showDuration ? '' : 'display:none'}">持续必填；同名会覆盖；并行请用不同名</div>
+    </div>
+    <div class="admin-field ${prefix}-buffkey-wrap" style="display:none">
+      <input type="hidden" class="${prefix}-buffkey" value="">
     </div>
     <div class="admin-field"><label>影响数据</label><select class="${prefix}-stat">${allStatOptionsHtml(stat)}</select></div>
     <div class="admin-field"><label>类型</label>${kindSelect}</div>
@@ -216,7 +216,6 @@ function readOnHitEffectFromRow(prefix: string, row: Element): OnHitEffect {
   const percentInput = row.querySelector(`.${prefix}-percent`) as HTMLInputElement;
   const durationInput = row.querySelector(`.${prefix}-duration`) as HTMLInputElement;
   const tickInput = row.querySelector(`.${prefix}-tick`) as HTMLInputElement;
-  const buffKeyInput = row.querySelector(`.${prefix}-buffkey`) as HTMLInputElement;
   const params: { amount?: number; percent?: number } = {};
   if (amountInput?.value.trim() !== '') params.amount = parseFloat(amountInput.value) || 0;
   if (percentInput?.value.trim() !== '') params.percent = parseFloat(percentInput.value) || 0;
@@ -233,8 +232,8 @@ function readOnHitEffectFromRow(prefix: string, row: Element): OnHitEffect {
       const tick = parseFloat(tickInput?.value || '') || 0;
       if (tick > 0) effect.tickIntervalMs = tick;
     }
-    const key = (buffKeyInput?.value || '').trim();
-    effect.buffKey = key;
+    // 轨道 = 名称（displayName）
+    effect.buffKey = displayName;
   }
   if (applyTo && applyTo.length > 0) effect.applyTo = applyTo;
 
@@ -308,9 +307,16 @@ function syncKindTickUi(prefix: string, row: Element): void {
   const showDuration = kind === 'duration';
   const showTick = showDuration && !chassis;
   if (durBox) durBox.style.display = showDuration ? '' : 'none';
-  if (buffKeyWrap) buffKeyWrap.style.display = showDuration ? '' : 'none';
+  if (buffKeyWrap) buffKeyWrap.style.display = 'none';
   if (tickWrap) tickWrap.style.display = showTick ? '' : 'none';
   if (!showTick && tickInput) tickInput.value = '';
+
+  const nameLabel = row.querySelector(`.${prefix}-name-label`) as HTMLElement | null;
+  if (nameLabel) nameLabel.textContent = showDuration ? '名称（同名互抢）' : '名称';
+  const nameHint = row.querySelector(`.${prefix}-name-hint`) as HTMLElement | null;
+  if (nameHint) nameHint.style.display = showDuration ? '' : 'none';
+  const nameInput = row.querySelector(`.${prefix}-name`) as HTMLInputElement | null;
+  if (nameInput) nameInput.placeholder = showDuration ? '持续必填' : '';
 
   if (opEl) {
     const prevOp = opEl.value as OnHitOp;
@@ -350,15 +356,36 @@ export interface CollectOnHitResult {
   rawCount: number;
   /** 额外：即时属性选了持续但未填 Tick */
   tickRequiredMissing: number;
+  /** 持续效果名称为空 */
+  durationNameMissing: number;
+  /** 本模板内持续名称重复 */
+  durationNameDuplicate: boolean;
 }
 
-/** 保存用：normalize + Tick 壳必填检查 */
+/** 保存用：normalize + Tick 壳必填 / 持续名校验 */
 export function collectOnHitEffectsFromDom(prefix: string): CollectOnHitResult {
   const raw = readOnHitEffectsFromDom(prefix);
   const effects: OnHitEffect[] = [];
   let dropped = 0;
   let tickRequiredMissing = 0;
+  let durationNameMissing = 0;
+  const durationNames: string[] = [];
+  let durationNameDuplicate = false;
+
   for (const item of raw) {
+    if (item.kind === 'duration') {
+      const nm = (item.displayName || '').trim();
+      if (!nm) {
+        durationNameMissing++;
+        continue;
+      }
+      if (durationNames.includes(nm)) {
+        durationNameDuplicate = true;
+        continue;
+      }
+      durationNames.push(nm);
+      item.buffKey = nm;
+    }
     if (
       item.kind === 'duration'
       && isInstantStatValue(item.stat)
@@ -371,7 +398,14 @@ export function collectOnHitEffectsFromDom(prefix: string): CollectOnHitResult {
     if (n) effects.push(n);
     else dropped++;
   }
-  return { effects, dropped, rawCount: raw.length, tickRequiredMissing };
+  return {
+    effects,
+    dropped,
+    rawCount: raw.length,
+    tickRequiredMissing,
+    durationNameMissing,
+    durationNameDuplicate,
+  };
 }
 
 function bindRowInteractions(prefix: string, listEl: HTMLElement, onDelete: (idx: number) => void): void {
