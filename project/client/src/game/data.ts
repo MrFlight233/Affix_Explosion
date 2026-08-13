@@ -10,10 +10,11 @@ export type {
   OnHitOp,
   OnHitKind,
 } from '@shared/hitEffectUtil';
-import type { OnHitEffect } from '@shared/hitEffectUtil';
+import type { OnHitEffect } from './hitEffectUtil';
 import { normalizeOnHitEffects } from './hitEffectUtil';
 import { resolvePassiveBonusConfig, isRootOnlyPassiveTarget } from './passiveBonusUtil';
 import type { PassiveEffect } from './passiveBonusUtil';
+import type { SubtreeCondition } from '@shared/types';
 
 /** 条件 Targeting 配置（v8：多选过滤 + 统一排序 + 目标数量） */
 export interface TargetCondition {
@@ -558,7 +559,45 @@ export function getEntityOwnedAffixIds(
 }
 
 /**
- * 是否可将词条挂到实体上（校验 AffixDef.prerequisite）。
+ * 启动端全局子树中匹配词条的出现次数：
+ * 递归 affix 实例 + 各实体 fixedAffixes 数组项（同实体固定与动态同 ID 分别计入）。
+ */
+export function countMatchingAffixesInSubtree(
+  roots: ItemInstance[],
+  matchIds: string[],
+): number {
+  if (!matchIds?.length || !roots?.length) return 0;
+  const idSet = new Set(matchIds);
+  let count = 0;
+  const walk = (item: ItemInstance) => {
+    if (item.type === 'affix') {
+      if (idSet.has(item.defId)) count++;
+    } else if (item.type === 'entity') {
+      const edef = getEntityDef(item.defId);
+      const fixed = item.overrides?.fixedAffixes ?? edef?.fixedAffixes ?? [];
+      for (const id of fixed) {
+        if (idSet.has(id)) count++;
+      }
+    }
+    for (const c of item.children || []) walk(c);
+  };
+  for (const r of roots) walk(r);
+  return count;
+}
+
+/** 子树条件是否满足（与 has_affix / collectAffixIds 计数同源） */
+export function evaluateSubtreeCondition(
+  cond: SubtreeCondition,
+  roots: ItemInstance[],
+): boolean {
+  const count = countMatchingAffixesInSubtree(roots, cond.matchIds || []);
+  if (cond.min !== undefined && count < cond.min) return false;
+  if (cond.max !== undefined && count > cond.max) return false;
+  return true;
+}
+
+/**
+ * 是否可将词条挂到实体上（校验不可重复 + AffixDef.prerequisite）。
  * @returns 错误文案；null 表示通过
  */
 export function canMountAffix(
@@ -568,9 +607,12 @@ export function canMountAffix(
 ): string | null {
   const adef = getAffixDef(affixDefId);
   if (!adef) return '未知词条';
+  const owned = getEntityOwnedAffixIds(parent, extraChildren);
+  if (!adef.repeatable && owned.has(affixDefId)) {
+    return `已拥有词条「${affixDisplayName(affixDefId)}」，不可重复挂载`;
+  }
   const prereq = adef.prerequisite || [];
   if (prereq.length === 0) return null;
-  const owned = getEntityOwnedAffixIds(parent, extraChildren);
   const missing = prereq.filter(p => !owned.has(p));
   if (missing.length === 0) return null;
   return `需要前置词条：${missing.map(affixDisplayName).join('、')}`;

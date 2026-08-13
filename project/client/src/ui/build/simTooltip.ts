@@ -15,9 +15,10 @@ import {
 } from '../../game/activeActionDisplay';
 import {
   formatPassiveCollapseSummary,
+  formatPassiveEffectPreviewLine,
   formatPassiveTargetLine,
+  getPassiveEffectDisplayRows,
   hasDisplayPassive,
-  passiveEffectPlainLines,
   passiveRootHint,
   resolvePassiveForDisplay,
 } from '../passiveBonusDisplay';
@@ -42,9 +43,11 @@ export function renderTooltipTree(
   depth: number,
   sideFirst?: string,
   combatUnit?: CombatUnitRuntime | null,
+  conditionRoots?: ItemInstance[] | null,
 ): string {
   const isSt = isStarter(def);
   const indent = tipIndent(depth);
+  const roots = conditionRoots ?? (depth === 0 ? [item] : null);
   let h = '';
 
   if (depth === 0) {
@@ -117,8 +120,8 @@ export function renderTooltipTree(
       h += tipSection('被动效果');
       h += `<div class="sb-tip-fixed-row" style="${indent}">被动目标: ${formatPassiveTargetLine(pcfg)}</div>`;
       h += `<div class="sb-tip-fixed-row sb-block-gap" style="${indent}">被动效果</div>`;
-      for (const line of passiveEffectPlainLines(pcfg)) {
-        h += `<div class="sb-tip-fixed-row" style="${indent}">${line}</div>`;
+      for (const row of getPassiveEffectDisplayRows(pcfg, roots)) {
+        h += `<div class="sb-tip-fixed-row${row.active ? '' : ' sb-passive-inactive'}" style="${indent}">${row.text}</div>`;
       }
       const hint = passiveRootHint(pcfg);
       if (hint) h += `<div class="sb-tip-fixed-row" style="${indent}">${hint}</div>`;
@@ -134,15 +137,11 @@ export function renderTooltipTree(
       }
     }
 
-    const hasAffixInfo = def.poolPrerequisite.length > 0
-      || def.fixedAffixes.length > 0
+    const hasAffixInfo = def.fixedAffixes.length > 0
       || def.dynamicAffixSlots > 0
       || (def.preloadedDynamicAffixes && def.preloadedDynamicAffixes.length > 0);
     if (hasAffixInfo) {
       h += tipSection('词条');
-      if (def.poolPrerequisite.length > 0) {
-        h += `<div class="sb-tip-fixed-row" style="${indent}">前置词条: ${resolveNames(def.poolPrerequisite)}</div>`;
-      }
       if (def.fixedAffixes.length > 0) {
         for (const fa of def.fixedAffixes) {
           const fd = getAffixDef(fa);
@@ -174,7 +173,7 @@ export function renderTooltipTree(
   if (depth > 0 && affixes.length > 0) {
     for (const a of affixes) {
       const ad = getAffixDef(a.defId);
-      h += `<div class="sb-tip-tree-row" style="${indent}">${ad?.name || a.defId}  <span class="sb-tip-muted">槽耗${ad?.slotCost ?? 0}</span>  <span class="sb-tip-muted">[${getCategoryName(ad?.category || '')}]</span>  ${ad?.effect || ''}</div>`;
+      h += `<div class="sb-tip-tree-row" style="${tipIndent(depth + 1)}">${ad?.name || a.defId}  <span class="sb-tip-muted">槽耗${ad?.slotCost ?? 0}</span>  <span class="sb-tip-muted">[${getCategoryName(ad?.category || '')}]</span>  ${ad?.effect || ''}</div>`;
     }
   }
 
@@ -185,7 +184,7 @@ export function renderTooltipTree(
     for (const child of entities) {
       const cd = getEntityDef(child.defId);
       if (!cd) continue;
-      let row = `<div class="sb-tip-tree-row" style="${depth === 0 ? tipIndent(1) : indent}">`;
+      let row = `<div class="sb-tip-tree-row" style="${tipIndent(depth + 1)}">`;
       row += `<span class="sb-tip-entity-name">${cd.name}</span>`;
       if (isStarter(cd)) {
         row += `  HP:${cd.hp}  耐力:${cd.maxStamina}`;
@@ -209,7 +208,7 @@ export function renderTooltipTree(
       row += `  <span class="sb-tip-muted">槽耗${cd.slotCost}</span>`;
       row += '</div>';
       h += row;
-      h += renderTooltipTree(child, cd, depth + 1, sideFirst, null);
+      h += renderTooltipTree(child, cd, depth + 1, sideFirst, null, roots);
     }
   }
 
@@ -244,6 +243,7 @@ export function showSimTooltip(
   instanceId?: string | null,
   getInstance?: (instanceId: string) => ItemInstance | null,
   getCombatUnit?: (instanceId: string) => CombatUnitRuntime | null | undefined,
+  getConditionRoots?: (instanceId: string) => ItemInstance[] | null,
 ): void {
   if (tipShowTimer) {
     clearTimeout(tipShowTimer);
@@ -309,22 +309,18 @@ export function showSimTooltip(
         html += tipSection('被动效果');
         html += `<div class="sb-tip-fixed-row">被动目标: ${formatPassiveTargetLine(pcfg)}</div>`;
         html += '<div class="sb-tip-fixed-row sb-block-gap">被动效果</div>';
-        for (const line of passiveEffectPlainLines(pcfg)) {
-          html += `<div class="sb-tip-fixed-row">${line}</div>`;
+        for (const e of pcfg.passiveEffects) {
+          html += `<div class="sb-tip-fixed-row">${formatPassiveEffectPreviewLine(e)}</div>`;
         }
         const hint = passiveRootHint(pcfg);
         if (hint) html += `<div class="sb-tip-fixed-row">${hint}</div>`;
       }
 
-      const hasAffixInfo = def.poolPrerequisite.length > 0
-        || def.fixedAffixes.length > 0
+      const hasAffixInfo = def.fixedAffixes.length > 0
         || def.dynamicAffixSlots > 0
         || (def.preloadedDynamicAffixes && def.preloadedDynamicAffixes.length > 0);
       if (hasAffixInfo) {
         html += tipSection('词条');
-        if (def.poolPrerequisite.length > 0) {
-          html += `<div class="sb-tip-fixed-row">前置词条: ${resolveNames(def.poolPrerequisite)}</div>`;
-        }
         if (def.fixedAffixes.length > 0) {
           for (const fa of def.fixedAffixes) {
             const fd = getAffixDef(fa);
@@ -382,7 +378,10 @@ export function showSimTooltip(
 
     if (inst) {
       const cu = (instanceId && getCombatUnit) ? getCombatUnit(instanceId) : undefined;
-      h += renderTooltipTree(inst, def, 0, undefined, cu);
+      const roots = (instanceId && getConditionRoots)
+        ? getConditionRoots(instanceId)
+        : [inst];
+      h += renderTooltipTree(inst, def, 0, undefined, cu, roots);
     } else {
       h += renderPoolDef();
     }
@@ -400,15 +399,9 @@ export function showSimTooltip(
     h += tipkv('槽位消耗', def.slotCost);
     h += tipkv('可重复', def.repeatable ? '是' : '否');
     h += '</div>';
-    const hasAffixInfo = def.prerequisite.length > 0 || def.poolPrerequisite.length > 0;
-    if (hasAffixInfo) {
+    if (def.prerequisite.length > 0) {
       h += tipSection('词条');
-      if (def.prerequisite.length > 0) {
-        h += `<div class="sb-tip-fixed-row">前置词条: ${resolveNames(def.prerequisite)}</div>`;
-      }
-      if (def.poolPrerequisite.length > 0) {
-        h += `<div class="sb-tip-fixed-row">池前置: ${resolveNames(def.poolPrerequisite)}</div>`;
-      }
+      h += `<div class="sb-tip-fixed-row">前置词条: ${resolveNames(def.prerequisite)}</div>`;
     }
     if (def.targetingModifier) {
       const tm = def.targetingModifier;
@@ -434,8 +427,8 @@ export function showSimTooltip(
       h += tipSection('被动效果');
       h += `<div class="sb-tip-fixed-row">被动目标: ${formatPassiveTargetLine(pcfg)}</div>`;
       h += '<div class="sb-tip-fixed-row sb-block-gap">被动效果</div>';
-      for (const line of passiveEffectPlainLines(pcfg)) {
-        h += `<div class="sb-tip-fixed-row">${line}</div>`;
+      for (const e of pcfg.passiveEffects) {
+        h += `<div class="sb-tip-fixed-row">${formatPassiveEffectPreviewLine(e)}</div>`;
       }
       const hint = passiveRootHint(pcfg);
       if (hint) h += `<div class="sb-tip-fixed-row">${hint}</div>`;
@@ -472,6 +465,7 @@ export function bindTooltipOnRoot(
   root: HTMLElement,
   getInstance?: (instanceId: string) => ItemInstance | null,
   getCombatUnit?: (instanceId: string) => CombatUnitRuntime | null | undefined,
+  getConditionRoots?: (instanceId: string) => ItemInstance[] | null,
 ): void {
   root.querySelectorAll('[data-defid]').forEach(el => {
     const htmlEl = el as HTMLElement;
@@ -479,7 +473,7 @@ export function bindTooltipOnRoot(
     const type = (htmlEl.dataset.type || 'entity') as 'entity' | 'affix';
     const instId = htmlEl.dataset.instance || htmlEl.dataset.cardtoggle || null;
     htmlEl.addEventListener('mouseenter', (e) =>
-      showSimTooltip(e as MouseEvent, defId, type, instId, getInstance, getCombatUnit));
+      showSimTooltip(e as MouseEvent, defId, type, instId, getInstance, getCombatUnit, getConditionRoots));
     htmlEl.addEventListener('mouseleave', hideSimTooltip);
   });
 }
@@ -492,14 +486,17 @@ const delegatedRoots = new WeakSet<HTMLElement>();
  */
 const rootGetInstance = new WeakMap<HTMLElement, ((instanceId: string) => ItemInstance | null) | undefined>();
 const rootGetCombatUnit = new WeakMap<HTMLElement, ((instanceId: string) => CombatUnitRuntime | null | undefined) | undefined>();
+const rootGetConditionRoots = new WeakMap<HTMLElement, ((instanceId: string) => ItemInstance[] | null) | undefined>();
 
 export function bindSbTooltips(
   root: HTMLElement,
   getInstance?: (instanceId: string) => ItemInstance | null,
   getCombatUnit?: (instanceId: string) => CombatUnitRuntime | null | undefined,
+  getConditionRoots?: (instanceId: string) => ItemInstance[] | null,
 ): void {
   rootGetInstance.set(root, getInstance);
   rootGetCombatUnit.set(root, getCombatUnit);
+  rootGetConditionRoots.set(root, getConditionRoots);
   if (delegatedRoots.has(root)) return;
   delegatedRoots.add(root);
 
@@ -518,6 +515,7 @@ export function bindSbTooltips(
       instId,
       rootGetInstance.get(root),
       rootGetCombatUnit.get(root),
+      rootGetConditionRoots.get(root),
     );
   });
   root.addEventListener('mouseout', (e) => {

@@ -1567,6 +1567,26 @@ body.fg-resizing-row { cursor: row-resize !important; user-select: none; }
 }
 .tag-selector select:focus { outline: none; border-color: var(--adm-accent); }
 
+/* ── Admin 过滤区（目标 / 条件 / 拥有词条 各一行横排）── */
+.adm-filter-section {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.admin-field:has(.adm-filter-section) { align-items: flex-start; }
+.adm-filter-section > .adm-field-hint { padding: 0; margin: 0; }
+.adm-filter-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px 0;
+}
+.adm-filter-row-title {
+  margin-right: 8px; white-space: nowrap;
+  font-weight: 500; font-size: 12px; flex-shrink: 0;
+  color: var(--adm-text-secondary);
+}
+.adm-filter-row .popover-selector {
+  flex: 1; min-width: 0; margin: 0; padding: 0;
+}
+.adm-filter-row .popover-selector > label:empty { display: none; }
+
 /* ── Popover 选择器（方向A：替代 tag selector 的 select 下拉）── */
 .popover-selector { position: relative; margin: 0; padding: 6px 14px; }
 .popover-selector + .popover-selector { border-top: 1px solid #f5f5f5; }
@@ -2043,6 +2063,10 @@ body.fg-resizing-row { cursor: row-resize !important; user-select: none; }
   font-size: 13px;
 }
 .sb-card.dead { opacity: 0.45; }
+.sb-passive-inactive {
+  opacity: 0.45;
+  color: var(--sb-text-muted);
+}
 
 .sb-card-header {
   font-weight: 600; font-size: 13px; padding: 6px 10px;

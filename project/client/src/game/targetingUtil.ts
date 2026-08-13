@@ -182,8 +182,7 @@ export const EXTRA_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: 'is_starter', label: '仅启动端' },
   { value: 'is_stake', label: '仅木桩' },
   { value: 'hp_below_50pct', label: 'HP低于50%' },
-  { value: 'has_debuff', label: '有负面状态' },
-  { value: 'most_buffs', label: '有增益状态' },
+  // has_debuff / most_buffs：预留，Admin 不暴露（战斗未维护对应状态）
 ];
 
 export const ATTR_FILTER_OPTIONS: { value: string; label: string }[] = [
@@ -230,16 +229,18 @@ export function parseHasAffixFromFilterBy(filterBy: string[]): Set<string> {
   return ids;
 }
 
-/** 将 SubtreeCondition 转为预览前缀，如 "需: 斗士 ≥ 2 → " */
+/** 将 SubtreeCondition 转为预览前缀，如 "需: 斗士 ≥ 2 → "；传入 currentCount 时追加「（现 k）」 */
 export function conditionPreviewPrefix(
   cond: SubtreeCondition | undefined,
   affixOpts: { id: string; name: string }[],
+  currentCount?: number,
 ): string {
   if (!cond || !cond.matchIds?.length) return '';
   const names = cond.matchIds.map(id => affixOpts.find(o => o.id === id)?.name || id).join(', ');
   const op = cond.max !== undefined ? '≤' : '≥';
   const val = cond.max !== undefined ? cond.max : cond.min ?? 1;
-  return `需: ${names} ${op} ${val} → `;
+  const progress = currentCount !== undefined ? `（现 ${currentCount}）` : '';
+  return `需: ${names} ${op} ${val}${progress} → `;
 }
 
 /** 读表单多选过滤 */
@@ -259,16 +260,23 @@ export function renderFilterSectionHtml(params: {
 }): string {
   const { name, filterBy, affixPopoverId, affixOpts, hint, extra } = params;
   const affixSelectedIds = [...parseHasAffixFromFilterBy(filterBy)];
-  let h = '';
+  let h = '<div class="adm-filter-section">';
   if (hint) h += `<div class="adm-field-hint">${hint}</div>`;
-  h += `<div style="display:flex;flex-wrap:wrap;gap:2px 0;">
-    <label style="margin-right:8px;white-space:nowrap;font-weight:600">目标</label>
+  h += `<div class="adm-filter-row">
+    <span class="adm-filter-row-title">目标</span>
     ${filterCheckboxesRow(name, filterBy, FACTION_FILTER_OPTIONS)}
-    <label style="margin-right:8px;white-space:nowrap;font-weight:600;margin-left:12px">条件</label>
+  </div>`;
+  h += `<div class="adm-field-hint">条件可多选（AND）；需同时满足</div>`;
+  h += `<div class="adm-filter-row">
+    <span class="adm-filter-row-title">条件</span>
     ${filterCheckboxesRow(name, filterBy, EXTRA_FILTER_OPTIONS)}
   </div>`;
-  if (extra) h += extra;
-  h += `<div class="adm-field-hint" style="margin-top:2px">拥有词条（任意一个即匹配）：</div>`;
-  h += renderPopoverSelector(affixPopoverId, '', affixSelectedIds, affixOpts);
+  if (extra) h += `<div class="adm-filter-row">${extra}</div>`;
+  h += `<div class="adm-field-hint">拥有词条可多选（OR）；拥有其中任一即匹配</div>`;
+  h += `<div class="adm-filter-row">
+    <span class="adm-filter-row-title">拥有词条</span>
+    ${renderPopoverSelector(affixPopoverId, '', affixSelectedIds, affixOpts)}
+  </div>`;
+  h += '</div>';
   return h;
 }

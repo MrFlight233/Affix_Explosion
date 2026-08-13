@@ -7,8 +7,11 @@ export interface CollapseState {
   collapsedCards: Set<string>;
   collapsedAffixBlocks: Set<string>;
   collapsedChildBlocks: Set<string>;
-  collapsedFixedAffixRows: Set<string>;
+  /** 集合内 = 已展开；缺省折叠 */
+  expandedFixedAffixRows: Set<string>;
   collapsedDynAffixRows: Set<string>;
+  /** 集合内 = 已展开；缺省折叠 */
+  expandedCombatModBlocks: Set<string>;
 }
 
 export function createCollapseState(): CollapseState {
@@ -16,8 +19,9 @@ export function createCollapseState(): CollapseState {
     collapsedCards: new Set(),
     collapsedAffixBlocks: new Set(),
     collapsedChildBlocks: new Set(),
-    collapsedFixedAffixRows: new Set(),
+    expandedFixedAffixRows: new Set(),
     collapsedDynAffixRows: new Set(),
+    expandedCombatModBlocks: new Set(),
   };
 }
 

@@ -68,7 +68,7 @@ export function renderOfficialBdHtml(ctx: OfficialExploreCtx): string {
     const edef = getEntityDef(slot.entity.defId);
     if (!edef) continue;
     const unit = preview.find(u => u.instanceId === slot.entity.instanceId) || null;
-    h += renderEntityCard(slot.entity, 0, 'player', 'build', ctx.collapse, unit);
+    h += renderEntityCard(slot.entity, 0, 'player', 'build', ctx.collapse, unit, [slot.entity, ...slot.children]);
   }
   h += '</div></div>';
   return h;
@@ -503,8 +503,19 @@ function bindCollapseToggles(root: HTMLElement, ctx: OfficialExploreCtx): void {
     const instanceId = htmlEl.dataset.fixtoggle!;
     htmlEl.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (ctx.collapse.collapsedFixedAffixRows.has(instanceId)) ctx.collapse.collapsedFixedAffixRows.delete(instanceId);
-      else ctx.collapse.collapsedFixedAffixRows.add(instanceId);
+      if (ctx.collapse.expandedFixedAffixRows.has(instanceId)) ctx.collapse.expandedFixedAffixRows.delete(instanceId);
+      else ctx.collapse.expandedFixedAffixRows.add(instanceId);
+      ctx.onExploreChanged();
+    });
+  });
+
+  root.querySelectorAll('[data-combatmodtoggle]').forEach(el => {
+    const htmlEl = el as HTMLElement;
+    const instanceId = htmlEl.dataset.combatmodtoggle!;
+    htmlEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (ctx.collapse.expandedCombatModBlocks.has(instanceId)) ctx.collapse.expandedCombatModBlocks.delete(instanceId);
+      else ctx.collapse.expandedCombatModBlocks.add(instanceId);
       ctx.onExploreChanged();
     });
   });
@@ -525,6 +536,15 @@ export function bindOfficialExplore(root: HTMLElement, ctx: OfficialExploreCtx):
   bindSbTooltips(root, id => ctx.engine.findItem(id) ?? ctx.catalogItems.get(id) ?? null, (id) => {
     const preview = ctx.engine.previewBdRuntimes(ctx.engine.state.deploySlots);
     return preview.find(u => u.instanceId === id) || null;
+  }, (id) => {
+    const slot = ctx.engine.state.deploySlots.find(s => {
+      const walk = (n: ItemInstance): boolean => {
+        if (n.instanceId === id) return true;
+        return (n.children || []).some(walk);
+      };
+      return walk(s.entity) || s.children.some(walk);
+    });
+    return slot ? [slot.entity, ...slot.children] : null;
   });
 
   const shopPanel = root.querySelector('#merchant-panel') as HTMLElement | null;

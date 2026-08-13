@@ -90,6 +90,7 @@ export interface TargetingModifier {
   /** @deprecated */
   priorityTarget?: number | null;
   sortBy?: TargetSortBy;
+  /** 有值=覆写；省略=不修改。null 仅兼容旧数据，Admin 不再写入 */
   filterBy?: string | string[] | null;
   targetCount?: number | 'all' | null;
 }

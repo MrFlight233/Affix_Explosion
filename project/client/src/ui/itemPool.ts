@@ -164,7 +164,6 @@ export function showFullItemPool(onBack: () => void): void {
     const children = e.defaultChildren || [];
     const childIds = children.map(getChildDefId);
     const childUsed = sumEntitySlotCosts(childIds);
-    const poolPrereq = e.poolPrerequisite || [];
     const fixed = e.fixedAffixes || [];
 
     let h = `<h3>查看实体：${esc(e.name)}</h3>`;
@@ -179,7 +178,7 @@ export function showFullItemPool(onBack: () => void): void {
       field('本体价值', e.value),
     ].join(''));
 
-    // 词条关联
+    // 词条关联（不展示池前置）
     {
       let body = '';
       body += foldBlock(
@@ -189,13 +188,6 @@ export function showFullItemPool(onBack: () => void): void {
         `（${fixed.length}）`,
         affixRowsOrEmpty(fixed),
       );
-
-      if (poolPrereq.length === 0) {
-        body += field('池前置', '—');
-      } else {
-        body += `<div class="ip-fold-h" style="cursor:default;background:#fcfcfc;">池前置 <span class="sub">（${poolPrereq.length}）</span></div>`;
-        body += poolPrereq.map(id => affixRefRow(id)).join('');
-      }
 
       body += field('动态词条槽位', dynSlots);
 
@@ -323,22 +315,15 @@ export function showFullItemPool(onBack: () => void): void {
       field('可重复', a.repeatable ? '是' : '否'),
     ].join(''));
 
-    // 前置条件
+    // 前置条件（仅词条前置；不展示池前置）
     {
       const prereq = a.prerequisite || [];
-      const pool = a.poolPrerequisite || [];
       let body = '';
       if (prereq.length === 0) {
         body += field('前置词条', '—');
       } else {
         body += `<div class="ip-fold-h" style="cursor:default;background:#fcfcfc;">前置词条 <span class="sub">（${prereq.length}）</span></div>`;
         body += prereq.map(id => affixRefRow(id)).join('');
-      }
-      if (pool.length === 0) {
-        body += field('池前置', '—');
-      } else {
-        body += `<div class="ip-fold-h" style="cursor:default;background:#fcfcfc;">池前置 <span class="sub">（${pool.length}）</span></div>`;
-        body += pool.map(id => affixRefRow(id)).join('');
       }
       h += section('前置条件', body);
     }
@@ -364,7 +349,7 @@ export function showFullItemPool(onBack: () => void): void {
               : (SORT_BY_LABELS[tm.sortBy] || tm.sortBy);
         const filters = normalizeFilterBy(tm.filterBy);
         const filter =
-          tm.filterBy === null ? '无（清除过滤）'
+          tm.filterBy === null ? '（旧）清除过滤'
             : tm.filterBy === undefined ? '不修改'
               : (filters.map(f => FILTER_LABELS[f] || f).join('+') || '—');
         const count =

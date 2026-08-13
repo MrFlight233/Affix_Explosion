@@ -10,6 +10,7 @@ import {
   canMountAffix, canRemoveAffix,
   ENTITY_DEFS, AFFIX_DEFS, getEntityCategory,
   getEffectiveValue, getItemTradeValue, OnHitEffect, TargetCondition, TargetingModifier,
+  evaluateSubtreeCondition,
 } from './data';
 import {
   mergeFiltersWithLegacyFaction, normalizeTargetCount, resolveSortBy,
@@ -664,11 +665,15 @@ export class GameEngine {
     return bag;
   }
 
-  /** 递归收集子树所有词条的 defId */
+  /** 递归收集子树所有词条的 defId（含实体 fixedAffixes） */
   private collectAffixIds(item: ItemInstance): string[] {
     const ids: string[] = [];
     if (item.type === 'affix') {
       ids.push(item.defId);
+    } else if (item.type === 'entity') {
+      const edef = getEntityDef(item.defId);
+      const fixed = item.overrides?.fixedAffixes ?? edef?.fixedAffixes ?? [];
+      ids.push(...fixed);
     }
     for (const c of item.children || []) {
       ids.push(...this.collectAffixIds(c));
@@ -681,7 +686,7 @@ export class GameEngine {
     rootInstanceId: string,
     into: PassiveSourceRuntime[],
     parentEntityName?: string,
-    precomputedRootChildren?: ItemInstance[],
+    conditionRoots?: ItemInstance[],
   ): void {
     if (item.type === 'entity') {
       const cdef = getEntityDef(item.defId);
@@ -700,7 +705,7 @@ export class GameEngine {
         });
         if (cfg.hasPassiveBonuses && cfg.passiveEffects.length > 0) {
           const filtered = cfg.passiveEffects.filter(e =>
-            !e.condition || this.evaluateCondition(e.condition, precomputedRootChildren),
+            !e.condition || this.evaluateCondition(e.condition, conditionRoots),
           );
           if (filtered.length > 0) {
             const effects = clonePassiveEffects(filtered);
@@ -719,7 +724,7 @@ export class GameEngine {
         }
       }
       for (const c of item.children || []) {
-        this.collectPassiveSourcesFromTree(c, rootInstanceId, into, entityName || undefined, precomputedRootChildren);
+        this.collectPassiveSourcesFromTree(c, rootInstanceId, into, entityName || undefined, conditionRoots);
       }
     } else if (item.type === 'affix') {
       const adef = getAffixDef(item.defId);
@@ -737,7 +742,7 @@ export class GameEngine {
       });
       if (cfg.hasPassiveBonuses && cfg.passiveEffects.length > 0) {
         const filtered = cfg.passiveEffects.filter(e =>
-          !e.condition || this.evaluateCondition(e.condition, precomputedRootChildren),
+          !e.condition || this.evaluateCondition(e.condition, conditionRoots),
         );
         if (filtered.length > 0) {
           const effects = clonePassiveEffects(filtered);
@@ -760,24 +765,15 @@ export class GameEngine {
 
   private evaluateCondition(
     cond: SubtreeCondition,
-    precomputedRootChildren?: ItemInstance[],
+    conditionRoots?: ItemInstance[],
   ): boolean {
-    const children = precomputedRootChildren || [];
-    const idSet = new Set(cond.matchIds || []);
-    let count = 0;
-    for (const c of children) {
-      if (c.type !== 'affix') continue;
-      if (idSet.has(c.defId)) count++;
-    }
-    if (cond.min !== undefined && count < cond.min) return false;
-    if (cond.max !== undefined && count > cond.max) return false;
-    return true;
+    return evaluateSubtreeCondition(cond, conditionRoots || []);
   }
 
   private collectFromChildren(
     children: ItemInstance[],
     growthStack: number,
-    precomputedRootChildren?: ItemInstance[],
+    conditionRoots?: ItemInstance[],
   ): {
     totalLoad: number;
     weapons: CombatUnitSnapshot['activeWeapons'];
@@ -798,7 +794,7 @@ export class GameEngine {
           let localBag = this.collectHostOnHitBag(child);
           // 子树条件过滤：child 的 onHitEffects 基于 child 的子树统计
           localBag = localBag.filter(e =>
-            !(e as any).condition || this.evaluateCondition((e as any).condition, precomputedRootChildren),
+            !(e as any).condition || this.evaluateCondition((e as any).condition, conditionRoots),
           );
           if (growthStack) {
             localBag = cloneOnHitEffects(localBag);
@@ -826,7 +822,7 @@ export class GameEngine {
           });
         }
         if (child.children && child.children.length > 0) {
-          const nested = this.collectFromChildren(child.children, growthStack, precomputedRootChildren);
+          const nested = this.collectFromChildren(child.children, growthStack, conditionRoots);
           totalLoad += nested.totalLoad;
           for (const w of nested.weapons) weapons.push(w);
         }
@@ -849,32 +845,29 @@ export class GameEngine {
       const growthStack = this.state.growthStacks[slot.entity.instanceId] || 0;
       const allChildren = [...(slot.entity.children || []), ...slot.children];
 
-      // 预计算根子树展平列表（供 evaluateCondition scope:'root' 使用）
-      const precomputedRootChildren: ItemInstance[] = [
-        ...(slot.entity.children || []),
-        ...slot.children.flatMap(c => [c, ...(c.children || [])]),
-      ];
+      // 条件 / has_affix 同源：启动端实体 + slot 直属子项（递归计入 fixed 与实例）
+      const conditionRoots: ItemInstance[] = [slot.entity, ...slot.children];
 
       const collected = isStarter(edef)
-        ? this.collectFromChildren(allChildren, growthStack, precomputedRootChildren)
+        ? this.collectFromChildren(allChildren, growthStack, conditionRoots)
         : { totalLoad: 0, weapons: [] as CombatUnitSnapshot['activeWeapons'] };
 
       // 非 starter 仍统计负重（木桩可负重）
       if (!isStarter(edef)) {
-        const loadOnly = this.collectFromChildren(allChildren, 0, precomputedRootChildren);
+        const loadOnly = this.collectFromChildren(allChildren, 0, conditionRoots);
         collected.totalLoad = loadOnly.totalLoad;
       }
 
       const passiveSources: PassiveSourceRuntime[] = [];
       // 根自身 + 子树（slot.children 与 entity.children）
-      this.collectPassiveSourcesFromTree(slot.entity, slot.entity.instanceId, passiveSources, undefined, precomputedRootChildren);
+      this.collectPassiveSourcesFromTree(slot.entity, slot.entity.instanceId, passiveSources, undefined, conditionRoots);
       for (const c of slot.children) {
-        this.collectPassiveSourcesFromTree(c, slot.entity.instanceId, passiveSources, undefined, precomputedRootChildren);
+        this.collectPassiveSourcesFromTree(c, slot.entity.instanceId, passiveSources, undefined, conditionRoots);
       }
 
       const starterBag = isStarter(edef)
         ? this.collectHostOnHitBag(slot.entity, [slot.children])
-          .filter(e => !(e as any).condition || this.evaluateCondition((e as any).condition, precomputedRootChildren))
+          .filter(e => !(e as any).condition || this.evaluateCondition((e as any).condition, conditionRoots))
         : [];
 
       if (isStarter(edef)) {

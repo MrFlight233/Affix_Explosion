@@ -92,7 +92,7 @@ export function renderBattleSideCards(
       const edef = getEntityDef(slot.entity.defId);
       if (!edef) continue;
       const unit = units?.find(u => u.instanceId === slot.entity.instanceId);
-      h += renderEntityCard(slot.entity, 0, side, 'battle', ctx.collapse, unit);
+      h += renderEntityCard(slot.entity, 0, side, 'battle', ctx.collapse, unit, [slot.entity, ...slot.children]);
     }
     return h || '<div style="color:var(--sb-text-muted,#999);font-size:12px;padding:8px;">无单位</div>';
   }
@@ -253,10 +253,24 @@ export function bindOfficialCombatInteractions(root: HTMLElement, ctx: OfficialC
     const instanceId = htmlEl.dataset.fixtoggle!;
     htmlEl.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (ctx.collapse.collapsedFixedAffixRows.has(instanceId)) {
-        ctx.collapse.collapsedFixedAffixRows.delete(instanceId);
+      if (ctx.collapse.expandedFixedAffixRows.has(instanceId)) {
+        ctx.collapse.expandedFixedAffixRows.delete(instanceId);
       } else {
-        ctx.collapse.collapsedFixedAffixRows.add(instanceId);
+        ctx.collapse.expandedFixedAffixRows.add(instanceId);
+      }
+      ctx.onRebuildSides();
+    });
+  });
+
+  root.querySelectorAll('[data-combatmodtoggle]').forEach(el => {
+    const htmlEl = el as HTMLElement;
+    const instanceId = htmlEl.dataset.combatmodtoggle!;
+    htmlEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (ctx.collapse.expandedCombatModBlocks.has(instanceId)) {
+        ctx.collapse.expandedCombatModBlocks.delete(instanceId);
+      } else {
+        ctx.collapse.expandedCombatModBlocks.add(instanceId);
       }
       ctx.onRebuildSides();
     });
@@ -283,8 +297,19 @@ export function bindOfficialCombatInteractions(root: HTMLElement, ctx: OfficialC
     const eu = getOfficialCombatUnits(ctx, 'enemy');
     return pu?.find(u => u.instanceId === id) || eu?.find(u => u.instanceId === id) || null;
   };
-  if (playerSide) bindSbTooltips(playerSide, (id) => getOfficialCombatInstance(ctx, id), lookupCu);
-  if (enemySide) bindSbTooltips(enemySide, (id) => getOfficialCombatInstance(ctx, id), lookupCu);
+  const lookupRoots = (id: string): ItemInstance[] | null => {
+    const findSlot = (slots: DeploySlot[]) => slots.find(s => {
+      const walk = (n: ItemInstance): boolean => {
+        if (n.instanceId === id) return true;
+        return (n.children || []).some(walk);
+      };
+      return walk(s.entity) || s.children.some(walk);
+    });
+    const slot = findSlot(getSideSlots(ctx, 'player')) || findSlot(getSideSlots(ctx, 'enemy'));
+    return slot ? [slot.entity, ...slot.children] : null;
+  };
+  if (playerSide) bindSbTooltips(playerSide, (id) => getOfficialCombatInstance(ctx, id), lookupCu, lookupRoots);
+  if (enemySide) bindSbTooltips(enemySide, (id) => getOfficialCombatInstance(ctx, id), lookupCu, lookupRoots);
 
   const btn = document.getElementById('btn-continue-combat-center');
   if (btn) {

@@ -1,7 +1,7 @@
 import { CombatUnitRuntime } from '../../game/engine';
 import {
   EntityDef, AffixDef, ItemInstance,
-  getEntityDef, getAffixDef, isStarter, getEntityCategory, getCategoryName,
+  getEntityDef, getAffixDef, isStarter, getCategoryName,
   getEffectiveEntitySlots, countUsedSlots, countUsedAffixSlots, getEffectiveValue,
   getItemTradeValue, computeStarterLoad,
 } from '../../game/data';
@@ -15,8 +15,8 @@ import {
 } from '../../game/activeActionDisplay';
 import {
   formatPassiveCollapseSummary,
-  formatPassiveEffectDisplay,
   formatPassiveTargetLine,
+  getPassiveEffectDisplayRows,
   hasDisplayPassive,
   passiveRootHint,
   resolvePassiveForDisplay,
@@ -200,15 +200,14 @@ export function renderCardKeyInfo(
       }
       return summary ? `${prefix}  ${summary}` : prefix;
     }
-    const cat = getEntityCategory(edef).join(' / ');
     if (depth === 0) {
       const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${edef.hp}/${edef.hp}`;
       if (mode === 'battle' && combatUnit && sideFirst) {
-        return `${edef.name}  HP:<span id="cu-hp-${sideFirst}-${item.instanceId}">${hp}</span>  重:${formatWeightG(edef.weight)}  ${cat}`;
+        return `${edef.name}  HP:<span id="cu-hp-${sideFirst}-${item.instanceId}">${hp}</span>  重:${formatWeightG(edef.weight)}`;
       }
-      return `${edef.name}  HP:${hp}  重:${formatWeightG(edef.weight)}  ${cat}`;
+      return `${edef.name}  HP:${hp}  重:${formatWeightG(edef.weight)}`;
     }
-    return `${edef.name}  重:${formatWeightG(edef.weight)}  ${cat}`;
+    return `${edef.name}  重:${formatWeightG(edef.weight)}`;
   }
 }
 
@@ -241,10 +240,14 @@ export function renderEntityCard(
   mode: CardMode,
   collapse: CollapseState,
   combatUnit?: CombatUnitRuntime | null,
+  /** 启动端条件根（entity + slot.children）；嵌套卡传入同一引用 */
+  conditionRoots?: ItemInstance[] | null,
 ): string {
   const isEntity = item.type === 'entity';
   const def = isEntity ? getEntityDef(item.defId) : getAffixDef(item.defId) as AffixDef | undefined;
   if (!def) return '';
+
+  const roots = conditionRoots ?? (depth === 0 && isEntity ? [item] : null);
 
   const instanceId = item.instanceId;
   const sideFirst = sidePrefix(side);
@@ -293,15 +296,10 @@ export function renderEntityCard(
     h += `分类: ${getCategoryName(adef.category)}  槽耗: ${adef.slotCost}  价值: ${getItemTradeValue(item)}  可重复: ${adef.repeatable ? '是' : '否'}`;
     h += '</div></div>';
 
-    if (adef.prerequisite.length > 0 || adef.poolPrerequisite.length > 0) {
+    if (adef.prerequisite.length > 0) {
       h += '<div class="sb-card-block">';
       h += '<div class="sb-block-title">前置</div>';
-      if (adef.prerequisite.length > 0) {
-        h += `<div class="sb-card-stats">前置词条: ${resolveNames(adef.prerequisite)}</div>`;
-      }
-      if (adef.poolPrerequisite.length > 0) {
-        h += `<div class="sb-card-stats">池前置: ${resolveNames(adef.poolPrerequisite)}</div>`;
-      }
+      h += `<div class="sb-card-stats">前置词条: ${resolveNames(adef.prerequisite)}</div>`;
       h += '</div>';
     }
 
@@ -336,9 +334,9 @@ export function renderEntityCard(
       h += '<div class="sb-block-title">被动加成</div>';
       h += `<div class="sb-card-stats">被动目标: ${formatPassiveTargetLine(pcfg)}</div>`;
       h += '<div class="sb-card-stats sb-block-gap">被动效果</div>';
-      h += '<div class="sb-card-stats">';
-      h += pcfg.passiveEffects.map(e => formatPassiveEffectDisplay(e)).join('  ');
-      h += '</div>';
+      for (const row of getPassiveEffectDisplayRows(pcfg, roots)) {
+        h += `<div class="sb-card-stats${row.active ? '' : ' sb-passive-inactive'}">${row.text}</div>`;
+      }
       const hint = passiveRootHint(pcfg);
       if (hint) h += `<div class="sb-card-stats sb-hint">${hint}</div>`;
       h += '</div>';
@@ -457,9 +455,9 @@ export function renderEntityCard(
     const pcfg = resolvePassiveForDisplay(edef);
     h += `<div class="sb-card-stats">被动目标: ${formatPassiveTargetLine(pcfg)}</div>`;
     h += '<div class="sb-card-stats sb-block-gap">被动效果</div>';
-    h += '<div class="sb-card-stats">';
-    h += pcfg.passiveEffects.map(e => formatPassiveEffectDisplay(e)).join('  ');
-    h += '</div>';
+    for (const row of getPassiveEffectDisplayRows(pcfg, roots)) {
+      h += `<div class="sb-card-stats${row.active ? '' : ' sb-passive-inactive'}">${row.text}</div>`;
+    }
     const hint = passiveRootHint(pcfg);
     if (hint) h += `<div class="sb-card-stats sb-hint">${hint}</div>`;
     h += '</div>';
@@ -467,10 +465,14 @@ export function renderEntityCard(
   if (combatUnit) {
     const modLines = summarizePassiveModsBySource(combatUnit);
     if (modLines.length > 0) {
+      const modExpanded = collapse.expandedCombatModBlocks.has(instanceId);
       h += '<div class="sb-card-block">';
-      h += '<div class="sb-block-title">战斗修饰</div>';
-      for (const line of modLines) {
-        h += `<div class="sb-card-stats">${line}</div>`;
+      h += `<div class="sb-block-title" data-combatmodtoggle="${instanceId}" style="cursor:pointer;">`;
+      h += `战斗修饰 (${modLines.length}) <span style="font-weight:400;color:var(--sb-text-muted,inherit);margin-left:2px;">${modExpanded ? '收起' : '展开'}</span></div>`;
+      if (modExpanded) {
+        for (const line of modLines) {
+          h += `<div class="sb-card-stats">${line}</div>`;
+        }
       }
       h += '</div>';
     }
@@ -480,7 +482,6 @@ export function renderEntityCard(
   const dynAffixCount = dynAffixList.length;
   const usedAffixSlots = countUsedAffixSlots(item);
   const hasAffixBlock = (edef && edef.dynamicAffixSlots > 0) || dynAffixCount > 0 || (edef && edef.fixedAffixes.length > 0)
-    || (edef && edef.poolPrerequisite.length > 0)
     || (edef && edef.preloadedDynamicAffixes && edef.preloadedDynamicAffixes.length > 0);
   if (hasAffixBlock) {
     h += '<div class="sb-card-block">';
@@ -488,14 +489,12 @@ export function renderEntityCard(
     h += `<div class="sb-block-title" data-affixblocktoggle="${instanceId}" style="cursor:pointer;">`;
     h += `词条 · ${usedAffixSlots}/${affixSlots} 槽位 <span style="font-weight:400;color:var(--sb-text-muted,inherit);margin-left:2px;">${affixBlockCollapsed ? '展开' : '收起'}</span></div>`;
     h += `<div class="sb-foldable${affixBlockCollapsed ? ' sb-folded' : ''}">`;
-    if (edef && edef.poolPrerequisite.length > 0) {
-      h += `<div class="sb-card-stats">前置词条: ${resolveNames(edef.poolPrerequisite)}</div>`;
-    }
     if (edef && edef.preloadedDynamicAffixes && edef.preloadedDynamicAffixes.length > 0) {
       h += `<div class="sb-card-stats">预装动态词条: ${resolveNames(edef.preloadedDynamicAffixes)}</div>`;
     }
     if (edef && edef.fixedAffixes.length > 0) {
-      const fixCollapsed = collapse.collapsedFixedAffixRows.has(instanceId);
+      const fixExpanded = collapse.expandedFixedAffixRows.has(instanceId);
+      const fixCollapsed = !fixExpanded;
       const fnames = edef.fixedAffixes.map(a => getAffixDef(a)?.name || a).join('、');
       h += `<div class="sb-card-stats" data-fixtoggle="${instanceId}" style="cursor:pointer;">`;
       h += `固定词条 (${edef.fixedAffixes.length}) <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${fixCollapsed ? '展开' : '收起'}</span>`;
@@ -514,7 +513,7 @@ export function renderEntityCard(
         ? dynAffixList.map(c => { const ad = getAffixDef(c.defId); return ad ? ad.name : c.defId; }).join('、')
         : '';
       h += `<div class="sb-card-stats" data-dyntoggle="${instanceId}" style="cursor:pointer;">`;
-      h += `动态词条 (${dynAffixCount}条, 已用${usedAffixSlots}槽) <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${dynCollapsed ? '展开' : '收起'}</span>`;
+      h += `动态词条 (${usedAffixSlots}/${affixSlots} 槽位) <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${dynCollapsed ? '展开' : '收起'}</span>`;
       if (dynCollapsed && dynAffixCount > 0) h += ` ${dnames}`;
       h += '</div>';
       if (!dynCollapsed) {
@@ -559,7 +558,7 @@ export function renderEntityCard(
       h += '<div class="sb-child-area">';
     }
     for (const child of entityChildren) {
-      h += renderEntityCard(child, depth + 1, side, mode, collapse, null);
+      h += renderEntityCard(child, depth + 1, side, mode, collapse, null, roots);
     }
     if (mode === 'build') {
       const remaining = effSlots - usedSlots;

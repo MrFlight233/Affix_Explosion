@@ -100,14 +100,11 @@ function renderEntityTooltip(tip: HTMLElement, def: EntityDef) {
     if (hint) html += `<div class="tt-row tt-hint">${hint}</div>`;
   }
 
-  // 词条
-  const hasAffixes = def.poolPrerequisite.length > 0 || def.fixedAffixes.length > 0 || def.dynamicAffixSlots > 0
+  // 词条（不展示池前置）
+  const hasAffixes = def.fixedAffixes.length > 0 || def.dynamicAffixSlots > 0
     || (def.preloadedDynamicAffixes && def.preloadedDynamicAffixes.length > 0);
   if (hasAffixes) {
     html += '<div class="tt-section">词条</div>';
-    if (def.poolPrerequisite.length > 0) {
-      html += `<div class="tt-row"><span class="tt-label">前置词条:</span>${def.poolPrerequisite.map(id => { const a = getAffixDef(id); return a ? a.name : id; }).join('、') || '无'}</div>`;
-    }
     html += `<div class="tt-row"><span class="tt-label">固定词条:</span>${def.fixedAffixes.map(id => { const a = getAffixDef(id); return a ? a.name : id; }).join('、') || '无'}</div>`;
     html += `<div class="tt-row"><span class="tt-label">动态词条槽位:</span>${def.dynamicAffixSlots}</div>`;
     if (def.preloadedDynamicAffixes && def.preloadedDynamicAffixes.length > 0) {
@@ -144,9 +141,6 @@ function renderAffixTooltip(tip: HTMLElement, def: any) {
   html += `<div class="tt-row"><span class="tt-label">可重复:</span>${def.repeatable ? '是' : '否'}</div>`;
   html += '<div class="tt-section">词条</div>';
   html += `<div class="tt-row"><span class="tt-label">前置词条:</span>${resolvePrereq(def.prerequisite)}</div>`;
-  if (def.poolPrerequisite && def.poolPrerequisite.length > 0) {
-    html += `<div class="tt-row"><span class="tt-label">池前置:</span>${resolvePrereq(def.poolPrerequisite)}</div>`;
-  }
   if (def.targetingModifier) {
     const tm = def.targetingModifier;
     html += '<div class="tt-section">主动目标覆写</div>';

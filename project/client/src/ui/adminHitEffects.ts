@@ -180,7 +180,10 @@ function renderHitConditionEditor(prefix: string, i: number, e: OnHitEffect): st
     <option value="无"${!hasCond ? ' selected' : ''}>无</option>
   </select></div>
   <div id="${prefix}-cond-body-${i}" style="${hasCond ? '' : 'display:none'}">
-    ${renderPopoverSelector(`${prefix}-cond-ids-${i}`, '需求词条', matchIds, _hitAffixOpts)}
+    <div class="adm-filter-row" style="padding:6px 14px">
+      <span class="adm-filter-row-title">需求词条</span>
+      ${renderPopoverSelector(`${prefix}-cond-ids-${i}`, '', matchIds, _hitAffixOpts)}
+    </div>
     <div class="admin-field" style="display:flex;gap:4px;align-items:center"><label>条件</label><select class="${prefix}-cond-dir">
       <option value=">=" ${direction === '>=' ? 'selected' : ''}>≥</option>
       <option value="<=" ${direction === '<=' ? 'selected' : ''}>≤</option>

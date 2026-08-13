@@ -49,8 +49,9 @@ interface SimBattleState {
   collapsedCards: Set<string>;
   collapsedAffixBlocks: Set<string>;
   collapsedChildBlocks: Set<string>;
-  collapsedFixedAffixRows: Set<string>;
+  expandedFixedAffixRows: Set<string>;
   collapsedDynAffixRows: Set<string>;
+  expandedCombatModBlocks: Set<string>;
   inBattle: boolean;
   battleFinished: boolean;
   battlePaused: boolean;
@@ -85,8 +86,9 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
     collapsedCards: new Set(),
     collapsedAffixBlocks: new Set(),
     collapsedChildBlocks: new Set(),
-    collapsedFixedAffixRows: new Set(),
+    expandedFixedAffixRows: new Set(),
     collapsedDynAffixRows: new Set(),
+    expandedCombatModBlocks: new Set(),
     inBattle: false,
     battleFinished: false,
     battlePaused: false,
@@ -113,8 +115,9 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
       collapsedCards: state.collapsedCards,
       collapsedAffixBlocks: state.collapsedAffixBlocks,
       collapsedChildBlocks: state.collapsedChildBlocks,
-      collapsedFixedAffixRows: state.collapsedFixedAffixRows,
+      expandedFixedAffixRows: state.expandedFixedAffixRows,
       collapsedDynAffixRows: state.collapsedDynAffixRows,
+      expandedCombatModBlocks: state.expandedCombatModBlocks,
     };
   }
 
@@ -124,6 +127,18 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
 
   function getInstance(instanceId: string): ItemInstance | null {
     return findItemInSlots(state.playerSlots, instanceId) || findItemInSlots(state.enemySlots, instanceId);
+  }
+
+  function getConditionRoots(instanceId: string): ItemInstance[] | null {
+    const findSlot = (slots: DeploySlot[]) => slots.find(s => {
+      const walk = (n: ItemInstance): boolean => {
+        if (n.instanceId === instanceId) return true;
+        return (n.children || []).some(walk);
+      };
+      return walk(s.entity) || s.children.some(walk);
+    });
+    const slot = findSlot(state.playerSlots) || findSlot(state.enemySlots);
+    return slot ? [slot.entity, ...slot.children] : null;
   }
 
   function refreshDeployUI(changedSides: Array<'player' | 'enemy'>, alsoPool = false) {
@@ -563,7 +578,7 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
       const edef = getEntityDef(slot.entity.defId);
       if (!edef) continue;
       const unit = preview.find(u => u.instanceId === slot.entity.instanceId) || null;
-      h += renderEntityCard(slot.entity, 0, side, 'build', getCollapse(), unit);
+      h += renderEntityCard(slot.entity, 0, side, 'build', getCollapse(), unit, [slot.entity, ...slot.children]);
     }
 
     h += '</div>';
@@ -586,7 +601,7 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
       const edef = getEntityDef(slot.entity.defId);
       if (!edef) continue;
       const unit = units?.find(u => u.instanceId === slot.entity.instanceId);
-      h += renderEntityCard(slot.entity, 0, side, 'battle', getCollapse(), unit);
+      h += renderEntityCard(slot.entity, 0, side, 'battle', getCollapse(), unit, [slot.entity, ...slot.children]);
     }
     return h;
   }
@@ -604,7 +619,7 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
 
   function bindBattleTooltips() {
     const body = document.getElementById('sb-battle-body');
-    if (body) bindSbTooltips(body, getInstance, lookupCombatUnit);
+    if (body) bindSbTooltips(body, getInstance, lookupCombatUnit, getConditionRoots);
   }
 
   // ---- 动态战斗数值更新（重绘 body 确保所有数值实时） ----
@@ -1035,7 +1050,7 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
   function bindTooltipEvents() {
     for (const id of ['sb-player-bd', 'sb-enemy-bd'] as const) {
       const el = document.getElementById(id);
-      if (el) bindSbTooltips(el, getInstance, lookupCombatUnit);
+      if (el) bindSbTooltips(el, getInstance, lookupCombatUnit, getConditionRoots);
     }
   }
 
@@ -1096,14 +1111,25 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
         if (label) label.textContent = collapsing ? '展开' : '收起';
       });
     });
-    // 固定词条展开/折叠 — 重新渲染该卡片（结构变化较大）
+    // 固定词条展开/折叠 — 重新渲染该卡片（结构变化较大）；集合内=已展开，缺省折叠
     document.querySelectorAll('[data-fixtoggle]').forEach(el => {
       const htmlEl = el as HTMLElement;
       const instanceId = htmlEl.dataset.fixtoggle!;
       htmlEl.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (state.collapsedFixedAffixRows.has(instanceId)) state.collapsedFixedAffixRows.delete(instanceId);
-        else state.collapsedFixedAffixRows.add(instanceId);
+        if (state.expandedFixedAffixRows.has(instanceId)) state.expandedFixedAffixRows.delete(instanceId);
+        else state.expandedFixedAffixRows.add(instanceId);
+        rebuildSingleCard(instanceId);
+      });
+    });
+    // 战斗修饰展开/折叠
+    document.querySelectorAll('[data-combatmodtoggle]').forEach(el => {
+      const htmlEl = el as HTMLElement;
+      const instanceId = htmlEl.dataset.combatmodtoggle!;
+      htmlEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (state.expandedCombatModBlocks.has(instanceId)) state.expandedCombatModBlocks.delete(instanceId);
+        else state.expandedCombatModBlocks.add(instanceId);
         rebuildSingleCard(instanceId);
       });
     });
@@ -1140,7 +1166,15 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
     } else {
       combatUnit = engine.previewBdRuntimes(slots).find(u => u.instanceId === item.instanceId) || null;
     }
-    const newHtml = renderEntityCard(item, depth, side, mode, getCollapse(), combatUnit);
+    const slot = slots.find(s => {
+      const walk = (n: ItemInstance): boolean => {
+        if (n.instanceId === item.instanceId) return true;
+        return (n.children || []).some(walk);
+      };
+      return walk(s.entity) || s.children.some(walk);
+    });
+    const conditionRoots = slot ? [slot.entity, ...slot.children] : [item];
+    const newHtml = renderEntityCard(item, depth, side, mode, getCollapse(), combatUnit, conditionRoots);
     const temp = document.createElement('div');
     temp.innerHTML = newHtml;
     const newCard = temp.firstElementChild as HTMLElement;
@@ -1206,8 +1240,17 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
       t.addEventListener('click', (ev) => {
         ev.stopPropagation();
         const fi = (t as HTMLElement).dataset.fixtoggle!;
-        if (state.collapsedFixedAffixRows.has(fi)) state.collapsedFixedAffixRows.delete(fi);
-        else state.collapsedFixedAffixRows.add(fi);
+        if (state.expandedFixedAffixRows.has(fi)) state.expandedFixedAffixRows.delete(fi);
+        else state.expandedFixedAffixRows.add(fi);
+        rebuildSingleCard(fi);
+      });
+    });
+    card.querySelectorAll('[data-combatmodtoggle]').forEach(t => {
+      t.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const fi = (t as HTMLElement).dataset.combatmodtoggle!;
+        if (state.expandedCombatModBlocks.has(fi)) state.expandedCombatModBlocks.delete(fi);
+        else state.expandedCombatModBlocks.add(fi);
         rebuildSingleCard(fi);
       });
     });
@@ -1225,7 +1268,7 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
 
   /** 单张卡片（含子树）tooltip 绑定；build / battle 共用 */
   function bindTooltipEventsOnCard(card: HTMLElement) {
-    bindTooltipOnRoot(card, getInstance, lookupCombatUnit);
+    bindTooltipOnRoot(card, getInstance, lookupCombatUnit, getConditionRoots);
   }
 
 

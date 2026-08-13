@@ -71,7 +71,7 @@ export function renderPassiveBonusesEditor(
   h += `<div class="adm-section-title">被动目标</div>`;
   h += `<div class="admin-field"><label>排序</label><select id="${prefix}-ptc-sortBy">${sortByOptionsHtml(tc.sortBy || 'random', false)}</select></div>`;
   h += `<div class="admin-field"><label>过滤</label>
-${renderFilterSectionHtml({ name: prefix + '-ptc-filter', filterBy, affixPopoverId: prefix + '-ptc-has-affix', affixOpts: _affixOpts })}
+${renderFilterSectionHtml({ name: prefix + '-ptc-filter', filterBy, affixPopoverId: prefix + '-ptc-has-affix', affixOpts: _affixOpts, hint: '目标可多选（OR）；仅「根实体」=发动者；全不选=空目标' })}
 </div>`;
   h += `<div class="admin-field"><label>目标数量</label><select id="${prefix}-ptc-count">
     <option value="1"${countVal === '1' ? ' selected' : ''}>1</option>
@@ -127,7 +127,10 @@ function renderConditionEditor(prefix: string, i: number, cond?: SubtreeConditio
     <option value="无"${!hasCond ? ' selected' : ''}>无</option>
   </select></div>
   <div id="${prefix}-pe-cond-body-${i}" style="${hasCond ? '' : 'display:none'}">
-    ${renderPopoverSelector(`${prefix}-pe-cond-ids-${i}`, '需求词条', matchIds, _affixOpts)}
+    <div class="adm-filter-row" style="padding:6px 14px">
+      <span class="adm-filter-row-title">需求词条</span>
+      ${renderPopoverSelector(`${prefix}-pe-cond-ids-${i}`, '', matchIds, _affixOpts)}
+    </div>
     <div class="admin-field" style="display:flex;gap:4px;align-items:center"><label>条件</label><select class="${prefix}-pe-cond-dir">
       <option value=">=" ${direction === '>=' ? 'selected' : ''}>≥</option>
       <option value="<=" ${direction === '<=' ? 'selected' : ''}>≤</option>

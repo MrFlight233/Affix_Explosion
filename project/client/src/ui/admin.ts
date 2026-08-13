@@ -783,7 +783,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
     let filters = mergeFiltersWithLegacyFaction(tc?.filterBy, v('targetFaction'));
     if (isNew && splitFilters(filters).factions.length === 0) filters = ['敌人'];
     h += `<div class="admin-field"><label>过滤(多选)</label>
-${renderFilterSectionHtml({ name: 'ef-tc-filter', filterBy: filters, affixPopoverId: 'ef-tc-has-affix', affixOpts: state.affixes.map(a => ({ id: a.id, name: a.name, cat: getCategoryName(a.category) })), hint: '阵营未勾选则空放耗耐' })}
+${renderFilterSectionHtml({ name: 'ef-tc-filter', filterBy: filters, affixPopoverId: 'ef-tc-has-affix', affixOpts: state.affixes.map(a => ({ id: a.id, name: a.name, cat: getCategoryName(a.category) })), hint: '目标可多选（OR）；仅「根实体」=发动者；全不选=空目标' })}
 </div>`;
     const countRaw = v('targetCount') ?? tc?.targetCount;
     const countNorm = normalizeTargetCount(countRaw);
@@ -932,10 +932,11 @@ ${renderFilterSectionHtml({ name: 'ef-tc-filter', filterBy: filters, affixPopove
     h += `<div id="af-tm-fields" style="${tmEnabled?'':'display:none'}">`;
     const tmSort = tm?.sortBy === null ? 'none' : (tm?.sortBy ?? (tm?.priorityTarget != null ? `站位${tm.priorityTarget}` : tm?.targetOrder) ?? '');
     h += `<div class="admin-field"><label>统一排序</label><select id="af-tm-sortBy"><option value="">不修改</option>${sortByOptionsHtml(tmSort && tmSort !== 'none' ? String(tmSort) : null, false)}<option value="none"${tmSort==='none'?' selected':''}>无（清除排序）</option></select></div>`;
-    const tmFilters = mergeFiltersWithLegacyFaction(tm?.filterBy, tm?.targetFaction);
-    const tmFilterClear = tm?.filterBy === null && tm?.targetFaction === null;
+    const tmFilters = tm?.filterBy === null
+      ? []
+      : mergeFiltersWithLegacyFaction(tm?.filterBy, tm?.targetFaction);
     h += `<div class="admin-field"><label>过滤(多选)</label>
-${renderFilterSectionHtml({ name: 'af-tm-filter', filterBy: tmFilterClear ? [] : tmFilters, affixPopoverId: 'af-tm-has-affix', affixOpts: state.affixes.map(a => ({ id: a.id, name: a.name, cat: getCategoryName(a.category) })), hint: '含阵营；未勾阵营且清除则空池', extra: `<label style="margin-left:8px"><input type="checkbox" id="af-tm-filter-clear"${tmFilterClear?' checked':''}> 清除过滤</label>` })}
+${renderFilterSectionHtml({ name: 'af-tm-filter', filterBy: tmFilters, affixPopoverId: 'af-tm-has-affix', affixOpts: state.affixes.map(a => ({ id: a.id, name: a.name, cat: getCategoryName(a.category) })), hint: '目标可多选（OR）；仅「根实体」=发动者；全不选=空目标。勾选则覆写过滤；全不勾则不修改实体过滤' })}
 </div>`;
     const tmCount = tm?.targetCount;
     const tmCountSel = tmCount === null ? 'none' : tmCount === undefined ? '' : (tmCount === 'all' || tmCount === -1 ? 'all' : String(tmCount));
@@ -1218,14 +1219,8 @@ ${renderFilterSectionHtml({ name: 'af-tm-filter', filterBy: tmFilterClear ? [] :
             const sbVal = (document.getElementById('af-tm-sortBy') as HTMLSelectElement).value;
             if (sbVal === 'none') mod.sortBy = null;
             else if (sbVal) mod.sortBy = sbVal;
-            const clearFb = (document.getElementById('af-tm-filter-clear') as HTMLInputElement)?.checked;
-            if (clearFb) {
-              mod.filterBy = null;
-              mod.targetFaction = null;
-            } else {
-              const fb = mergeHasAffixFilterBy(readFilterCheckboxes('af-tm-filter'), readAffixMultiSelect('af-tm-has-affix'));
-              if (fb.length) mod.filterBy = fb;
-            }
+            const fb = mergeHasAffixFilterBy(readFilterCheckboxes('af-tm-filter'), readAffixMultiSelect('af-tm-has-affix'));
+            if (fb.length) mod.filterBy = fb;
             const tcVal = (document.getElementById('af-tm-targetCount') as HTMLSelectElement).value;
             if (tcVal === 'none') mod.targetCount = null;
             else if (tcVal === 'all') mod.targetCount = 'all';
