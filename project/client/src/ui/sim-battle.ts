@@ -16,7 +16,8 @@ import {
 import { data as dataApi } from '../api/client';
 import { mountBattleLog, type BattleLogBridge } from './sim/mountBattleLog';
 import { renderPlaybackControlsHtml } from './playbackControls';
-import type { CollapseState } from './build/types';
+import type { CollapseState, CardSide } from './build/types';
+import { collapseKey, parseCollapseKey } from './build/types';
 import { renderEntityCard } from './build/entityCard';
 import { formatCombatEventLogHtml } from '../game/activeActionDisplay';
 import { showAppToast } from './toast';
@@ -125,11 +126,13 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
     return state;
   }
 
-  function getInstance(instanceId: string): ItemInstance | null {
+  function getInstance(instanceId: string, side?: CardSide): ItemInstance | null {
+    if (side === 'enemy') return findItemInSlots(state.enemySlots, instanceId);
+    if (side === 'player') return findItemInSlots(state.playerSlots, instanceId);
     return findItemInSlots(state.playerSlots, instanceId) || findItemInSlots(state.enemySlots, instanceId);
   }
 
-  function getConditionRoots(instanceId: string): ItemInstance[] | null {
+  function getConditionRoots(instanceId: string, side?: CardSide): ItemInstance[] | null {
     const findSlot = (slots: DeploySlot[]) => slots.find(s => {
       const walk = (n: ItemInstance): boolean => {
         if (n.instanceId === instanceId) return true;
@@ -137,7 +140,10 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
       };
       return walk(s.entity) || s.children.some(walk);
     });
-    const slot = findSlot(state.playerSlots) || findSlot(state.enemySlots);
+    let slot: DeploySlot | undefined;
+    if (side === 'enemy') slot = findSlot(state.enemySlots);
+    else if (side === 'player') slot = findSlot(state.playerSlots);
+    else slot = findSlot(state.playerSlots) || findSlot(state.enemySlots);
     return slot ? [slot.entity, ...slot.children] : null;
   }
 
@@ -248,7 +254,7 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
         if (side === 'player') state.playerSlots = bd;
         else state.enemySlots = bd;
         // 所有可折叠卡片默认折叠
-        collapseAllCards(bd);
+        collapseAllCards(bd, side);
         renderZones();
         showToast(`已从对战池抽取 ${side === 'player' ? '玩家' : '对手'} BD`);
       } else {
@@ -387,9 +393,9 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
   }
 
   /** 将 BD 所有可折叠卡片设为折叠状态 */
-  function collapseAllCards(slots: DeploySlot[]) {
+  function collapseAllCards(slots: DeploySlot[], side: 'player' | 'enemy') {
     for (const id of collectEntityIds(slots)) {
-      state.collapsedCards.add(id);
+      state.collapsedCards.add(collapseKey(side, id));
     }
   }
 
@@ -963,9 +969,9 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
         const err = canPlaceInSlot(slots, state.round, undefined, parentId, poolDef);
         if (err) return err;
         const newItem = engine.createItem(session.defId, 'entity');
-        state.collapsedCards.add(newItem.instanceId);
+        state.collapsedCards.add(collapseKey(hit.side, newItem.instanceId));
         for (const c of newItem.children || []) {
-          if (c.type === 'entity') state.collapsedCards.add(c.instanceId);
+          if (c.type === 'entity') state.collapsedCards.add(collapseKey(hit.side, c.instanceId));
         }
         if (parentId == null) {
           // 子项只留在 entity.children；勿浅拷贝到 slot.children（否则卸下后开战仍合并残留）
@@ -1034,13 +1040,25 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
   }
 
   /** 悬浮窗取运行时（战斗用当前单位；BD 用被动预览） */
-  function lookupCombatUnit(instanceId: string): CombatUnitRuntime | null {
+  function lookupCombatUnit(instanceId: string, side?: CardSide): CombatUnitRuntime | null {
     if (state.inBattle) {
+      if (side === 'enemy') {
+        return getCombatUnits('enemy')?.find(u => u.instanceId === instanceId) || null;
+      }
+      if (side === 'player') {
+        return getCombatUnits('player')?.find(u => u.instanceId === instanceId) || null;
+      }
       const pu = getCombatUnits('player');
       const eu = getCombatUnits('enemy');
       return pu?.find(u => u.instanceId === instanceId)
         || eu?.find(u => u.instanceId === instanceId)
         || null;
+    }
+    if (side === 'enemy') {
+      return engine.previewBdRuntimes(state.enemySlots).find(u => u.instanceId === instanceId) || null;
+    }
+    if (side === 'player') {
+      return engine.previewBdRuntimes(state.playerSlots).find(u => u.instanceId === instanceId) || null;
     }
     const p = engine.previewBdRuntimes(state.playerSlots)
       .find(u => u.instanceId === instanceId);
@@ -1057,10 +1075,10 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
   }
 
   function bindCardCollapseEvents() {
-    // 卡片整体折叠 — CSS class toggle
+    // 卡片整体折叠 — CSS class toggle（dataset 已是 side:instanceId）
     document.querySelectorAll('[data-cardtoggle]').forEach(el => {
       const htmlEl = el as HTMLElement;
-      const instanceId = htmlEl.dataset.cardtoggle!;
+      const key = htmlEl.dataset.cardtoggle!;
       htmlEl.addEventListener('click', (e) => {
         if (consumeSuppressNextClick() || isPointerDragging()) {
           e.preventDefault();
@@ -1070,9 +1088,9 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
         e.stopPropagation();
         const card = htmlEl.closest('.sb-card') as HTMLElement;
         if (!card) return;
-        const collapsing = !state.collapsedCards.has(instanceId);
-        if (collapsing) state.collapsedCards.add(instanceId);
-        else state.collapsedCards.delete(instanceId);
+        const collapsing = !state.collapsedCards.has(key);
+        if (collapsing) state.collapsedCards.add(key);
+        else state.collapsedCards.delete(key);
         card.classList.toggle('sb-card-collapsed', collapsing);
         // 更新折叠按钮文字
         const btn = htmlEl.querySelector('.sb-card-collapse-btn');
@@ -1082,14 +1100,14 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
     // 词条区块折叠 — CSS foldable toggle
     document.querySelectorAll('[data-affixblocktoggle]').forEach(el => {
       const htmlEl = el as HTMLElement;
-      const instanceId = htmlEl.dataset.affixblocktoggle!;
+      const key = htmlEl.dataset.affixblocktoggle!;
       htmlEl.addEventListener('click', (e) => {
         e.stopPropagation();
         const foldable = htmlEl.parentElement?.querySelector('.sb-foldable') as HTMLElement;
         if (!foldable) return;
-        const collapsing = !state.collapsedAffixBlocks.has(instanceId);
-        if (collapsing) state.collapsedAffixBlocks.add(instanceId);
-        else state.collapsedAffixBlocks.delete(instanceId);
+        const collapsing = !state.collapsedAffixBlocks.has(key);
+        if (collapsing) state.collapsedAffixBlocks.add(key);
+        else state.collapsedAffixBlocks.delete(key);
         foldable.classList.toggle('sb-folded', collapsing);
         const label = htmlEl.querySelector('span');
         if (label) label.textContent = collapsing ? '展开' : '收起';
@@ -1098,15 +1116,15 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
     // 子实体区块折叠 — CSS foldable toggle + 预览文案切换
     document.querySelectorAll('[data-childblocktoggle]').forEach(el => {
       const htmlEl = el as HTMLElement;
-      const instanceId = htmlEl.dataset.childblocktoggle!;
+      const key = htmlEl.dataset.childblocktoggle!;
       htmlEl.addEventListener('click', (e) => {
         e.stopPropagation();
         const foldable = htmlEl.parentElement?.querySelector('.sb-foldable') as HTMLElement;
         const preview = htmlEl.parentElement?.querySelector('.sb-foldable-child-preview') as HTMLElement;
         if (!foldable) return;
-        const collapsing = !state.collapsedChildBlocks.has(instanceId);
-        if (collapsing) state.collapsedChildBlocks.add(instanceId);
-        else state.collapsedChildBlocks.delete(instanceId);
+        const collapsing = !state.collapsedChildBlocks.has(key);
+        if (collapsing) state.collapsedChildBlocks.add(key);
+        else state.collapsedChildBlocks.delete(key);
         foldable.classList.toggle('sb-folded', collapsing);
         if (preview) preview.style.display = collapsing ? '' : 'none';
         const label = htmlEl.querySelector('span');
@@ -1116,49 +1134,54 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
     // 固定词条展开/折叠 — 重新渲染该卡片（结构变化较大）；集合内=已展开，缺省折叠
     document.querySelectorAll('[data-fixtoggle]').forEach(el => {
       const htmlEl = el as HTMLElement;
-      const instanceId = htmlEl.dataset.fixtoggle!;
+      const key = htmlEl.dataset.fixtoggle!;
       htmlEl.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (state.expandedFixedAffixRows.has(instanceId)) state.expandedFixedAffixRows.delete(instanceId);
-        else state.expandedFixedAffixRows.add(instanceId);
-        rebuildSingleCard(instanceId);
+        if (state.expandedFixedAffixRows.has(key)) state.expandedFixedAffixRows.delete(key);
+        else state.expandedFixedAffixRows.add(key);
+        rebuildSingleCard(key);
       });
     });
     // 战斗修饰展开/折叠
     document.querySelectorAll('[data-combatmodtoggle]').forEach(el => {
       const htmlEl = el as HTMLElement;
-      const instanceId = htmlEl.dataset.combatmodtoggle!;
+      const key = htmlEl.dataset.combatmodtoggle!;
       htmlEl.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (state.expandedCombatModBlocks.has(instanceId)) state.expandedCombatModBlocks.delete(instanceId);
-        else state.expandedCombatModBlocks.add(instanceId);
-        rebuildSingleCard(instanceId);
+        if (state.expandedCombatModBlocks.has(key)) state.expandedCombatModBlocks.delete(key);
+        else state.expandedCombatModBlocks.add(key);
+        rebuildSingleCard(key);
       });
     });
     // 动态词条展开/折叠 — 重新渲染该卡片（结构变化较大）
     document.querySelectorAll('[data-dyntoggle]').forEach(el => {
       const htmlEl = el as HTMLElement;
-      const instanceId = htmlEl.dataset.dyntoggle!;
+      const key = htmlEl.dataset.dyntoggle!;
       htmlEl.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (state.collapsedDynAffixRows.has(instanceId)) state.collapsedDynAffixRows.delete(instanceId);
-        else state.collapsedDynAffixRows.add(instanceId);
-        rebuildSingleCard(instanceId);
+        if (state.collapsedDynAffixRows.has(key)) state.collapsedDynAffixRows.delete(key);
+        else state.collapsedDynAffixRows.add(key);
+        rebuildSingleCard(key);
       });
     });
   }
 
-  /** 原地重建单张卡片（用于固定/动态词条展开折叠，因为内容结构变化） */
-  function rebuildSingleCard(instanceId: string) {
-    // 确定卡片属性
-    let side: 'player' | 'enemy' = 'player';
+  /** 原地重建单张卡片；uiKey = side:instanceId */
+  function rebuildSingleCard(uiKey: string) {
+    const parsed = parseCollapseKey(uiKey);
+    let side: 'player' | 'enemy' = parsed?.side === 'enemy' ? 'enemy' : 'player';
+    const instanceId = parsed?.instanceId ?? uiKey;
     let mode: 'build' | 'battle' = state.inBattle ? 'battle' : 'build';
-    let slots: DeploySlot[] = state.playerSlots;
+    let slots: DeploySlot[] = side === 'enemy' ? state.enemySlots : state.playerSlots;
     let item = findItemInSlots(slots, instanceId);
-    if (!item) { slots = state.enemySlots; item = findItemInSlots(slots, instanceId); side = 'enemy'; }
+    if (!item && !parsed) {
+      slots = state.enemySlots;
+      item = findItemInSlots(slots, instanceId);
+      side = 'enemy';
+    }
     if (!item) return;
     // 必须从该实例自己的 header 向上找最近 .sb-card，禁止 :has()（会命中祖先第一层卡）
-    const cardEl = document.querySelector(`[data-cardtoggle="${instanceId}"]`)?.closest('.sb-card') as HTMLElement | null;
+    const cardEl = document.querySelector(`[data-cardtoggle="${CSS.escape(uiKey)}"]`)?.closest('.sb-card') as HTMLElement | null;
     if (!cardEl) return;
     const depth = parseInt(cardEl.dataset.depth || '0');
     let combatUnit: CombatUnitRuntime | null | undefined = undefined;
@@ -1197,12 +1220,12 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
           return;
         }
         e.stopPropagation();
-        const instId = cardToggle.dataset.cardtoggle!;
+        const key = cardToggle.dataset.cardtoggle!;
         const targetCard = cardToggle.closest('.sb-card') as HTMLElement | null;
         if (!targetCard) return;
-        const collapsing = !state.collapsedCards.has(instId);
-        if (collapsing) state.collapsedCards.add(instId);
-        else state.collapsedCards.delete(instId);
+        const collapsing = !state.collapsedCards.has(key);
+        if (collapsing) state.collapsedCards.add(key);
+        else state.collapsedCards.delete(key);
         targetCard.classList.toggle('sb-card-collapsed', collapsing);
         const btn = cardToggle.querySelector('.sb-card-collapse-btn');
         if (btn) btn.textContent = collapsing ? '展开' : '收起';

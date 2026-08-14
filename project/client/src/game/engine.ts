@@ -57,6 +57,28 @@ export type GamePhase = 1 | 2;
 /** 默认最大设计回合（可配置） */
 export const MAX_ROUND = 10;
 
+/** 旧档回填：战斗奖合计 + 已走过探险回合的发放额（事件流入无法还原） */
+export function estimateTotalGoldGainedFallback(
+  battles: BattleRecord[],
+  currentRound: number,
+  maxRound: number = MAX_ROUND,
+): number {
+  let total = 0;
+  for (const b of battles) total += Number(b.rewardGold) || 0;
+  // 已进入过的奇数探险回合：有战斗记录的前一探险 + 当前若在探险则含本趟
+  const exploreRounds = new Set<number>();
+  for (const b of battles) {
+    const er = b.round - 1;
+    if (er >= 1 && er % 2 === 1) exploreRounds.add(er);
+  }
+  if (currentRound % 2 === 1) exploreRounds.add(currentRound);
+  for (const er of exploreRounds) {
+    if (er > maxRound) continue;
+    total += Math.floor((er + 1) / 2) * 10;
+  }
+  return total;
+}
+
 /** 本局一场战斗归档记录 */
 export interface BattleRecord {
   round: number;
@@ -77,6 +99,11 @@ export interface GameState {
   gold: number;
   /** 备用资金池：可正可负；进探险静默结算 */
   reserveGold: number;
+  /**
+   * 本局获取总金币（正流入累计）：探险发放 + 战斗胜奖 + 打工/投资入账。
+   * 不含开局现金、出售、购入与刷新支出。
+   */
+  totalGoldGained: number;
   /** 设计回合 1..MAX_ROUND：奇数=探险，偶数=战斗 */
   round: number;
   /** 与 round 奇偶同步，便于旧 UI/存档 */
@@ -138,7 +165,7 @@ export class GameEngine {
 
   resetState() {
     this.state = {
-      gold: 40, reserveGold: 0, round: 1, phase: 1,
+      gold: 40, reserveGold: 0, totalGoldGained: 0, round: 1, phase: 1,
       warehouse: [], deploySlots: [], itemPool: [], seed: Date.now(),
       currentEvents: [], eventStatus: 'pending', activeEventId: null,
       eventOffers: [], eventOfferPrices: {},
@@ -165,10 +192,16 @@ export class GameEngine {
     return Math.floor((this.state.round + 1) / 2) * 10;
   }
 
+  /** 累计本局获取（探险/战斗/事件正流入） */
+  private recordGoldGained(amount: number) {
+    if (amount > 0) this.state.totalGoldGained += amount;
+  }
+
   /** @deprecated 保留名称；现改为入池+结算，见 enterExploreSetup */
   grantExploreGold(): number {
     const amount = this.getExploreGrantAmount();
     this.addReserve(amount);
+    this.recordGoldGained(amount);
     this.settleReserveWithGold();
     return amount;
   }
@@ -196,7 +229,9 @@ export class GameEngine {
 
   /** 进入探险：入账本趟发放 → 静默结算 → 重置商店/事件 */
   enterExploreSetup(opts?: { autoSave?: boolean }) {
-    this.addReserve(this.getExploreGrantAmount());
+    const grant = this.getExploreGrantAmount();
+    this.addReserve(grant);
+    this.recordGoldGained(grant);
     this.settleReserveWithGold();
     this.state.shopRefreshCount = 0;
     this.clearEventRuntime();
@@ -909,6 +944,7 @@ export class GameEngine {
   doWorkEvent(): string | null {
     if (this.state.activeEventId !== 'work') return '非打工事件';
     this.state.gold += 20;
+    this.recordGoldGained(20);
     this.completeEvent();
     return null;
   }
@@ -918,6 +954,7 @@ export class GameEngine {
     if (this.state.gold < 10) return `金币不足(需10,有${this.state.gold})`;
     this.state.gold -= 10;
     this.addReserve(20);
+    this.recordGoldGained(20);
     this.completeEvent();
     return null;
   }
@@ -1595,6 +1632,7 @@ export class GameEngine {
   private applyCombatVictoryRewards(): number {
     const goldReward = this.getBattleWinGold();
     this.addReserve(goldReward);
+    this.recordGoldGained(goldReward);
     this.notify();
     return goldReward;
   }
@@ -1606,7 +1644,8 @@ export class GameEngine {
   }
 
   /**
-   * 正式战准备：上传己方 BD + 从对战池抽取敌方。
+   * 正式战准备：先从对战池抽取敌方，再上传己方 BD。
+   * （先抽后传，避免本局刚上传的 BD 被抽作对手）
    * networkError=true 时 UI 必须留在探险、不可当自动胜。
    */
   async prepareOfficialBattle(): Promise<{
@@ -1619,6 +1658,32 @@ export class GameEngine {
   }> {
     const playerSlots = JSON.parse(JSON.stringify(this.state.deploySlots)) as DeploySlot[];
 
+    let enemySlots: DeploySlot[] | null = null;
+    let autoWin = false;
+    let opponentName: string | undefined;
+
+    try {
+      const { opponent } = await dataApi.getBattlePool(this.state.round);
+      if (opponent && opponent.bd_json && Array.isArray(opponent.bd_json) && opponent.bd_json.length > 0) {
+        enemySlots = opponent.bd_json as DeploySlot[];
+        opponentName = opponent.username;
+      } else {
+        autoWin = true;
+      }
+      console.log('[prepareOfficialBattle] 抽取对手', {
+        round: this.state.round,
+        autoWin,
+        opponent: opponentName,
+        slots: enemySlots?.length ?? 0,
+      });
+    } catch (e) {
+      console.error('[prepareOfficialBattle] 抽取对手失败', e);
+      return {
+        playerSlots, enemySlots: null, autoWin: false, networkError: true,
+        errorMessage: (e as Error)?.message || '匹配失败，请检查网络后重试',
+      };
+    }
+
     try {
       const r = await dataApi.uploadBD(this.state.round, playerSlots);
       console.log('[prepareOfficialBattle] 上传 BD 成功', { round: this.state.round, id: r.id, slots: playerSlots.length });
@@ -1630,25 +1695,13 @@ export class GameEngine {
       };
     }
 
-    try {
-      const { opponent } = await dataApi.getBattlePool(this.state.round);
-      if (opponent && opponent.bd_json && Array.isArray(opponent.bd_json) && opponent.bd_json.length > 0) {
-        return {
-          playerSlots,
-          enemySlots: opponent.bd_json as DeploySlot[],
-          autoWin: false,
-          networkError: false,
-          opponentName: opponent.username,
-        };
-      }
-      return { playerSlots, enemySlots: null, autoWin: true, networkError: false };
-    } catch (e) {
-      console.error('[prepareOfficialBattle] 抽取对手失败', e);
-      return {
-        playerSlots, enemySlots: null, autoWin: false, networkError: true,
-        errorMessage: (e as Error)?.message || '匹配失败，请检查网络后重试',
-      };
-    }
+    return {
+      playerSlots,
+      enemySlots,
+      autoWin,
+      networkError: false,
+      opponentName,
+    };
   }
 
   /** 空池自动获胜结算 */
@@ -1803,6 +1856,7 @@ export class GameEngine {
     return {
       gold: this.state.gold,
       reserveGold: this.state.reserveGold,
+      totalGoldGained: this.state.totalGoldGained,
       round: this.state.round,
       phase: this.state.phase,
       warehouse: this.state.warehouse,
@@ -1833,6 +1887,7 @@ export class GameEngine {
       status,
       maxRound: this.state.maxRound,
       gold: this.state.gold,
+      totalGoldGained: this.state.totalGoldGained,
       seed: this.state.seed,
       battles: this.state.battles,
       updatedAt: new Date().toISOString(),
@@ -1882,6 +1937,12 @@ export class GameEngine {
     this.state.visitedEventMerchants = data.visitedEventMerchants ?? [];
     this.state.battles = data.battles ?? [];
     this.state.maxRound = data.maxRound ?? MAX_ROUND;
+    // 旧档无字段时：按已记录战斗奖 + 可推断的探险发放回填（事件无法还原）
+    if (typeof data.totalGoldGained === 'number') {
+      this.state.totalGoldGained = data.totalGoldGained;
+    } else {
+      this.state.totalGoldGained = estimateTotalGoldGainedFallback(this.state.battles, round, this.state.maxRound);
+    }
     this.historyRunId = typeof data.historyRunId === 'number' ? data.historyRunId : null;
     this.recomputeItemPool();
 

@@ -18,8 +18,9 @@
 |-------|----|------|
 | `--sb-bg` | `#fafafa` | 页面底色 |
 | `--sb-surface` | `#fff` | 卡片、面板表面 |
-| `--sb-border` | `#e5e5e5` | 分割线、边框 |
+| `--sb-border` | `#e5e5e5` | 分割线、面板边框 |
 | `--sb-border-hover` | `#d4d4d4` | hover 状态边框 |
+| `--sb-card-border` | `#c4c4c4` | 实体/词条卡片外框（白底上相邻卡可辨，深于普通分割线） |
 | `--sb-text` | `#262626` | 正文 |
 | `--sb-text-secondary` | `#737373` | 辅助文字 |
 | `--sb-text-muted` | `#a3a3a3` | 弱化文字 |
@@ -64,9 +65,9 @@
 ## 4. 组件样式
 
 ### 卡片
-- 白色底 + 1px `--sb-border` 边框
+- 白色底 + 1px `--sb-card-border` 边框（深于 `--sb-border`，保证相邻卡可区分）
 - 圆角 6px
-- 标题栏：`#fafafa` 浅底 + 底部边框
+- 标题栏：`#fafafa` 浅底 + 底部 `--sb-card-border`
 - 无阴影（hover 时加 `0 1px 3px rgba(0,0,0,0.06)`）
 - 折叠过渡：`max-height` 动画 200ms ease-out
 

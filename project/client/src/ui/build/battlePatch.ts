@@ -1,6 +1,7 @@
 import { GameEngine, CombatUnitRuntime, PlaybackSpeed } from '../../game/engine';
 import { summarizePassiveMods } from '../../game/battle/passives';
 import { formatWeightG } from './format';
+import { instanceIdFromCollapseKey } from './types';
 
 export interface BattlePatchOpts {
   battleLogLength: number;
@@ -91,7 +92,9 @@ export function patchBattleValues(
     if (!sideEl) return;
     const isPlayer = sideEl.id === 'sb-player-units';
     const units = isPlayer ? pu : eu;
-    const instId = (card.querySelector('[data-cardtoggle]') as HTMLElement)?.dataset.cardtoggle;
+    const instId = instanceIdFromCollapseKey(
+      (card.querySelector('[data-cardtoggle]') as HTMLElement)?.dataset.cardtoggle || '',
+    );
     if (!instId || !units) return;
     const unit = units.find(u => u.instanceId === instId);
     card.classList.toggle('dead', !!(unit && unit.currentHp <= 0));

@@ -474,7 +474,10 @@ export class UIManager {
         <p class="fg-sell-hint">从仓库或 BD 拖入一个实体；可再拖回仓库/BD 以更换。放入后默认折叠，可展开查看。</p>
         <div id="craftsman-slot" class="fg-craftsman-slot" data-fg-zone="craftsman" style="min-height:48px;margin:8px 0;padding:8px;border:1px dashed var(--fg-border,#ccc);">`;
       if (slot) {
-        h += renderEntityCard(slot, 0, 'warehouse', 'build', this.exploreCollapse);
+        // 与 BD 一致：快照 + 被动预览，避免只显示模板 HP
+        const preview = this.engine.previewBdRuntimes([{ entity: slot, children: [] }]);
+        const unit = preview.find(u => u.instanceId === slot.instanceId) || null;
+        h += renderEntityCard(slot, 0, 'warehouse', 'build', this.exploreCollapse, unit, [slot]);
       } else {
         h += '<div class="fg-drop-empty">工匠物品区：（空）· 拖入实体</div>';
       }
@@ -600,7 +603,7 @@ export class UIManager {
     this.combatCollapse = createCollapseState();
     collapseAllOfficialBuild(this.engine.state.deploySlots, [], this.combatCollapse);
     for (const slot of this.combatEnemySlots || []) {
-      collapseItemTree(slot.entity, this.combatCollapse);
+      collapseItemTree(slot.entity, this.combatCollapse, 'enemy');
     }
   }
 
@@ -735,6 +738,7 @@ export class UIManager {
     const g = this.engine.state;
     const {
       countWinsLosses,
+      resolveTotalGoldGained,
       renderRunReviewShellHtml,
       bindRunReview,
     } = await import('./runReview');
@@ -746,9 +750,14 @@ export class UIManager {
           title: '通关结算',
           wins: wl.wins,
           losses: wl.losses,
-          gold: g.gold,
+          totalRewardGold: resolveTotalGoldGained({
+            totalGoldGained: g.totalGoldGained,
+            battles: g.battles,
+            maxRound: g.maxRound,
+            currentRound: g.round,
+          }),
           maxRound: g.maxRound,
-          showGold: true,
+          showSettlementStats: true,
           statusBadge: 'cleared',
           battles: g.battles,
           statusHtml: '<span id="settlement-status" class="fg-settlement-status">正在标记本局已通关…</span>',

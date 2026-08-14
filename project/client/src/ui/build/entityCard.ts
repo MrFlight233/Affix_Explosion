@@ -7,6 +7,7 @@ import {
 } from '../../game/data';
 import { formatWeightG } from './format';
 import type { CardSide, CardMode, CollapseState } from './types';
+import { collapseKey } from './types';
 import { formatTargetingSummary } from '../../game/targetingUtil';
 import { migrateLegacyDamageToOnHitEffects } from '../../game/hitEffectUtil';
 import {
@@ -261,11 +262,12 @@ export function renderEntityCard(
   const roots = conditionRoots ?? (depth === 0 && isEntity ? [item] : null);
 
   const instanceId = item.instanceId;
+  const ck = collapseKey(side, instanceId);
   const sideFirst = sidePrefix(side);
   const ml = depth > 0 ? `margin-left:${Math.min(depth, 3) * 16}px;` : '';
-  const cardCollapsed = collapse.collapsedCards.has(instanceId);
-  const affixBlockCollapsed = collapse.collapsedAffixBlocks.has(instanceId);
-  const childBlockCollapsed = collapse.collapsedChildBlocks.has(instanceId);
+  const cardCollapsed = collapse.collapsedCards.has(ck);
+  const affixBlockCollapsed = collapse.collapsedAffixBlocks.has(ck);
+  const childBlockCollapsed = collapse.collapsedChildBlocks.has(ck);
   const isSt = isEntity && isStarter(def as EntityDef);
   const isActive = isEntity && (def as EntityDef).isActive;
   const edef = isEntity ? (def as EntityDef) : null;
@@ -284,7 +286,8 @@ export function renderEntityCard(
     ? ` data-drag-handle data-instance="${instanceId}" data-side="${side}" data-kind="${isEntity ? 'entity' : 'affix'}" data-defid="${isEntity ? edef!.id : (def as AffixDef).id}" data-type="${isEntity ? 'entity' : 'affix'}"`
     : '';
   const collapseLabel = cardCollapsed ? '展开' : '收起';
-  h += `<div class="sb-card-header" data-cardtoggle="${instanceId}" data-defid="${isEntity ? edef!.id : (def as AffixDef).id}" data-type="${isEntity ? 'entity' : 'affix'}"${dragHandleAttr} style="cursor:pointer;">`;
+  const headerInstanceAttr = mode === 'battle' ? ` data-instance="${instanceId}"` : '';
+  h += `<div class="sb-card-header" data-cardtoggle="${ck}"${headerInstanceAttr} data-defid="${isEntity ? edef!.id : (def as AffixDef).id}" data-type="${isEntity ? 'entity' : 'affix'}"${dragHandleAttr} style="cursor:pointer;">`;
   h += `<span class="sb-card-header-name">${isEntity ? edef!.name : (def as AffixDef).name}</span>`;
   h += '<span class="sb-card-header-keyinfo sb-card-keyinfo">';
   h += renderCardKeyInfo(item, mode, depth, combatUnit, sideFirst);
@@ -480,9 +483,9 @@ export function renderEntityCard(
   if (combatUnit) {
     const modLines = summarizePassiveModsBySource(combatUnit);
     if (modLines.length > 0) {
-      const modExpanded = collapse.expandedCombatModBlocks.has(instanceId);
+      const modExpanded = collapse.expandedCombatModBlocks.has(ck);
       h += '<div class="sb-card-block">';
-      h += `<div class="sb-block-title" data-combatmodtoggle="${instanceId}" style="cursor:pointer;">`;
+      h += `<div class="sb-block-title" data-combatmodtoggle="${ck}" style="cursor:pointer;">`;
       h += `战斗修饰 (${modLines.length}) <span style="font-weight:400;color:var(--sb-text-muted,inherit);margin-left:2px;">${modExpanded ? '收起' : '展开'}</span></div>`;
       if (modExpanded) {
         for (const line of modLines) {
@@ -501,17 +504,17 @@ export function renderEntityCard(
     || (edef && edef.preloadedDynamicAffixes && edef.preloadedDynamicAffixes.length > 0);
   if (hasAffixBlock) {
     h += '<div class="sb-card-block">';
-    h += `<div class="sb-block-title" data-affixblocktoggle="${instanceId}" style="cursor:pointer;">`;
+    h += `<div class="sb-block-title" data-affixblocktoggle="${ck}" style="cursor:pointer;">`;
     h += `词条 · ${usedAffixSlots}/${affixSlots} 槽位 <span style="font-weight:400;color:var(--sb-text-muted,inherit);margin-left:2px;">${affixBlockCollapsed ? '展开' : '收起'}</span></div>`;
     h += `<div class="sb-foldable${affixBlockCollapsed ? ' sb-folded' : ''}">`;
     if (edef && edef.preloadedDynamicAffixes && edef.preloadedDynamicAffixes.length > 0) {
       h += `<div class="sb-card-stats">预装动态词条: ${resolveNames(edef.preloadedDynamicAffixes)}</div>`;
     }
     if (edef && edef.fixedAffixes.length > 0) {
-      const fixExpanded = collapse.expandedFixedAffixRows.has(instanceId);
+      const fixExpanded = collapse.expandedFixedAffixRows.has(ck);
       const fixCollapsed = !fixExpanded;
       const fnames = edef.fixedAffixes.map(a => getAffixDef(a)?.name || a).join('、');
-      h += `<div class="sb-card-stats" data-fixtoggle="${instanceId}" style="cursor:pointer;">`;
+      h += `<div class="sb-card-stats" data-fixtoggle="${ck}" style="cursor:pointer;">`;
       h += `固定词条 (${edef.fixedAffixes.length}) <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${fixCollapsed ? '展开' : '收起'}</span>`;
       if (fixCollapsed) h += ` ${fnames}`;
       h += '</div>';
@@ -523,11 +526,11 @@ export function renderEntityCard(
       }
     }
     if (affixSlots > 0) {
-      const dynCollapsed = collapse.collapsedDynAffixRows.has(instanceId);
+      const dynCollapsed = collapse.collapsedDynAffixRows.has(ck);
       const dnames = dynAffixCount > 0
         ? dynAffixList.map(c => { const ad = getAffixDef(c.defId); return ad ? ad.name : c.defId; }).join('、')
         : '';
-      h += `<div class="sb-card-stats" data-dyntoggle="${instanceId}" style="cursor:pointer;">`;
+      h += `<div class="sb-card-stats" data-dyntoggle="${ck}" style="cursor:pointer;">`;
       h += `动态词条 (${usedAffixSlots}/${affixSlots} 槽位) <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${dynCollapsed ? '展开' : '收起'}</span>`;
       if (dynCollapsed && dynAffixCount > 0) h += ` ${dnames}`;
       h += '</div>';
@@ -563,7 +566,7 @@ export function renderEntityCard(
   const hasChildBlock = (effSlots > 0) || entityChildren.length > 0;
   if (hasChildBlock) {
     h += '<div class="sb-card-block">';
-    h += `<div class="sb-block-title" data-childblocktoggle="${instanceId}" style="cursor:pointer;">`;
+    h += `<div class="sb-block-title" data-childblocktoggle="${ck}" style="cursor:pointer;">`;
     h += `子实体 · ${usedSlots}/${effSlots} 槽位 <span style="font-weight:400;color:var(--sb-text-muted,inherit);margin-left:2px;">${childBlockCollapsed ? '展开' : '收起'}</span></div>`;
     h += `<div class="sb-card-stats sb-foldable-child-preview" style="${childBlockCollapsed ? '' : 'display:none'}">${entityChildren.map(c => (getEntityDef(c.defId) || { name: c.defId }).name).join(', ')}</div>`;
     h += `<div class="sb-foldable${childBlockCollapsed ? ' sb-folded' : ''}">`;

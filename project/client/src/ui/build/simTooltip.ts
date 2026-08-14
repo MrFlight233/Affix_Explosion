@@ -23,6 +23,27 @@ import {
   resolvePassiveForDisplay,
 } from '../passiveBonusDisplay';
 import { summarizePassiveModsBySource } from '../../game/battle/passives';
+import type { CardSide } from './types';
+import { instanceIdFromCollapseKey, parseCollapseKey } from './types';
+
+export type SbInstanceLookup = (instanceId: string, side?: CardSide) => ItemInstance | null;
+export type SbCombatUnitLookup = (instanceId: string, side?: CardSide) => CombatUnitRuntime | null | undefined;
+export type SbConditionRootsLookup = (instanceId: string, side?: CardSide) => ItemInstance[] | null;
+
+/** 从悬浮触发元素解析裸 instanceId + side */
+export function resolveTooltipIdentity(el: HTMLElement): { instanceId: string | null; side?: CardSide } {
+  const card = el.closest('.sb-card') as HTMLElement | null;
+  const sideFromCard = card?.dataset.side as CardSide | undefined;
+  if (el.dataset.instance) {
+    return { instanceId: el.dataset.instance, side: sideFromCard };
+  }
+  if (el.dataset.cardtoggle) {
+    const parsed = parseCollapseKey(el.dataset.cardtoggle);
+    if (parsed) return { instanceId: parsed.instanceId, side: sideFromCard || parsed.side };
+    return { instanceId: instanceIdFromCollapseKey(el.dataset.cardtoggle), side: sideFromCard };
+  }
+  return { instanceId: null, side: sideFromCard };
+}
 
 export function tipkv(k: string, v: string | number): string {
   return `<span class="sb-tip-kv"><span class="sb-tip-key">${k}</span><span class="sb-tip-val">${v}</span></span>`;
@@ -246,9 +267,10 @@ export function showSimTooltip(
   defId: string,
   type: 'entity' | 'affix',
   instanceId?: string | null,
-  getInstance?: (instanceId: string) => ItemInstance | null,
-  getCombatUnit?: (instanceId: string) => CombatUnitRuntime | null | undefined,
-  getConditionRoots?: (instanceId: string) => ItemInstance[] | null,
+  getInstance?: SbInstanceLookup,
+  getCombatUnit?: SbCombatUnitLookup,
+  getConditionRoots?: SbConditionRootsLookup,
+  side?: CardSide,
 ): void {
   if (tipShowTimer) {
     clearTimeout(tipShowTimer);
@@ -262,7 +284,7 @@ export function showSimTooltip(
     if (!def) return;
     let inst: ItemInstance | null = null;
     if (instanceId && getInstance) {
-      inst = getInstance(instanceId);
+      inst = getInstance(instanceId, side);
     }
     const value = inst ? getItemTradeValue(inst) : getDefPackageTradeValue(def);
     let h = `<div class="sb-tip-header"><div class="sb-tip-name">${def.name}</div>`;
@@ -382,9 +404,9 @@ export function showSimTooltip(
     };
 
     if (inst) {
-      const cu = (instanceId && getCombatUnit) ? getCombatUnit(instanceId) : undefined;
+      const cu = (instanceId && getCombatUnit) ? getCombatUnit(instanceId, side) : undefined;
       const roots = (instanceId && getConditionRoots)
-        ? getConditionRoots(instanceId)
+        ? getConditionRoots(instanceId, side)
         : [inst];
       h += renderTooltipTree(inst, def, 0, undefined, cu, roots);
     } else {
@@ -468,17 +490,18 @@ export function hideSimTooltip(): void {
 /** 对 root 下每个 [data-defid] 直接绑定 mouseenter/leave */
 export function bindTooltipOnRoot(
   root: HTMLElement,
-  getInstance?: (instanceId: string) => ItemInstance | null,
-  getCombatUnit?: (instanceId: string) => CombatUnitRuntime | null | undefined,
-  getConditionRoots?: (instanceId: string) => ItemInstance[] | null,
+  getInstance?: SbInstanceLookup,
+  getCombatUnit?: SbCombatUnitLookup,
+  getConditionRoots?: SbConditionRootsLookup,
 ): void {
   root.querySelectorAll('[data-defid]').forEach(el => {
     const htmlEl = el as HTMLElement;
     const defId = htmlEl.dataset.defid!;
     const type = (htmlEl.dataset.type || 'entity') as 'entity' | 'affix';
-    const instId = htmlEl.dataset.instance || htmlEl.dataset.cardtoggle || null;
-    htmlEl.addEventListener('mouseenter', (e) =>
-      showSimTooltip(e as MouseEvent, defId, type, instId, getInstance, getCombatUnit, getConditionRoots));
+    htmlEl.addEventListener('mouseenter', (e) => {
+      const { instanceId, side } = resolveTooltipIdentity(htmlEl);
+      showSimTooltip(e as MouseEvent, defId, type, instanceId, getInstance, getCombatUnit, getConditionRoots, side);
+    });
     htmlEl.addEventListener('mouseleave', hideSimTooltip);
   });
 }
@@ -489,15 +512,15 @@ const delegatedRoots = new WeakSet<HTMLElement>();
  * 在 root 上委托 mouseover/mouseout 到 [data-defid]。
  * 同一 root 只绑一次；getInstance 经 WeakMap 可更新。
  */
-const rootGetInstance = new WeakMap<HTMLElement, ((instanceId: string) => ItemInstance | null) | undefined>();
-const rootGetCombatUnit = new WeakMap<HTMLElement, ((instanceId: string) => CombatUnitRuntime | null | undefined) | undefined>();
-const rootGetConditionRoots = new WeakMap<HTMLElement, ((instanceId: string) => ItemInstance[] | null) | undefined>();
+const rootGetInstance = new WeakMap<HTMLElement, SbInstanceLookup | undefined>();
+const rootGetCombatUnit = new WeakMap<HTMLElement, SbCombatUnitLookup | undefined>();
+const rootGetConditionRoots = new WeakMap<HTMLElement, SbConditionRootsLookup | undefined>();
 
 export function bindSbTooltips(
   root: HTMLElement,
-  getInstance?: (instanceId: string) => ItemInstance | null,
-  getCombatUnit?: (instanceId: string) => CombatUnitRuntime | null | undefined,
-  getConditionRoots?: (instanceId: string) => ItemInstance[] | null,
+  getInstance?: SbInstanceLookup,
+  getCombatUnit?: SbCombatUnitLookup,
+  getConditionRoots?: SbConditionRootsLookup,
 ): void {
   rootGetInstance.set(root, getInstance);
   rootGetCombatUnit.set(root, getCombatUnit);
@@ -512,15 +535,16 @@ export function bindSbTooltips(
     if (from && t.contains(from)) return;
     const defId = t.dataset.defid!;
     const type = (t.dataset.type || 'entity') as 'entity' | 'affix';
-    const instId = t.dataset.instance || t.dataset.cardtoggle || null;
+    const { instanceId, side } = resolveTooltipIdentity(t);
     showSimTooltip(
       e as MouseEvent,
       defId,
       type,
-      instId,
+      instanceId,
       rootGetInstance.get(root),
       rootGetCombatUnit.get(root),
       rootGetConditionRoots.get(root),
+      side,
     );
   });
   root.addEventListener('mouseout', (e) => {

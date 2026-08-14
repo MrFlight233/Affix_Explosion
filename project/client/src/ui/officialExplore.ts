@@ -2,7 +2,7 @@
 // 正式局探险壳 — BD / 仓库 / 商人，对齐模拟战卡片与 pointer 拖拽
 // ============================================================
 
-import { GameEngine } from '../game/engine';
+import { GameEngine, CombatUnitRuntime } from '../game/engine';
 import {
   ItemInstance, EntityDef, AffixDef,
   getEntityDef, getAffixDef, findInTree,
@@ -229,7 +229,7 @@ function commitOfficialDrag(ctx: OfficialExploreCtx, session: PointerDragSession
     const item = ctx.engine.findItem(session.id);
     if (!item || item.type !== 'entity') return '只能放入实体';
     const err = ctx.engine.moveEntityToCraftsman(item);
-    if (!err) collapseItemTree(item, ctx.collapse);
+    if (!err) collapseItemTree(item, ctx.collapse, 'warehouse');
     return err;
   }
 
@@ -250,14 +250,14 @@ function commitOfficialDrag(ctx: OfficialExploreCtx, session: PointerDragSession
     if (session.source === 'craftsman') {
       const item = ctx.engine.extractCraftsmanItem();
       if (!item || item.instanceId !== session.id) return '工匠槽无此实体';
-      collapseItemTree(item, ctx.collapse);
+      collapseItemTree(item, ctx.collapse, 'warehouse');
       ctx.engine.addToWarehouse(item);
       return null;
     }
     if (session.source !== 'bd') return null;
     const item = ctx.engine.findItem(session.id);
     if (!item) return '物品不存在';
-    collapseItemTree(item, ctx.collapse);
+    collapseItemTree(item, ctx.collapse, 'warehouse');
     return ctx.engine.moveToWarehouse(item);
   }
 
@@ -313,7 +313,7 @@ function commitOfficialDrag(ctx: OfficialExploreCtx, session: PointerDragSession
         const item = ctx.resolveCatalogItem(session.id);
         if (!item) return '物品不存在';
         const override = ctx.getCatalogPrice(session.id);
-        collapseItemTree(item, ctx.collapse);
+        collapseItemTree(item, ctx.collapse, 'warehouse');
         const inShop = ctx.engine.state.shopOffers.some(i => i.instanceId === item.instanceId);
         const inEvent = ctx.engine.state.eventOffers.some(i => i.instanceId === item.instanceId);
         let err: string | null;
@@ -329,14 +329,14 @@ function commitOfficialDrag(ctx: OfficialExploreCtx, session: PointerDragSession
       if (session.source === 'bd') {
         const item = ctx.engine.findItem(session.id);
         if (!item) return '物品不存在';
-        collapseItemTree(item, ctx.collapse);
+        collapseItemTree(item, ctx.collapse, 'warehouse');
         return ctx.engine.moveToWarehouse(item);
       }
       if (session.source === 'craftsman') {
         const held = ctx.engine.state.craftsmanSlot;
         if (!held || held.instanceId !== session.id) return '工匠槽无此实体';
         const item = ctx.engine.extractCraftsmanItem()!;
-        collapseItemTree(item, ctx.collapse);
+        collapseItemTree(item, ctx.collapse, 'warehouse');
         ctx.engine.addToWarehouse(item);
         return null;
       }
@@ -362,7 +362,7 @@ function commitOfficialDrag(ctx: OfficialExploreCtx, session: PointerDragSession
       const item = ctx.resolveCatalogItem(session.id);
       if (!item) return '物品不存在';
       const override = ctx.getCatalogPrice(session.id);
-      collapseItemTree(item, ctx.collapse);
+      collapseItemTree(item, ctx.collapse, 'player');
       const inShop = ctx.engine.state.shopOffers.some(i => i.instanceId === item.instanceId);
       const inEvent = ctx.engine.state.eventOffers.some(i => i.instanceId === item.instanceId);
       let err: string | null;
@@ -379,7 +379,7 @@ function commitOfficialDrag(ctx: OfficialExploreCtx, session: PointerDragSession
     if (session.source === 'warehouse' || session.source === 'bd') {
       const item = resolveOwnedItem(ctx, session);
       if (!item) return '物品不存在';
-      collapseItemTree(item, ctx.collapse);
+      collapseItemTree(item, ctx.collapse, 'player');
       // 已在目标父下且同列表 → 上面 reorder 已处理；此处为跨位置
       return ctx.engine.moveToDeploy(item, slotIdx, parentId);
     }
@@ -389,7 +389,7 @@ function commitOfficialDrag(ctx: OfficialExploreCtx, session: PointerDragSession
       const held = ctx.engine.state.craftsmanSlot;
       if (!held || held.instanceId !== session.id) return '工匠槽无此实体';
       const item = ctx.engine.extractCraftsmanItem()!;
-      collapseItemTree(item, ctx.collapse);
+      collapseItemTree(item, ctx.collapse, 'player');
       const err = ctx.engine.moveToDeploy(item, slotIdx, parentId);
       if (err) {
         // 放置失败：塞回工匠槽，避免实体丢失
@@ -575,10 +575,60 @@ function bindCraftsmanPointer(slotEl: HTMLElement, ctx: OfficialExploreCtx): voi
 }
 
 export function bindOfficialExplore(root: HTMLElement, ctx: OfficialExploreCtx): void {
-  bindSbTooltips(root, id => ctx.engine.findItem(id) ?? ctx.catalogItems.get(id) ?? null, (id) => {
-    const preview = ctx.engine.previewBdRuntimes(ctx.engine.state.deploySlots);
-    return preview.find(u => u.instanceId === id) || null;
-  }, (id) => {
+  const previewSlotsForTooltip = (): CombatUnitRuntime[] => {
+    const slots = [...ctx.engine.state.deploySlots];
+    const craft = ctx.engine.state.craftsmanSlot;
+    if (craft) slots.push({ entity: craft, children: [] });
+    return ctx.engine.previewBdRuntimes(slots);
+  };
+
+  bindSbTooltips(root, (id, side) => {
+    if (side === 'warehouse') {
+      const craft = ctx.engine.state.craftsmanSlot;
+      if (craft) {
+        const walk = (n: ItemInstance): ItemInstance | null => {
+          if (n.instanceId === id) return n;
+          for (const c of n.children || []) {
+            const f = walk(c);
+            if (f) return f;
+          }
+          return null;
+        };
+        const inCraft = walk(craft);
+        if (inCraft) return inCraft;
+      }
+      for (const w of ctx.engine.state.warehouse) {
+        if (w.instanceId === id) return w;
+        const walk = (n: ItemInstance): ItemInstance | null => {
+          if (n.instanceId === id) return n;
+          for (const c of n.children || []) {
+            const f = walk(c);
+            if (f) return f;
+          }
+          return null;
+        };
+        const found = walk(w);
+        if (found) return found;
+      }
+      return null;
+    }
+    if (side === 'player') {
+      return ctx.engine.findItem(id) ?? null;
+    }
+    return ctx.engine.findItem(id) ?? ctx.catalogItems.get(id) ?? null;
+  }, (id, side) => {
+    if (side === 'enemy') return null;
+    return previewSlotsForTooltip().find(u => u.instanceId === id) || null;
+  }, (id, side) => {
+    const craft = ctx.engine.state.craftsmanSlot;
+    if (side !== 'player' && craft) {
+      const walk = (n: ItemInstance): boolean => {
+        if (n.instanceId === id) return true;
+        return (n.children || []).some(walk);
+      };
+      if (walk(craft)) return [craft];
+    }
+    if (side === 'warehouse') return null;
     const slot = ctx.engine.state.deploySlots.find(s => {
       const walk = (n: ItemInstance): boolean => {
         if (n.instanceId === id) return true;

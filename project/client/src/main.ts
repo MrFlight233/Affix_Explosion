@@ -164,6 +164,7 @@ async function showHistoryRunDetail(id: number) {
     const { history } = await import('./api/client');
     const {
       countWinsLosses,
+      resolveTotalGoldGained,
       renderRunReviewShellHtml,
       bindRunReview,
     } = await import('./ui/runReview');
@@ -178,8 +179,13 @@ async function showHistoryRunDetail(id: number) {
       wins: wl.wins,
       losses: wl.losses,
       statusBadge: status,
-      showGold: status === 'cleared',
-      gold: run.gold,
+      showSettlementStats: status === 'cleared',
+      totalRewardGold: resolveTotalGoldGained({
+        totalGoldGained: typeof run.totalGoldGained === 'number' ? run.totalGoldGained : undefined,
+        battles,
+        maxRound: run.maxRound,
+        currentRound: run.maxRound,
+      }),
       maxRound: run.maxRound,
       battles,
       leadingHtml: '<button type="button" id="btn-history-detail-back" class="fg-link-back">← 返回列表</button>',

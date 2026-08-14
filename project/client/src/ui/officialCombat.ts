@@ -8,9 +8,9 @@ import {
   getEntityDef, findInTree,
 } from '../game/data';
 import { renderEntityCard } from './build/entityCard';
-import { CollapseState } from './build/types';
+import { CollapseState, CardSide } from './build/types';
 import { patchBattleValues } from './build/battlePatch';
-import { bindSbTooltips } from './build/simTooltip';
+import { bindSbTooltips, type SbInstanceLookup, type SbCombatUnitLookup, type SbConditionRootsLookup } from './build/simTooltip';
 import { mountBattleLog, type BattleLogBridge } from './sim/mountBattleLog';
 import { consumeSuppressNextClick, isPointerDragging } from './pointerDrag';
 
@@ -41,16 +41,7 @@ export interface OfficialCombatCtx {
 }
 
 function normalizeSlots(slots: DeploySlot[]): void {
-  for (const slot of slots) {
-    if (!slot.children || slot.children.length === 0) continue;
-    if (!slot.entity.children) slot.entity.children = [];
-    for (const c of slot.children) {
-      if (!slot.entity.children.some(x => x.instanceId === c.instanceId)) {
-        slot.entity.children.push(c);
-      }
-    }
-    slot.children = [];
-  }
+  normalizeDeploySlotsInPlace(slots);
 }
 
 export function getOfficialCombatUnits(
@@ -79,20 +70,37 @@ function stubItemFromUnit(u: CombatUnitRuntime): ItemInstance {
   return { instanceId: u.instanceId, defId: u.entityId, type: 'entity', children: [] };
 }
 
-/** 渲染一侧战斗卡片树（有 slot 用树；否则按 runtime 列表兜底） */
-export function renderBattleSideCards(
-  ctx: OfficialCombatCtx,
+/** 将 slot.children 并入 entity.children（就地）；回顾渲染请先深拷贝再调用 */
+export function normalizeDeploySlotsInPlace(slots: DeploySlot[]): void {
+  for (const slot of slots) {
+    if (!slot.children || slot.children.length === 0) continue;
+    if (!slot.entity.children) slot.entity.children = [];
+    for (const c of slot.children) {
+      if (!slot.entity.children.some(x => x.instanceId === c.instanceId)) {
+        slot.entity.children.push(c);
+      }
+    }
+    slot.children = [];
+  }
+}
+
+/**
+ * 战斗态卡片树（与开战侧栏同款）：有 slot 用树 + unit；无 slot 则按 runtime 兜底。
+ * 结算/历史回顾与正式战斗共用。
+ */
+export function renderSlotsAsBattleCards(
+  slots: DeploySlot[],
   side: 'player' | 'enemy',
-  units: CombatUnitRuntime[] | null,
+  collapse: CollapseState,
+  units: CombatUnitRuntime[] | null | undefined,
 ): string {
-  const slots = getSideSlots(ctx, side);
   if (slots.length > 0) {
     let h = '';
     for (const slot of slots) {
       const edef = getEntityDef(slot.entity.defId);
       if (!edef) continue;
       const unit = units?.find(u => u.instanceId === slot.entity.instanceId);
-      h += renderEntityCard(slot.entity, 0, side, 'battle', ctx.collapse, unit, [slot.entity, ...slot.children]);
+      h += renderEntityCard(slot.entity, 0, side, 'battle', collapse, unit, [slot.entity, ...slot.children]);
     }
     return h || '<div style="color:var(--sb-text-muted,#999);font-size:12px;padding:8px;">无单位</div>';
   }
@@ -102,9 +110,18 @@ export function renderBattleSideCards(
   }
   let h = '';
   for (const u of units) {
-    h += renderEntityCard(stubItemFromUnit(u), 0, side, 'battle', ctx.collapse, u);
+    h += renderEntityCard(stubItemFromUnit(u), 0, side, 'battle', collapse, u);
   }
   return h;
+}
+
+/** 渲染一侧战斗卡片树（有 slot 用树；否则按 runtime 列表兜底） */
+export function renderBattleSideCards(
+  ctx: OfficialCombatCtx,
+  side: 'player' | 'enemy',
+  units: CombatUnitRuntime[] | null,
+): string {
+  return renderSlotsAsBattleCards(getSideSlots(ctx, side), side, ctx.collapse, units);
 }
 
 export function renderOfficialPlayerCombatHtml(ctx: OfficialCombatCtx): string {
@@ -186,16 +203,36 @@ function findInstanceInSlots(slots: DeploySlot[], instanceId: string): ItemInsta
 export function getOfficialCombatInstance(
   ctx: OfficialCombatCtx,
   instanceId: string,
+  side?: CardSide,
 ): ItemInstance | null {
+  if (side === 'enemy') {
+    return findInstanceInSlots(ctx.combatEnemySlots || [], instanceId);
+  }
+  if (side === 'player' || side === 'warehouse') {
+    return findInstanceInSlots(ctx.engine.state.deploySlots, instanceId);
+  }
   return findInstanceInSlots(ctx.engine.state.deploySlots, instanceId)
     || findInstanceInSlots(ctx.combatEnemySlots || [], instanceId);
 }
 
-/** 折叠 + tooltip；简单折叠只切 CSS，结构折叠触发 onRebuildSides */
-export function bindOfficialCombatInteractions(root: HTMLElement, ctx: OfficialCombatCtx): void {
+export interface ReadonlyBattleCardBindOpts {
+  collapse: CollapseState;
+  getInstance: SbInstanceLookup;
+  getCombatUnit: SbCombatUnitLookup;
+  getConditionRoots: SbConditionRootsLookup;
+  /** 固定词条/战斗修饰/动态行等结构折叠时重建 DOM */
+  onStructuralRebuild?: () => void;
+}
+
+/**
+ * 战斗卡折叠 + sb 悬浮窗（只读场景与战斗壳共用）。
+ * 不含「继续」等战斗壳专属按钮。
+ * dataset 折叠键已为 side:instanceId，直接用于 Collapse Set。
+ */
+export function bindReadonlyBattleCardUi(root: HTMLElement, opts: ReadonlyBattleCardBindOpts): void {
   root.querySelectorAll('[data-cardtoggle]').forEach(el => {
     const htmlEl = el as HTMLElement;
-    const instanceId = htmlEl.dataset.cardtoggle!;
+    const key = htmlEl.dataset.cardtoggle!;
     htmlEl.addEventListener('click', (e) => {
       if (consumeSuppressNextClick() || isPointerDragging()) {
         e.preventDefault();
@@ -205,9 +242,9 @@ export function bindOfficialCombatInteractions(root: HTMLElement, ctx: OfficialC
       e.stopPropagation();
       const card = htmlEl.closest('.sb-card') as HTMLElement | null;
       if (!card) return;
-      const collapsing = !ctx.collapse.collapsedCards.has(instanceId);
-      if (collapsing) ctx.collapse.collapsedCards.add(instanceId);
-      else ctx.collapse.collapsedCards.delete(instanceId);
+      const collapsing = !opts.collapse.collapsedCards.has(key);
+      if (collapsing) opts.collapse.collapsedCards.add(key);
+      else opts.collapse.collapsedCards.delete(key);
       card.classList.toggle('sb-card-collapsed', collapsing);
       const btn = htmlEl.querySelector('.sb-card-collapse-btn');
       if (btn) btn.textContent = collapsing ? '展开' : '收起';
@@ -216,14 +253,14 @@ export function bindOfficialCombatInteractions(root: HTMLElement, ctx: OfficialC
 
   root.querySelectorAll('[data-affixblocktoggle]').forEach(el => {
     const htmlEl = el as HTMLElement;
-    const instanceId = htmlEl.dataset.affixblocktoggle!;
+    const key = htmlEl.dataset.affixblocktoggle!;
     htmlEl.addEventListener('click', (e) => {
       e.stopPropagation();
       const foldable = htmlEl.parentElement?.querySelector('.sb-foldable') as HTMLElement | null;
       if (!foldable) return;
-      const collapsing = !ctx.collapse.collapsedAffixBlocks.has(instanceId);
-      if (collapsing) ctx.collapse.collapsedAffixBlocks.add(instanceId);
-      else ctx.collapse.collapsedAffixBlocks.delete(instanceId);
+      const collapsing = !opts.collapse.collapsedAffixBlocks.has(key);
+      if (collapsing) opts.collapse.collapsedAffixBlocks.add(key);
+      else opts.collapse.collapsedAffixBlocks.delete(key);
       foldable.classList.toggle('sb-folded', collapsing);
       const label = htmlEl.querySelector('span');
       if (label) label.textContent = collapsing ? '展开' : '收起';
@@ -232,15 +269,15 @@ export function bindOfficialCombatInteractions(root: HTMLElement, ctx: OfficialC
 
   root.querySelectorAll('[data-childblocktoggle]').forEach(el => {
     const htmlEl = el as HTMLElement;
-    const instanceId = htmlEl.dataset.childblocktoggle!;
+    const key = htmlEl.dataset.childblocktoggle!;
     htmlEl.addEventListener('click', (e) => {
       e.stopPropagation();
       const foldable = htmlEl.parentElement?.querySelector('.sb-foldable') as HTMLElement | null;
       const preview = htmlEl.parentElement?.querySelector('.sb-foldable-child-preview') as HTMLElement | null;
       if (!foldable) return;
-      const collapsing = !ctx.collapse.collapsedChildBlocks.has(instanceId);
-      if (collapsing) ctx.collapse.collapsedChildBlocks.add(instanceId);
-      else ctx.collapse.collapsedChildBlocks.delete(instanceId);
+      const collapsing = !opts.collapse.collapsedChildBlocks.has(key);
+      if (collapsing) opts.collapse.collapsedChildBlocks.add(key);
+      else opts.collapse.collapsedChildBlocks.delete(key);
       foldable.classList.toggle('sb-folded', collapsing);
       if (preview) preview.style.display = collapsing ? '' : 'none';
       const label = htmlEl.querySelector('span');
@@ -248,56 +285,68 @@ export function bindOfficialCombatInteractions(root: HTMLElement, ctx: OfficialC
     });
   });
 
-  root.querySelectorAll('[data-fixtoggle]').forEach(el => {
-    const htmlEl = el as HTMLElement;
-    const instanceId = htmlEl.dataset.fixtoggle!;
-    htmlEl.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (ctx.collapse.expandedFixedAffixRows.has(instanceId)) {
-        ctx.collapse.expandedFixedAffixRows.delete(instanceId);
-      } else {
-        ctx.collapse.expandedFixedAffixRows.add(instanceId);
-      }
-      ctx.onRebuildSides();
+  const rebuild = opts.onStructuralRebuild;
+  if (rebuild) {
+    root.querySelectorAll('[data-fixtoggle]').forEach(el => {
+      const htmlEl = el as HTMLElement;
+      const key = htmlEl.dataset.fixtoggle!;
+      htmlEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (opts.collapse.expandedFixedAffixRows.has(key)) {
+          opts.collapse.expandedFixedAffixRows.delete(key);
+        } else {
+          opts.collapse.expandedFixedAffixRows.add(key);
+        }
+        rebuild();
+      });
     });
-  });
 
-  root.querySelectorAll('[data-combatmodtoggle]').forEach(el => {
-    const htmlEl = el as HTMLElement;
-    const instanceId = htmlEl.dataset.combatmodtoggle!;
-    htmlEl.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (ctx.collapse.expandedCombatModBlocks.has(instanceId)) {
-        ctx.collapse.expandedCombatModBlocks.delete(instanceId);
-      } else {
-        ctx.collapse.expandedCombatModBlocks.add(instanceId);
-      }
-      ctx.onRebuildSides();
+    root.querySelectorAll('[data-combatmodtoggle]').forEach(el => {
+      const htmlEl = el as HTMLElement;
+      const key = htmlEl.dataset.combatmodtoggle!;
+      htmlEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (opts.collapse.expandedCombatModBlocks.has(key)) {
+          opts.collapse.expandedCombatModBlocks.delete(key);
+        } else {
+          opts.collapse.expandedCombatModBlocks.add(key);
+        }
+        rebuild();
+      });
     });
-  });
 
-  root.querySelectorAll('[data-dyntoggle]').forEach(el => {
-    const htmlEl = el as HTMLElement;
-    const instanceId = htmlEl.dataset.dyntoggle!;
-    htmlEl.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (ctx.collapse.collapsedDynAffixRows.has(instanceId)) {
-        ctx.collapse.collapsedDynAffixRows.delete(instanceId);
-      } else {
-        ctx.collapse.collapsedDynAffixRows.add(instanceId);
-      }
-      ctx.onRebuildSides();
+    root.querySelectorAll('[data-dyntoggle]').forEach(el => {
+      const htmlEl = el as HTMLElement;
+      const key = htmlEl.dataset.dyntoggle!;
+      htmlEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (opts.collapse.collapsedDynAffixRows.has(key)) {
+          opts.collapse.collapsedDynAffixRows.delete(key);
+        } else {
+          opts.collapse.collapsedDynAffixRows.add(key);
+        }
+        rebuild();
+      });
     });
-  });
+  }
 
-  const playerSide = document.getElementById('sb-player-units');
-  const enemySide = document.getElementById('sb-enemy-units');
-  const lookupCu = (id: string) => {
+  bindSbTooltips(root, opts.getInstance, opts.getCombatUnit, opts.getConditionRoots);
+}
+
+/** 折叠 + tooltip；简单折叠只切 CSS，结构折叠触发 onRebuildSides */
+export function bindOfficialCombatInteractions(root: HTMLElement, ctx: OfficialCombatCtx): void {
+  const lookupCu: SbCombatUnitLookup = (id, side) => {
+    if (side === 'enemy') {
+      return getOfficialCombatUnits(ctx, 'enemy')?.find(u => u.instanceId === id) || null;
+    }
+    if (side === 'player') {
+      return getOfficialCombatUnits(ctx, 'player')?.find(u => u.instanceId === id) || null;
+    }
     const pu = getOfficialCombatUnits(ctx, 'player');
     const eu = getOfficialCombatUnits(ctx, 'enemy');
     return pu?.find(u => u.instanceId === id) || eu?.find(u => u.instanceId === id) || null;
   };
-  const lookupRoots = (id: string): ItemInstance[] | null => {
+  const lookupRoots: SbConditionRootsLookup = (id, side) => {
     const findSlot = (slots: DeploySlot[]) => slots.find(s => {
       const walk = (n: ItemInstance): boolean => {
         if (n.instanceId === id) return true;
@@ -305,11 +354,20 @@ export function bindOfficialCombatInteractions(root: HTMLElement, ctx: OfficialC
       };
       return walk(s.entity) || s.children.some(walk);
     });
-    const slot = findSlot(getSideSlots(ctx, 'player')) || findSlot(getSideSlots(ctx, 'enemy'));
+    let slot: DeploySlot | undefined;
+    if (side === 'enemy') slot = findSlot(getSideSlots(ctx, 'enemy'));
+    else if (side === 'player') slot = findSlot(getSideSlots(ctx, 'player'));
+    else slot = findSlot(getSideSlots(ctx, 'player')) || findSlot(getSideSlots(ctx, 'enemy'));
     return slot ? [slot.entity, ...slot.children] : null;
   };
-  if (playerSide) bindSbTooltips(playerSide, (id) => getOfficialCombatInstance(ctx, id), lookupCu, lookupRoots);
-  if (enemySide) bindSbTooltips(enemySide, (id) => getOfficialCombatInstance(ctx, id), lookupCu, lookupRoots);
+
+  bindReadonlyBattleCardUi(root, {
+    collapse: ctx.collapse,
+    getInstance: (id, side) => getOfficialCombatInstance(ctx, id, side),
+    getCombatUnit: lookupCu,
+    getConditionRoots: lookupRoots,
+    onStructuralRebuild: () => ctx.onRebuildSides(),
+  });
 
   const btn = document.getElementById('btn-continue-combat-center');
   if (btn) {
