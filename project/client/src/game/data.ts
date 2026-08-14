@@ -430,20 +430,20 @@ export function computeStarterLoad(
   const collected = walk(merged);
   let loadBonus = collected.bonus;
   const rootCfg = resolvePassiveBonusConfig({
-    hasPassiveBonuses: def.hasPassiveBonuses === true,
-    passiveEffects: def.passiveEffects,
-    passiveTargetCondition: def.passiveTargetCondition,
-    passiveTargetCount: def.passiveTargetCount,
-    hpBonus: def.hpBonus,
-    hpRegenerationBonus: def.hpRegenerationBonus,
-    staminaBonus: def.staminaBonus,
-    staminaRegenerationBonus: def.staminaRegenerationBonus,
-    loadBonus: def.loadBonus,
+    hasPassiveBonuses: Boolean(getEffectiveValue(starter, 'hasPassiveBonuses') ?? def.hasPassiveBonuses),
+    passiveEffects: getEffectiveValue(starter, 'passiveEffects') ?? def.passiveEffects,
+    passiveTargetCondition: getEffectiveValue(starter, 'passiveTargetCondition') ?? def.passiveTargetCondition,
+    passiveTargetCount: getEffectiveValue(starter, 'passiveTargetCount') ?? def.passiveTargetCount,
+    hpBonus: Number(getEffectiveValue(starter, 'hpBonus') ?? def.hpBonus ?? 0),
+    hpRegenerationBonus: Number(getEffectiveValue(starter, 'hpRegenerationBonus') ?? def.hpRegenerationBonus ?? 0),
+    staminaBonus: Number(getEffectiveValue(starter, 'staminaBonus') ?? def.staminaBonus ?? 0),
+    staminaRegenerationBonus: Number(getEffectiveValue(starter, 'staminaRegenerationBonus') ?? def.staminaRegenerationBonus ?? 0),
+    loadBonus: Number(getEffectiveValue(starter, 'loadBonus') ?? def.loadBonus ?? 0),
   });
   loadBonus += maxLoadFromConfig(rootCfg);
   return {
     current: collected.load,
-    max: def.maxLoad + loadBonus,
+    max: Number(getEffectiveValue(starter, 'maxLoad') ?? def.maxLoad ?? 0) + loadBonus,
   };
 }
 
@@ -493,14 +493,25 @@ export function isActiveEquipment(def: EntityDef): boolean {
   return !isStarter(def) && def.isActive;
 }
 
-/** 判断实体是否有实体槽位（可嵌套子实体） */
-export function hasEntitySlots(def: EntityDef): boolean {
-  return def.entitySlots > 0;
+/** 判断实体是否有实体槽位（可嵌套子实体；含实例 overrides） */
+export function hasEntitySlots(itemOrDef: ItemInstance | EntityDef): boolean {
+  return getEffectiveEntitySlots(itemOrDef) > 0;
 }
 
-/** 获取实体有效槽位数 */
-export function getEffectiveEntitySlots(def: EntityDef): number {
-  return def.entitySlots;
+/** 获取实体有效子实体槽位数（优先 ItemInstance.overrides） */
+export function getEffectiveEntitySlots(itemOrDef: ItemInstance | EntityDef): number {
+  if ('defId' in itemOrDef && (itemOrDef as ItemInstance).type === 'entity') {
+    return Number(getEffectiveValue(itemOrDef as ItemInstance, 'entitySlots') ?? 0);
+  }
+  return Number((itemOrDef as EntityDef).entitySlots ?? 0);
+}
+
+/** 获取实体有效动态词条槽位数（优先 ItemInstance.overrides） */
+export function getEffectiveDynamicAffixSlots(itemOrDef: ItemInstance | EntityDef): number {
+  if ('defId' in itemOrDef && (itemOrDef as ItemInstance).type === 'entity') {
+    return Number(getEffectiveValue(itemOrDef as ItemInstance, 'dynamicAffixSlots') ?? 0);
+  }
+  return Number((itemOrDef as EntityDef).dynamicAffixSlots ?? 0);
 }
 
 /** 第一层槽位上限 = floor((round+1)/2) */

@@ -137,7 +137,7 @@ export function renderOfficialCombatCenterHtml(ctx: OfficialCombatCtx): string {
     const title = s.autoWin ? '对战池无对手 · 自动获胜' : (s.win ? '战斗胜利' : '战斗失败');
     h += `<div class="fg-battle-result">
       <div class="fg-summary-title">${title}</div>
-      <div class="fg-summary-gold">本场金币 +${s.gold}</div>
+      <div class="fg-summary-gold">本场待结算 ${s.gold >= 0 ? '+' : ''}${s.gold}</div>
       <button id="btn-continue-combat-center" class="fg-btn-primary">继续</button>
     </div>`;
   }

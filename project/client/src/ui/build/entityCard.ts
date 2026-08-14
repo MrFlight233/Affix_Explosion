@@ -2,7 +2,7 @@ import { CombatUnitRuntime } from '../../game/engine';
 import {
   EntityDef, AffixDef, ItemInstance,
   getEntityDef, getAffixDef, isStarter, getCategoryName,
-  getEffectiveEntitySlots, countUsedSlots, countUsedAffixSlots, getEffectiveValue,
+  getEffectiveEntitySlots, getEffectiveDynamicAffixSlots, countUsedSlots, countUsedAffixSlots, getEffectiveValue,
   getItemTradeValue, computeStarterLoad,
 } from '../../game/data';
 import { formatWeightG } from './format';
@@ -22,6 +22,11 @@ import {
   resolvePassiveForDisplay,
 } from '../passiveBonusDisplay';
 import { summarizePassiveModsBySource } from '../../game/battle/passives';
+
+/** 实例有效数值字段（优先 overrides） */
+function effNum(item: ItemInstance, field: keyof EntityDef, fallback = 0): number {
+  return Number(getEffectiveValue(item, field) ?? fallback ?? 0);
+}
 
 function targetingFromWeaponOrDef(
   weapon: { targetFaction?: string; targetCount?: number | 'all'; targetCondition?: any } | null | undefined,
@@ -93,8 +98,10 @@ export function renderCardKeyInfo(
   const isActive = edef.isActive;
 
   if (isSt) {
-    const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${edef.hp}/${edef.hp}`;
-    const stam = combatUnit ? `${Math.floor(combatUnit.currentStamina)}/${combatUnit.maxStamina}` : `${edef.maxStamina}/${edef.maxStamina}`;
+    const baseHp = effNum(item, 'hp', edef.hp);
+    const baseSta = effNum(item, 'maxStamina', edef.maxStamina);
+    const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${baseHp}/${baseHp}`;
+    const stam = combatUnit ? `${Math.floor(combatUnit.currentStamina)}/${combatUnit.maxStamina}` : `${baseSta}/${baseSta}`;
     let s: string;
     if (mode === 'battle' && combatUnit && sideFirst) {
       s = `${edef.name}  HP:<span id="cu-hp-${sideFirst}-${item.instanceId}">${hp}</span>  耐力:<span id="cu-sta-${sideFirst}-${item.instanceId}">${stam}</span>`;
@@ -153,7 +160,8 @@ export function renderCardKeyInfo(
     }
     let hpPart = '';
     if (depth === 0) {
-      const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${edef.hp}/${edef.hp}`;
+      const baseHp = effNum(item, 'hp', edef.hp);
+      const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${baseHp}/${baseHp}`;
       if (mode === 'battle' && combatUnit && sideFirst) {
         hpPart = `HP:<span id="cu-hp-${sideFirst}-${item.instanceId}">${hp}</span>  `;
       } else {
@@ -191,7 +199,8 @@ export function renderCardKeyInfo(
       const summary = formatPassiveCollapseSummary(resolvePassiveForDisplay(pRaw));
       let prefix = edef.name;
       if (depth === 0) {
-        const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${edef.hp}/${edef.hp}`;
+        const baseHp = effNum(item, 'hp', edef.hp);
+        const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${baseHp}/${baseHp}`;
         if (mode === 'battle' && combatUnit && sideFirst) {
           prefix = `${edef.name}  HP:<span id="cu-hp-${sideFirst}-${item.instanceId}">${hp}</span>`;
         } else {
@@ -201,13 +210,15 @@ export function renderCardKeyInfo(
       return summary ? `${prefix}  ${summary}` : prefix;
     }
     if (depth === 0) {
-      const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${edef.hp}/${edef.hp}`;
+      const baseHp = effNum(item, 'hp', edef.hp);
+      const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${baseHp}/${baseHp}`;
+      const wt = effNum(item, 'weight', edef.weight);
       if (mode === 'battle' && combatUnit && sideFirst) {
-        return `${edef.name}  HP:<span id="cu-hp-${sideFirst}-${item.instanceId}">${hp}</span>  重:${formatWeightG(edef.weight)}`;
+        return `${edef.name}  HP:<span id="cu-hp-${sideFirst}-${item.instanceId}">${hp}</span>  重:${formatWeightG(wt)}`;
       }
-      return `${edef.name}  HP:${hp}  重:${formatWeightG(edef.weight)}`;
+      return `${edef.name}  HP:${hp}  重:${formatWeightG(wt)}`;
     }
-    return `${edef.name}  重:${formatWeightG(edef.weight)}`;
+    return `${edef.name}  重:${formatWeightG(effNum(item, 'weight', edef.weight))}`;
   }
 }
 
@@ -351,10 +362,12 @@ export function renderEntityCard(
   h += '<div class="sb-card-block">';
   h += '<div class="sb-block-title">属性</div>';
   if (isSt) {
-    const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${edef!.hp}/${edef!.hp}`;
-    const stam = combatUnit ? `${Math.floor(combatUnit.currentStamina)}/${combatUnit.maxStamina}` : `${edef!.maxStamina}/${edef!.maxStamina}`;
-    const sRegen = combatUnit ? combatUnit.staminaRegen : edef!.staminaRegen;
-    const hRegen = combatUnit ? combatUnit.hpRegeneration : (edef!.hpRegen || 0);
+    const baseHp = effNum(item, 'hp', edef!.hp);
+    const baseSta = effNum(item, 'maxStamina', edef!.maxStamina);
+    const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${baseHp}/${baseHp}`;
+    const stam = combatUnit ? `${Math.floor(combatUnit.currentStamina)}/${combatUnit.maxStamina}` : `${baseSta}/${baseSta}`;
+    const sRegen = combatUnit ? combatUnit.staminaRegen : effNum(item, 'staminaRegen', edef!.staminaRegen);
+    const hRegen = combatUnit ? combatUnit.hpRegeneration : effNum(item, 'hpRegen', edef!.hpRegen || 0);
     // HP 行
     if (mode === 'battle' && sideFirst) {
       h += `<div class="sb-card-stats">HP: <span id="cu-hp-${sideFirst}-${item.instanceId}">${hp}</span>  生命恢复: <span id="cu-hregen-${sideFirst}-${item.instanceId}">${hRegen}</span>/s</div>`;
@@ -369,16 +382,17 @@ export function renderEntityCard(
     }
     // 负重行（新增重量）
     {
+      const wt = effNum(item, 'weight', edef!.weight);
       if (combatUnit) {
         const loadText = `${formatWeightG(combatUnit.currentLoad)}/${formatWeightG(combatUnit.maxLoad)}`;
         if (mode === 'battle' && sideFirst) {
-          h += `<div class="sb-card-stats">负重: <span id="cu-load-${sideFirst}-${item.instanceId}">${loadText}</span>  重量：${formatWeightG(edef!.weight)}</div>`;
+          h += `<div class="sb-card-stats">负重: <span id="cu-load-${sideFirst}-${item.instanceId}">${loadText}</span>  重量：${formatWeightG(wt)}</div>`;
         } else {
-          h += `<div class="sb-card-stats">负重: ${loadText}  重量：${formatWeightG(edef!.weight)}</div>`;
+          h += `<div class="sb-card-stats">负重: ${loadText}  重量：${formatWeightG(wt)}</div>`;
         }
       } else {
         const load = computeStarterLoad(item);
-        h += `<div class="sb-card-stats">负重: ${formatWeightG(load.current)}/${formatWeightG(load.max)}  重量：${formatWeightG(edef!.weight)}</div>`;
+        h += `<div class="sb-card-stats">负重: ${formatWeightG(load.current)}/${formatWeightG(load.max)}  重量：${formatWeightG(wt)}</div>`;
       }
     }
     // 槽耗行
@@ -389,14 +403,15 @@ export function renderEntityCard(
     h += '</div>';
   } else if (isEntity && edef) {
     if (depth === 0) {
-      const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${edef.hp}/${edef.hp}`;
+      const baseHp = effNum(item, 'hp', edef.hp);
+      const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${baseHp}/${baseHp}`;
       if (mode === 'battle' && sideFirst) {
         h += `<div class="sb-card-stats">HP: <span id="cu-hp-${sideFirst}-${item.instanceId}">${hp}</span></div>`;
       } else {
         h += `<div class="sb-card-stats">HP: ${hp}</div>`;
       }
     }
-    h += `<div class="sb-card-stats">槽耗: ${edef.slotCost}  重: ${formatWeightG(edef.weight)}`;
+    h += `<div class="sb-card-stats">槽耗: ${edef.slotCost}  重: ${formatWeightG(effNum(item, 'weight', edef.weight))}`;
     if (mode === 'build') h += `  价值: ${getItemTradeValue(item)}`;
     h += '</div>';
   }
@@ -412,8 +427,8 @@ export function renderEntityCard(
           (getEffectiveValue(item, 'onHitEffects') as any) ?? edef.onHitEffects,
           Number(getEffectiveValue(item, 'damage') ?? edef.damage ?? 0),
         );
-    let staminaCost = edef.staminaCost;
-    let actionTime = edef.actionTime;
+    let staminaCost = Number(getEffectiveValue(item, 'staminaCost') ?? edef.staminaCost ?? 0);
+    let actionTime = Number(getEffectiveValue(item, 'actionTime') ?? edef.actionTime ?? 0);
     let remaining: number | undefined;
     let targeting = targetingFromWeaponOrDef(null, edef, item);
     let cdSpan = '';
@@ -481,11 +496,11 @@ export function renderEntityCard(
   const dynAffixList = (item.children || []).filter(c => c.type === 'affix');
   const dynAffixCount = dynAffixList.length;
   const usedAffixSlots = countUsedAffixSlots(item);
-  const hasAffixBlock = (edef && edef.dynamicAffixSlots > 0) || dynAffixCount > 0 || (edef && edef.fixedAffixes.length > 0)
+  const affixSlots = edef ? getEffectiveDynamicAffixSlots(item) : 0;
+  const hasAffixBlock = affixSlots > 0 || dynAffixCount > 0 || (edef && edef.fixedAffixes.length > 0)
     || (edef && edef.preloadedDynamicAffixes && edef.preloadedDynamicAffixes.length > 0);
   if (hasAffixBlock) {
     h += '<div class="sb-card-block">';
-    const affixSlots = edef ? edef.dynamicAffixSlots : 0;
     h += `<div class="sb-block-title" data-affixblocktoggle="${instanceId}" style="cursor:pointer;">`;
     h += `词条 · ${usedAffixSlots}/${affixSlots} 槽位 <span style="font-weight:400;color:var(--sb-text-muted,inherit);margin-left:2px;">${affixBlockCollapsed ? '展开' : '收起'}</span></div>`;
     h += `<div class="sb-foldable${affixBlockCollapsed ? ' sb-folded' : ''}">`;
@@ -542,7 +557,7 @@ export function renderEntityCard(
     h += '</div>';
   }
 
-  const effSlots = edef ? getEffectiveEntitySlots(edef) : 0;
+  const effSlots = edef ? getEffectiveEntitySlots(item) : 0;
   const usedSlots = edef ? countUsedSlots(item) : 0;
   const entityChildren = (item.children || []).filter(c => c.type === 'entity');
   const hasChildBlock = (effSlots > 0) || entityChildren.length > 0;

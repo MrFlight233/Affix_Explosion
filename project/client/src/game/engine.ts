@@ -36,11 +36,20 @@ import {
   type CombatUnitSnapshot, type CombatUnitRuntime, type CombatEvent,
   type PlaybackSpeed,
 } from './battle';
+import {
+  EVENT_CHOICE_COUNT,
+  pickExploreEvents,
+  getExploreEventName,
+  type EventStatus,
+  type CraftsmanReturnRef,
+} from './exploreEvents';
 
 export type {
   CombatUnitSnapshot, CombatUnitRuntime, CombatEvent,
   CombatWeaponRuntime, OnHitContext, PlaybackSpeed,
 } from './battle';
+export { EVENT_CHOICE_COUNT, getExploreEventName, getExploreEventDesc } from './exploreEvents';
+export type { ExploreEventId, EventStatus, CraftsmanReturnRef } from './exploreEvents';
 
 /** 兼容旧存档：1=探险 2=战斗；正式语义以 round 奇偶为准 */
 export type GamePhase = 1 | 2;
@@ -66,6 +75,8 @@ export interface BattleRecord {
 
 export interface GameState {
   gold: number;
+  /** 备用资金池：可正可负；进探险静默结算 */
+  reserveGold: number;
   /** 设计回合 1..MAX_ROUND：奇数=探险，偶数=战斗 */
   round: number;
   /** 与 round 奇偶同步，便于旧 UI/存档 */
@@ -74,7 +85,20 @@ export interface GameState {
   deploySlots: DeploySlot[];
   itemPool: string[];
   seed: number;
+  /** 本回合事件选项 id */
   currentEvents: string[];
+  eventStatus: EventStatus;
+  activeEventId: string | null;
+  /** 雇佣/走私临时货架 */
+  eventOffers: ItemInstance[];
+  eventOfferPrices: Record<string, number>;
+  /** 工匠单槽 */
+  craftsmanSlot: ItemInstance | null;
+  craftsmanReturn: CraftsmanReturnRef | null;
+  /** 本回合商店货架 */
+  shopOffers: ItemInstance[];
+  shopRefreshCount: number;
+  /** @deprecated 兼容旧存档 */
   visitedEventMerchants: string[];
   /** @deprecated 设计已取消成长，仅兼容旧存档 */
   growthStacks: Record<string, number>;
@@ -114,18 +138,19 @@ export class GameEngine {
 
   resetState() {
     this.state = {
-      gold: 40, round: 1, phase: 1,
+      gold: 40, reserveGold: 0, round: 1, phase: 1,
       warehouse: [], deploySlots: [], itemPool: [], seed: Date.now(),
-      currentEvents: [], visitedEventMerchants: [], growthStacks: {},
+      currentEvents: [], eventStatus: 'pending', activeEventId: null,
+      eventOffers: [], eventOfferPrices: {},
+      craftsmanSlot: null, craftsmanReturn: null,
+      shopOffers: [], shopRefreshCount: 0,
+      visitedEventMerchants: [], growthStacks: {},
       quickWarehouseCollapsed: false, battles: [], maxRound: MAX_ROUND,
     };
     this.rebuildItemPool();
-    // 开局 BD / 仓库皆空，不自动部署默认 starter
     this.rightPanel = null;
     this.historyRunId = null;
-    // 进入回合 1 探险：发放探险金 + 生成事件
-    this.grantExploreGold();
-    this.generateEvents();
+    this.enterExploreSetup({ autoSave: false });
     this.notify();
   }
 
@@ -135,11 +160,62 @@ export class GameEngine {
   isBattlePhase(): boolean { return this.state.round % 2 === 0; }
   syncPhaseFromRound() { this.state.phase = this.isExplore() ? 1 : 2; }
 
-  /** 探险发金：floor((round+1)/2)×10 */
+  /** 探险发放额（入池用，不直接改 gold） */
+  getExploreGrantAmount(): number {
+    return Math.floor((this.state.round + 1) / 2) * 10;
+  }
+
+  /** @deprecated 保留名称；现改为入池+结算，见 enterExploreSetup */
   grantExploreGold(): number {
-    const amount = Math.floor((this.state.round + 1) / 2) * 10;
-    this.state.gold += amount;
+    const amount = this.getExploreGrantAmount();
+    this.addReserve(amount);
+    this.settleReserveWithGold();
     return amount;
+  }
+
+  addReserve(delta: number) {
+    this.state.reserveGold += delta;
+  }
+
+  /** 静默结算备用池 ↔ 现金 */
+  settleReserveWithGold(): number {
+    const r = this.state.reserveGold;
+    if (r > 0) {
+      this.state.gold += r;
+      this.state.reserveGold = 0;
+      return r;
+    }
+    if (r < 0) {
+      const pay = Math.min(this.state.gold, -r);
+      this.state.gold -= pay;
+      this.state.reserveGold += pay;
+      return -pay;
+    }
+    return 0;
+  }
+
+  /** 进入探险：入账本趟发放 → 静默结算 → 重置商店/事件 */
+  enterExploreSetup(opts?: { autoSave?: boolean }) {
+    this.addReserve(this.getExploreGrantAmount());
+    this.settleReserveWithGold();
+    this.state.shopRefreshCount = 0;
+    this.clearEventRuntime();
+    this.rollShopOffers();
+    this.generateEvents();
+    if (opts?.autoSave !== false) {
+      // 开局 reset 时 username 可能未就绪，失败仅 warn
+      void this.autoSave();
+    }
+  }
+
+  clearEventRuntime() {
+    this.state.eventStatus = 'pending';
+    this.state.activeEventId = null;
+    this.state.eventOffers = [];
+    this.state.eventOfferPrices = {};
+    this.state.craftsmanSlot = null;
+    this.state.craftsmanReturn = null;
+    this.state.visitedEventMerchants = [];
   }
 
   /** 战斗获胜金：floor((round+1)/2)×5 */
@@ -252,7 +328,7 @@ export class GameEngine {
     const [item] = this.state.warehouse.splice(idx, 1);
     this.notify(); return item;
   }
-  /** 递归搜索：先查仓库，再递归查 deploySlots 树 */
+  /** 递归搜索：先查仓库，再递归查 deploySlots 树，再查工匠槽 */
   findItem(instanceId: string): ItemInstance | undefined {
     let item = this.state.warehouse.find(i => i.instanceId === instanceId);
     if (item) return item;
@@ -267,6 +343,11 @@ export class GameEngine {
         const f = findInTree(c, instanceId);
         if (f) return f;
       }
+    }
+    if (this.state.craftsmanSlot) {
+      if (this.state.craftsmanSlot.instanceId === instanceId) return this.state.craftsmanSlot;
+      const found = findInTree(this.state.craftsmanSlot, instanceId);
+      if (found) return found;
     }
     return undefined;
   }
@@ -367,8 +448,8 @@ export class GameEngine {
     // 拥有 starter 词条的实体不能放入其他实体的槽位
     if (isStarter(childDef)) return '拥有启动端词条的实体不能放入其他实体的槽位';
 
-    // 计算有效槽位和已用槽位
-    const effectiveSlots = getEffectiveEntitySlots(parentDef);
+    // 计算有效槽位和已用槽位（含 overrides，如工匠强化）
+    const effectiveSlots = getEffectiveEntitySlots(parent);
     const used = countUsedSlots(parent);
     if (childDef.slotCost > effectiveSlots - used)
       return `槽位不足(剩${effectiveSlots - used},需${childDef.slotCost})`;
@@ -507,7 +588,7 @@ export class GameEngine {
     return null;
   }
 
-  /** 生成商店物品列表（不限数量，仅价值限制） */
+  /** 生成商店物品列表（不限数量，仅价值限制）— 旧逻辑保留供兼容；正式探险用 rollShopOffers */
   generateShopItems(filter: 'all' | 'entity' | 'affix'): ItemInstance[] {
     this.recomputeItemPool();
     const cap = this.getMerchantValueCap();
@@ -530,6 +611,72 @@ export class GameEngine {
     }
 
     return items;
+  }
+
+  getShopRefreshCost(): number {
+    return 2 * (this.state.shopRefreshCount + 1);
+  }
+
+  /** 有放回抽 6 实体 + 3 词条 */
+  rollShopOffers() {
+    this.recomputeItemPool();
+    const cap = this.getMerchantValueCap();
+    const rand = seededRandom(this.state.seed + this.state.round * 1000 + this.state.shopRefreshCount * 17 + 3);
+    const ents = ENTITY_DEFS.filter(d => d.value <= cap && this.state.itemPool.includes(d.id));
+    const affs = AFFIX_DEFS.filter(d => Math.abs(d.costValue) <= cap && this.state.itemPool.includes(d.id));
+    const offers: ItemInstance[] = [];
+    for (let i = 0; i < 6 && ents.length > 0; i++) {
+      const def = ents[Math.floor(rand() * ents.length)];
+      offers.push(this.createItem(def.id, 'entity'));
+    }
+    for (let i = 0; i < 3 && affs.length > 0; i++) {
+      const def = affs[Math.floor(rand() * affs.length)];
+      offers.push(this.createItem(def.id, 'affix'));
+    }
+    this.state.shopOffers = offers;
+  }
+
+  refreshShop(): string | null {
+    const cost = this.getShopRefreshCost();
+    if (this.state.gold < cost) return `金币不足(需${cost},有${this.state.gold})`;
+    this.state.gold -= cost;
+    this.state.shopRefreshCount += 1;
+    this.rollShopOffers();
+    this.notify();
+    return null;
+  }
+
+  /** 从商店货架购买：移除货架项 */
+  buyFromShopOffer(item: ItemInstance, priceOverride?: number): string | null {
+    const idx = this.state.shopOffers.findIndex(i => i.instanceId === item.instanceId);
+    if (idx < 0) return '商品不在货架上';
+    const price = priceOverride ?? getItemTradeValue(item);
+    if (this.state.gold < price) return `金币不足(需${price},有${this.state.gold})`;
+    this.state.gold -= price;
+    this.state.shopOffers.splice(idx, 1);
+    this.addToWarehouse(item);
+    return null;
+  }
+
+  buyAndEquipFromShop(item: ItemInstance, targetSlotIdx?: number, parentInstanceId?: string | null, priceOverride?: number): string | null {
+    const idx = this.state.shopOffers.findIndex(i => i.instanceId === item.instanceId);
+    if (idx < 0) return '商品不在货架上';
+    const price = priceOverride ?? getItemTradeValue(item);
+    if (this.state.gold < price) return `金币不足(需${price},有${this.state.gold})`;
+    const err = this.moveToDeploy(item, targetSlotIdx, parentInstanceId);
+    if (err) return err;
+    this.state.gold -= price;
+    const still = this.state.shopOffers.findIndex(i => i.instanceId === item.instanceId);
+    if (still >= 0) this.state.shopOffers.splice(still, 1);
+    this.notify();
+    return null;
+  }
+
+  takeFromShopOffer(instanceId: string): ItemInstance | null {
+    const idx = this.state.shopOffers.findIndex(i => i.instanceId === instanceId);
+    if (idx < 0) return null;
+    const [item] = this.state.shopOffers.splice(idx, 1);
+    return item;
   }
 
   /** 递归查找指定 instanceId 的父实体的 children 数组 */
@@ -584,6 +731,7 @@ export class GameEngine {
    */
   enterBattleRound() {
     if (!this.isExplore()) return;
+    this.resolveActiveEventOnBattle();
     this.sanitizeMissingEntityDefs();
     this.state.round += 1;
     this.syncPhaseFromRound();
@@ -611,10 +759,7 @@ export class GameEngine {
     }
     this.state.round += 1;
     this.syncPhaseFromRound();
-    this.state.visitedEventMerchants = [];
-    this.generateEvents();
-    this.grantExploreGold();
-    this.autoSave();
+    this.enterExploreSetup({ autoSave: true });
     this.notify();
     return 'explore';
   }
@@ -627,17 +772,294 @@ export class GameEngine {
 
   // ---- 事件 ----
   generateEvents() {
-    const evts = ['good_merchant', 'entity_merchant', 'affix_merchant', 'discount_merchant', 'lottery'];
-    const rand = seededRandom(this.state.seed + this.state.round * 100 + this.state.phase);
-    const picked: string[] = [], pool = [...evts];
-    for (let i = 0; i < 3 && pool.length > 0; i++)
-      picked.push(pool.splice(Math.floor(rand() * pool.length), 1)[0]);
-    this.state.currentEvents = picked;
+    const rand = seededRandom(this.state.seed + this.state.round * 100 + 7);
+    this.state.currentEvents = pickExploreEvents(
+      this.state.round,
+      this.state.maxRound,
+      EVENT_CHOICE_COUNT,
+      rand,
+    );
+    this.state.eventStatus = 'pending';
+    this.state.activeEventId = null;
   }
+
   getEventName(id: string): string {
-    const n: Record<string,string> = { good_merchant:'好物商人', entity_merchant:'实体好物商人',
-      affix_merchant:'词条好物商人', discount_merchant:'折扣商人', lottery:'抽奖' };
-    return n[id] || id;
+    return getExploreEventName(id);
+  }
+
+  getNextExploreShopCap(): number {
+    const nextExploreRound = this.state.round + 2;
+    if (nextExploreRound > this.state.maxRound) {
+      return this.getMerchantValueCap() + 20;
+    }
+    return nextExploreRound * 10;
+  }
+
+  /** 点选事件卡：立刻锁定 */
+  beginEvent(eventId: string): string | null {
+    if (!this.isExplore()) return '非探险阶段';
+    if (this.state.eventStatus === 'done') return '本回合事件已结束';
+    if (this.state.eventStatus === 'active') return '已有进行中的事件';
+    if (!this.state.currentEvents.includes(eventId)) return '无效事件';
+    this.state.eventStatus = 'active';
+    this.state.activeEventId = eventId;
+    this.state.eventOffers = [];
+    this.state.eventOfferPrices = {};
+    if (eventId === 'hire') this.rollHireOffers();
+    else if (eventId === 'smuggler') this.rollSmugglerOffers();
+    this.notify();
+    return null;
+  }
+
+  completeEvent() {
+    this.flushCraftsmanToReturn(false);
+    this.state.eventOffers = [];
+    this.state.eventOfferPrices = {};
+    this.state.eventStatus = 'done';
+    this.state.activeEventId = null;
+    this.notify();
+  }
+
+  /** 开战前收束进行中事件 */
+  resolveActiveEventOnBattle() {
+    if (this.state.eventStatus !== 'active') return;
+    this.flushCraftsmanToReturn(false);
+    this.state.eventOffers = [];
+    this.state.eventOfferPrices = {};
+    this.state.eventStatus = 'done';
+    this.state.activeEventId = null;
+  }
+
+  rollHireOffers() {
+    this.recomputeItemPool();
+    const cap = this.getMerchantValueCap();
+    const rand = seededRandom(this.state.seed + this.state.round * 333 + 11);
+    const starters = ENTITY_DEFS.filter(
+      d => isStarter(d) && d.value <= cap && this.state.itemPool.includes(d.id),
+    );
+    const offers: ItemInstance[] = [];
+    const prices: Record<string, number> = {};
+    for (let i = 0; i < 6 && starters.length > 0; i++) {
+      const def = starters[Math.floor(rand() * starters.length)];
+      const item = this.createItem(def.id, 'entity');
+      offers.push(item);
+      prices[item.instanceId] = getItemTradeValue(item);
+    }
+    this.state.eventOffers = offers;
+    this.state.eventOfferPrices = prices;
+  }
+
+  rollSmugglerOffers() {
+    this.recomputeItemPool();
+    const cap = this.getMerchantValueCap();
+    const nextCap = this.getNextExploreShopCap();
+    const rand = seededRandom(this.state.seed + this.state.round * 444 + 13);
+    const ents = ENTITY_DEFS.filter(
+      d => d.value > cap && d.value <= nextCap && this.state.itemPool.includes(d.id),
+    );
+    const affs = AFFIX_DEFS.filter(d => {
+      const v = Math.abs(d.costValue);
+      return v > cap && v <= nextCap && this.state.itemPool.includes(d.id);
+    });
+    const offers: ItemInstance[] = [];
+    const prices: Record<string, number> = {};
+    for (let i = 0; i < 6 && ents.length > 0; i++) {
+      const def = ents[Math.floor(rand() * ents.length)];
+      const item = this.createItem(def.id, 'entity');
+      offers.push(item);
+      prices[item.instanceId] = Math.floor(getItemTradeValue(item) * 1.5);
+    }
+    for (let i = 0; i < 3 && affs.length > 0; i++) {
+      const def = affs[Math.floor(rand() * affs.length)];
+      const item = this.createItem(def.id, 'affix');
+      offers.push(item);
+      prices[item.instanceId] = Math.floor(getItemTradeValue(item) * 1.5);
+    }
+    this.state.eventOffers = offers;
+    this.state.eventOfferPrices = prices;
+  }
+
+  buyFromEventOffer(item: ItemInstance): string | null {
+    const idx = this.state.eventOffers.findIndex(i => i.instanceId === item.instanceId);
+    if (idx < 0) return '商品不在事件货架上';
+    const price = this.state.eventOfferPrices[item.instanceId] ?? getItemTradeValue(item);
+    if (this.state.gold < price) return `金币不足(需${price},有${this.state.gold})`;
+    this.state.gold -= price;
+    this.state.eventOffers.splice(idx, 1);
+    delete this.state.eventOfferPrices[item.instanceId];
+    this.addToWarehouse(item);
+    return null;
+  }
+
+  buyAndEquipFromEvent(item: ItemInstance, targetSlotIdx?: number, parentInstanceId?: string | null): string | null {
+    const idx = this.state.eventOffers.findIndex(i => i.instanceId === item.instanceId);
+    if (idx < 0) return '商品不在事件货架上';
+    const price = this.state.eventOfferPrices[item.instanceId] ?? getItemTradeValue(item);
+    if (this.state.gold < price) return `金币不足(需${price},有${this.state.gold})`;
+    const err = this.moveToDeploy(item, targetSlotIdx, parentInstanceId);
+    if (err) return err;
+    this.state.gold -= price;
+    const still = this.state.eventOffers.findIndex(i => i.instanceId === item.instanceId);
+    if (still >= 0) this.state.eventOffers.splice(still, 1);
+    delete this.state.eventOfferPrices[item.instanceId];
+    this.notify();
+    return null;
+  }
+
+  doWorkEvent(): string | null {
+    if (this.state.activeEventId !== 'work') return '非打工事件';
+    this.state.gold += 20;
+    this.completeEvent();
+    return null;
+  }
+
+  doInvestEvent(): string | null {
+    if (this.state.activeEventId !== 'invest') return '非投资事件';
+    if (this.state.gold < 10) return `金币不足(需10,有${this.state.gold})`;
+    this.state.gold -= 10;
+    this.addReserve(20);
+    this.completeEvent();
+    return null;
+  }
+
+  /**
+   * 将实体移入工匠槽（真正移出）。
+   * @returns 错误文案
+   */
+  moveEntityToCraftsman(item: ItemInstance): string | null {
+    if (item.type !== 'entity') return '只能放入实体';
+    if (this.state.craftsmanSlot) return '工匠槽已有实体';
+    // 记录归位信息
+    const whIdx = this.state.warehouse.findIndex(i => i.instanceId === item.instanceId);
+    let ret: CraftsmanReturnRef | null = null;
+    if (whIdx >= 0) {
+      ret = { kind: 'warehouse', warehouseIndex: whIdx };
+      this.state.warehouse.splice(whIdx, 1);
+    } else {
+      // BD：顶层或子树
+      const topIdx = this.state.deploySlots.findIndex(s => s.entity.instanceId === item.instanceId);
+      if (topIdx >= 0) {
+        ret = { kind: 'deploy', wasTopLevel: true, slotIdx: topIdx };
+        this.state.deploySlots.splice(topIdx, 1);
+      } else {
+        const parent = this.findParentOfItem(item.instanceId);
+        if (!parent) return '找不到实体';
+        const childIdx = (parent.children || []).findIndex(c => c.instanceId === item.instanceId);
+        let slotIdx = 0;
+        for (let i = 0; i < this.state.deploySlots.length; i++) {
+          if (findInTree(this.state.deploySlots[i].entity, parent.instanceId)
+            || this.state.deploySlots[i].entity.instanceId === parent.instanceId) {
+            slotIdx = i;
+            break;
+          }
+        }
+        ret = {
+          kind: 'deploy',
+          wasTopLevel: false,
+          parentId: parent.instanceId,
+          slotIdx,
+          childIndex: childIdx,
+        };
+        this.removeFromDeploy(item.instanceId);
+        for (const w of this.state.warehouse) {
+          if (w.type === 'entity') removeFromTreeChildren(w, item.instanceId);
+        }
+      }
+    }
+    this.state.craftsmanSlot = item;
+    this.state.craftsmanReturn = ret;
+    this.notify();
+    return null;
+  }
+
+  /**
+   * 从工匠槽取出实体（不自动归位），供拖回 BD/仓库换实体。
+   * 清除归位信息；调用方负责放入目标位置。
+   */
+  extractCraftsmanItem(): ItemInstance | null {
+    const item = this.state.craftsmanSlot;
+    if (!item) return null;
+    this.state.craftsmanSlot = null;
+    this.state.craftsmanReturn = null;
+    this.notify();
+    return item;
+  }
+
+  private flushCraftsmanToReturn(_upgraded: boolean) {
+    const item = this.state.craftsmanSlot;
+    if (!item) {
+      this.state.craftsmanReturn = null;
+      return;
+    }
+    const ret = this.state.craftsmanReturn;
+    this.state.craftsmanSlot = null;
+    this.state.craftsmanReturn = null;
+    if (!ret) {
+      this.state.warehouse.push(item);
+      return;
+    }
+    if (ret.kind === 'warehouse') {
+      const idx = Math.min(ret.warehouseIndex ?? this.state.warehouse.length, this.state.warehouse.length);
+      this.state.warehouse.splice(idx, 0, item);
+      return;
+    }
+    if (ret.wasTopLevel) {
+      const idx = Math.min(ret.slotIdx ?? this.state.deploySlots.length, this.state.deploySlots.length);
+      // 槽位可能不够：尝试 push
+      const slots = this.getFirstLayerSlots();
+      const used = this.state.deploySlots.reduce((s, d) => {
+        const def = getEntityDef(d.entity.defId);
+        return s + (def?.slotCost ?? 1);
+      }, 0);
+      const cost = getEntityDef(item.defId)?.slotCost ?? 1;
+      if (used + cost <= slots) {
+        this.state.deploySlots.splice(idx, 0, { entity: item, children: [] });
+      } else {
+        this.state.warehouse.push(item);
+      }
+      return;
+    }
+    if (ret.parentId) {
+      const parent = this.findItem(ret.parentId);
+      const childDef = getEntityDef(item.defId);
+      if (parent && parent.type === 'entity' && childDef) {
+        if (!parent.children) parent.children = [];
+        const err = this.canEquipToSlot(ret.slotIdx ?? 0, ret.parentId, childDef);
+        if (!err) {
+          const at = Math.min(ret.childIndex ?? parent.children.length, parent.children.length);
+          parent.children.splice(at, 0, item);
+          return;
+        }
+      }
+    }
+    this.state.warehouse.push(item);
+  }
+
+  applyCraftsmanUpgrade(
+    choice: 'hp' | 'hpRegen' | 'staminaRegen' | 'maxStamina' | 'maxLoad' | 'dynamicAffixSlots' | 'entitySlots',
+  ): string | null {
+    const item = this.state.craftsmanSlot;
+    if (!item || item.type !== 'entity') return '请先放入实体';
+    const def = getEntityDef(item.defId);
+    if (!def) return '实体模板不存在';
+    if (!item.overrides) item.overrides = {};
+    const cur = (field: keyof EntityDef) => Number(getEffectiveValue(item, field) ?? (def as any)[field] ?? 0);
+    const bump: Partial<EntityDef> = {};
+    switch (choice) {
+      case 'hp': bump.hp = cur('hp') + 100; break;
+      case 'hpRegen': bump.hpRegen = cur('hpRegen') + 2; break;
+      case 'staminaRegen': bump.staminaRegen = cur('staminaRegen') + 1; break;
+      case 'maxStamina': bump.maxStamina = cur('maxStamina') + 50; break;
+      case 'maxLoad': bump.maxLoad = cur('maxLoad') + 10000; break;
+      case 'dynamicAffixSlots': bump.dynamicAffixSlots = cur('dynamicAffixSlots') + 1; break;
+      case 'entitySlots': bump.entitySlots = cur('entitySlots') + 1; break;
+    }
+    Object.assign(item.overrides, bump);
+    this.flushCraftsmanToReturn(true);
+    this.state.eventStatus = 'done';
+    this.state.activeEventId = null;
+    this.notify();
+    return null;
   }
 
   /** 递归计算战斗快照：遍历嵌套的装备树，聚合所有加成（v5: 支持 ItemInstance.overrides） */
@@ -896,12 +1318,12 @@ export class GameEngine {
         }
       }
 
-      // 基础值不含被动列表（被动运行时施加）；负重上限基础=模板
-      const hp = edef.hp;
-      const maxStamina = edef.maxStamina;
-      const totalStaminaRegen = edef.staminaRegen;
-      const totalHpRegen = edef.hpRegen;
-      const effectiveMaxLoad = edef.maxLoad;
+      // 基础值不含被动列表（被动运行时施加）；启动端本体含实例 overrides（如工匠强化）
+      const hp = Number(getEffectiveValue(slot.entity, 'hp') ?? edef.hp ?? 0);
+      const maxStamina = Number(getEffectiveValue(slot.entity, 'maxStamina') ?? edef.maxStamina ?? 0);
+      const totalStaminaRegen = Number(getEffectiveValue(slot.entity, 'staminaRegen') ?? edef.staminaRegen ?? 0);
+      const totalHpRegen = Number(getEffectiveValue(slot.entity, 'hpRegen') ?? edef.hpRegen ?? 0);
+      const effectiveMaxLoad = Number(getEffectiveValue(slot.entity, 'maxLoad') ?? edef.maxLoad ?? 0);
       const isOverloaded = collected.totalLoad > effectiveMaxLoad;
 
       units.push({
@@ -913,7 +1335,7 @@ export class GameEngine {
         totalStaminaRegen,
         maxStamina,
         currentStamina: maxStamina,
-        staminaRegen: edef.staminaRegen,
+        staminaRegen: totalStaminaRegen,
         totalHpRegeneration: totalHpRegen,
         currentLoad: collected.totalLoad,
         maxLoad: effectiveMaxLoad,
@@ -1169,10 +1591,10 @@ export class GameEngine {
     });
   }
 
-  /** 应用胜利结算：仅满额战斗金（无 growth） */
+  /** 应用胜利结算：胜奖入备用池（不立刻加现金） */
   private applyCombatVictoryRewards(): number {
     const goldReward = this.getBattleWinGold();
-    this.state.gold += goldReward;
+    this.addReserve(goldReward);
     this.notify();
     return goldReward;
   }
@@ -1380,6 +1802,7 @@ export class GameEngine {
   toSaveData(): any {
     return {
       gold: this.state.gold,
+      reserveGold: this.state.reserveGold,
       round: this.state.round,
       phase: this.state.phase,
       warehouse: this.state.warehouse,
@@ -1387,12 +1810,20 @@ export class GameEngine {
       itemPool: this.state.itemPool,
       seed: this.state.seed,
       currentEvents: this.state.currentEvents,
+      eventStatus: this.state.eventStatus,
+      activeEventId: this.state.activeEventId,
+      eventOffers: this.state.eventOffers,
+      eventOfferPrices: this.state.eventOfferPrices,
+      craftsmanSlot: this.state.craftsmanSlot,
+      craftsmanReturn: this.state.craftsmanReturn,
+      shopOffers: this.state.shopOffers,
+      shopRefreshCount: this.state.shopRefreshCount,
       visitedEventMerchants: this.state.visitedEventMerchants,
       battles: this.state.battles,
       maxRound: this.state.maxRound,
       historyRunId: this.historyRunId,
       savedAt: new Date().toISOString(),
-      saveVersion: 2,
+      saveVersion: 3,
     };
   }
 
@@ -1439,6 +1870,7 @@ export class GameEngine {
       round = phase === 1 ? round * 2 - 1 : round * 2;
     }
     this.state.gold = data.gold ?? 40;
+    this.state.reserveGold = data.reserveGold ?? 0;
     this.state.round = round;
     this.syncPhaseFromRound();
     this.state.warehouse = data.warehouse ?? [];
@@ -1451,14 +1883,29 @@ export class GameEngine {
     this.state.battles = data.battles ?? [];
     this.state.maxRound = data.maxRound ?? MAX_ROUND;
     this.historyRunId = typeof data.historyRunId === 'number' ? data.historyRunId : null;
-    // 权威来源是持有物；存档 itemPool 仅快照，读档后整表重建
     this.recomputeItemPool();
-    if (Array.isArray(data.currentEvents) && data.currentEvents.length > 0) {
+
+    this.state.shopOffers = Array.isArray(data.shopOffers) ? data.shopOffers : [];
+    this.state.shopRefreshCount = data.shopRefreshCount ?? 0;
+    this.state.eventStatus = data.eventStatus ?? 'pending';
+    this.state.activeEventId = data.activeEventId ?? null;
+    this.state.eventOffers = Array.isArray(data.eventOffers) ? data.eventOffers : [];
+    this.state.eventOfferPrices = data.eventOfferPrices ?? {};
+    this.state.craftsmanSlot = data.craftsmanSlot ?? null;
+    this.state.craftsmanReturn = data.craftsmanReturn ?? null;
+
+    const legacyMerchantEvents = ['good_merchant', 'entity_merchant', 'affix_merchant', 'discount_merchant', 'lottery'];
+    if (Array.isArray(data.currentEvents) && data.currentEvents.length > 0
+      && !data.currentEvents.some((id: string) => legacyMerchantEvents.includes(id))) {
       this.state.currentEvents = data.currentEvents;
     } else if (this.isExplore()) {
       this.generateEvents();
+      if (!this.state.shopOffers.length) this.rollShopOffers();
     } else {
       this.state.currentEvents = [];
+    }
+    if (this.isExplore() && !this.state.shopOffers.length) {
+      this.rollShopOffers();
     }
     this.notify();
   }

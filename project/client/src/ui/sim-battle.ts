@@ -6,7 +6,7 @@ import { GameEngine, CombatEvent, CombatUnitRuntime, PlaybackSpeed } from '../ga
 import {
   EntityDef, ItemInstance, DeploySlot,
   getEntityDef, getAffixDef, isStarter,
-  getEffectiveEntitySlots, countUsedSlots, countUsedAffixSlots,
+  getEffectiveEntitySlots, getEffectiveDynamicAffixSlots, countUsedSlots, countUsedAffixSlots,
   canMountAffix, canRemoveAffix, getFirstLayerSlots,
 } from '../game/data';
 import {
@@ -338,7 +338,7 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
 
     if (isStarter(childDef)) return '启动端实体不能放入其他实体的槽位';
 
-    const effectiveSlots = getEffectiveEntitySlots(parentDef);
+    const effectiveSlots = getEffectiveEntitySlots(parent);
     const used = countUsedSlots(parent);
     if (childDef.slotCost > effectiveSlots - used) {
       return `子实体槽位不足(剩${effectiveSlots - used},需${childDef.slotCost})`;
@@ -909,8 +909,9 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
         let item: ItemInstance;
         if (session.source === 'pool') {
           const used = countUsedAffixSlots(parent);
-          if (used + adef.slotCost > parentDef.dynamicAffixSlots) {
-            return `词条槽位不足(剩${parentDef.dynamicAffixSlots - used},需${adef.slotCost})`;
+          const affixCap = getEffectiveDynamicAffixSlots(parent);
+          if (used + adef.slotCost > affixCap) {
+            return `词条槽位不足(剩${affixCap - used},需${adef.slotCost})`;
           }
           const mountErr = canMountAffix(parent, adef.id);
           if (mountErr) return mountErr;
@@ -926,8 +927,9 @@ export async function showSimBattle(onBack: () => void): Promise<void> {
           }
           if (!already) {
             const used = countUsedAffixSlots(parent);
-            if (used + adef.slotCost > parentDef.dynamicAffixSlots) {
-              return `词条槽位不足(剩${parentDef.dynamicAffixSlots - used},需${adef.slotCost})`;
+            const affixCap = getEffectiveDynamicAffixSlots(parent);
+            if (used + adef.slotCost > affixCap) {
+              return `词条槽位不足(剩${affixCap - used},需${adef.slotCost})`;
             }
             const mountErr = canMountAffix(parent, adef.id);
             if (mountErr) return mountErr;

@@ -2,8 +2,8 @@ import { CombatUnitRuntime } from '../../game/engine';
 import {
   EntityDef, ItemInstance,
   getEntityDef, getAffixDef, isStarter, getEntityCategory,
-  getEffectiveEntitySlots, countUsedSlots, countUsedAffixSlots, getCategoryName,
-  getItemTradeValue, getDefPackageTradeValue, getAffixPackageTradeValue, computeStarterLoad,
+  getEffectiveEntitySlots, getEffectiveDynamicAffixSlots, countUsedSlots, countUsedAffixSlots, getCategoryName,
+  getItemTradeValue, getDefPackageTradeValue, getAffixPackageTradeValue, computeStarterLoad, getEffectiveValue,
 } from '../../game/data';
 import { formatWeightG } from './format';
 import { hasAffixPassive, hasPassive, resolveNames } from './entityCard';
@@ -57,10 +57,12 @@ export function renderTooltipTree(
     h += tipSection('属性');
     h += '<div class="sb-tip-rows">';
     if (isSt) {
-      const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${def.hp}/${def.hp}`;
-      const stam = combatUnit ? `${Math.floor(combatUnit.currentStamina)}/${combatUnit.maxStamina}` : `${def.maxStamina}/${def.maxStamina}`;
-      const sRegen = combatUnit ? combatUnit.staminaRegen : def.staminaRegen;
-      const hRegen = combatUnit ? combatUnit.hpRegeneration : (def.hpRegen || 0);
+      const baseHp = Number(getEffectiveValue(item, 'hp') ?? def.hp ?? 0);
+      const baseSta = Number(getEffectiveValue(item, 'maxStamina') ?? def.maxStamina ?? 0);
+      const hp = combatUnit ? `${Math.round(Math.max(combatUnit.currentHp, 0))}/${combatUnit.totalHp}` : `${baseHp}/${baseHp}`;
+      const stam = combatUnit ? `${Math.floor(combatUnit.currentStamina)}/${combatUnit.maxStamina}` : `${baseSta}/${baseSta}`;
+      const sRegen = combatUnit ? combatUnit.staminaRegen : Number(getEffectiveValue(item, 'staminaRegen') ?? def.staminaRegen ?? 0);
+      const hRegen = combatUnit ? combatUnit.hpRegeneration : Number(getEffectiveValue(item, 'hpRegen') ?? def.hpRegen ?? 0);
       h += `<div class="sb-tip-fixed-row">HP: ${hp}  生命恢复: ${hRegen}/s</div>`;
       h += `<div class="sb-tip-fixed-row">耐力: ${stam}  耐力恢复: ${sRegen}/s</div>`;
       const load = combatUnit
@@ -69,10 +71,11 @@ export function renderTooltipTree(
           const l = computeStarterLoad(item);
           return `${formatWeightG(l.current)}/${formatWeightG(l.max)}`;
         })();
-      h += `<div class="sb-tip-fixed-row">负重: ${load}  重量：${formatWeightG(def.weight)}</div>`;
+      const wt = Number(getEffectiveValue(item, 'weight') ?? def.weight ?? 0);
+      h += `<div class="sb-tip-fixed-row">负重: ${load}  重量：${formatWeightG(wt)}</div>`;
     }
     h += `<div class="sb-tip-fixed-row">槽耗: ${def.slotCost}`;
-    if (!isSt) h += `  重: ${formatWeightG(def.weight)}`;
+    if (!isSt) h += `  重: ${formatWeightG(Number(getEffectiveValue(item, 'weight') ?? def.weight ?? 0))}`;
     h += '</div></div>';
 
     if (def.isActive) {
@@ -137,8 +140,9 @@ export function renderTooltipTree(
       }
     }
 
+    const dynCap = getEffectiveDynamicAffixSlots(item);
     const hasAffixInfo = def.fixedAffixes.length > 0
-      || def.dynamicAffixSlots > 0
+      || dynCap > 0
       || (def.preloadedDynamicAffixes && def.preloadedDynamicAffixes.length > 0);
     if (hasAffixInfo) {
       h += tipSection('词条');
@@ -148,8 +152,8 @@ export function renderTooltipTree(
           h += `<div class="sb-tip-fixed-row" style="${indent}">${fd?.name || fa}  <span class="sb-tip-fixed-effect">${fd?.effect || ''}</span></div>`;
         }
       }
-      if (def.dynamicAffixSlots > 0) {
-        h += `<div class="sb-tip-fixed-row" style="${indent}">动态词条槽位: ${def.dynamicAffixSlots}</div>`;
+      if (dynCap > 0) {
+        h += `<div class="sb-tip-fixed-row" style="${indent}">动态词条槽位: ${dynCap}</div>`;
       }
       if (def.preloadedDynamicAffixes && def.preloadedDynamicAffixes.length > 0) {
         h += `<div class="sb-tip-fixed-row" style="${indent}">预装动态词条: ${resolveNames(def.preloadedDynamicAffixes)}</div>`;
@@ -159,12 +163,13 @@ export function renderTooltipTree(
 
   const affixes = (item.children || []).filter(c => c.type === 'affix');
   const entities = (item.children || []).filter(c => c.type === 'entity');
-  const effSlots = getEffectiveEntitySlots(def);
+  const effSlots = getEffectiveEntitySlots(item);
   const usedSlots = countUsedSlots(item);
 
   if (depth === 0 && affixes.length > 0) {
     const usedAffix = countUsedAffixSlots(item);
-    h += tipSection(`已挂载词条 (${usedAffix}/${def.dynamicAffixSlots} 槽位, ${affixes.length}条)`);
+    const affixCap = getEffectiveDynamicAffixSlots(item);
+    h += tipSection(`已挂载词条 (${usedAffix}/${affixCap} 槽位, ${affixes.length}条)`);
     for (const a of affixes) {
       const ad = getAffixDef(a.defId);
       h += `<div class="sb-tip-tree-row" style="${tipIndent(1)}">${ad?.name || a.defId}  <span class="sb-tip-muted">槽耗${ad?.slotCost ?? 0}</span>  <span class="sb-tip-muted">[${getCategoryName(ad?.category || '')}]</span>  ${ad?.effect || ''}</div>`;

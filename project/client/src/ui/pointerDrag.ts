@@ -10,8 +10,8 @@
 import { showAppToast } from './toast';
 
 export type PointerDragKind = 'entity' | 'affix';
-/** bd=编成；pool=模拟战物品池；warehouse=正式仓库；shop=正式商人/事件目录 */
-export type PointerDragSource = 'bd' | 'pool' | 'warehouse' | 'shop';
+/** bd=编成；pool=模拟战物品池；warehouse=正式仓库；shop=正式商人/事件目录；craftsman=工匠槽 */
+export type PointerDragSource = 'bd' | 'pool' | 'warehouse' | 'shop' | 'craftsman';
 export type PointerDragSide = 'player' | 'enemy' | 'warehouse';
 
 export interface PointerDragSession {
@@ -214,11 +214,20 @@ export function resolveHit(x: number, y: number, session: PointerDragSession): P
     return { action: 'invalid' };
   }
 
+  // 工匠单槽：仅接受 BD/仓库实体；从工匠拖出时本区无效（需拖到 BD/仓库）
+  if (el.closest('[data-fg-zone="craftsman"]')) {
+    if (session.source === 'craftsman') return { action: 'invalid' };
+    if ((session.source === 'bd' || session.source === 'warehouse') && session.kind === 'entity') {
+      return { action: 'mount', side: 'player', listKind: 'top', parentInstanceId: '__craftsman__' };
+    }
+    return { action: 'invalid' };
+  }
+
   // 卸下：模拟战物品池 / 正式仓库卸下区
-  // BD → remove；shop/warehouse 若落在仓库列表上则继续走 mount/reorder（购买或重排）
+  // BD/工匠 → remove；shop/warehouse 若落在仓库列表上则继续走 mount/reorder（购买或重排）
   const unloadEl = el.closest('#sb-pool, [data-fg-zone="unload"]') as HTMLElement | null;
   if (unloadEl) {
-    if (session.source === 'bd') {
+    if (session.source === 'bd' || session.source === 'craftsman') {
       return { action: 'remove' };
     }
     const onWarehouseList = !!(

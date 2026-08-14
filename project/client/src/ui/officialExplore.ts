@@ -5,13 +5,10 @@
 import { GameEngine } from '../game/engine';
 import {
   ItemInstance, EntityDef, AffixDef,
-  getEntityDef, getAffixDef, findInTree, getShopAffixFilterCategories, getEntityCategory,
+  getEntityDef, getAffixDef, findInTree,
   getItemTradeValue,
 } from '../game/data';
 import { renderEntityCard } from './build/entityCard';
-import {
-  PoolFilterState, filterPoolItems, renderPoolFiltersHtml, bindPoolFilterEvents,
-} from './build/poolList';
 import { bindSbTooltips } from './build/simTooltip';
 import { CollapseState, collapseItemTree } from './build/types';
 import {
@@ -22,7 +19,6 @@ import {
 export interface OfficialExploreCtx {
   engine: GameEngine;
   collapse: CollapseState;
-  poolFilter: PoolFilterState;
   /** 商人/事件目录 Map instanceId -> ItemInstance */
   catalogItems: Map<string, ItemInstance>;
   catalogPrices: Map<string, number>;
@@ -90,23 +86,6 @@ export function renderOfficialWarehouseHtml(ctx: OfficialExploreCtx): string {
   return h;
 }
 
-function catalogDefs(ctx: OfficialExploreCtx): { entities: EntityDef[]; affixes: AffixDef[]; byDefId: Map<string, ItemInstance> } {
-  const entities: EntityDef[] = [];
-  const affixes: AffixDef[] = [];
-  const byDefId = new Map<string, ItemInstance>();
-  for (const item of ctx.catalogItems.values()) {
-    byDefId.set(item.defId, item);
-    if (item.type === 'entity') {
-      const d = getEntityDef(item.defId);
-      if (d) entities.push(d);
-    } else {
-      const d = getAffixDef(item.defId);
-      if (d) affixes.push(d);
-    }
-  }
-  return { entities, affixes, byDefId };
-}
-
 function priceLabelFor(ctx: OfficialExploreCtx, item: ItemInstance, _def: EntityDef | AffixDef): string {
   const override = ctx.catalogPrices.get(item.instanceId);
   if (override !== undefined) {
@@ -115,47 +94,41 @@ function priceLabelFor(ctx: OfficialExploreCtx, item: ItemInstance, _def: Entity
   return `${getItemTradeValue(item)}金`;
 }
 
-/** 商人/事件列表（不含筛选条） */
+/** 商人货架列表（无筛选；按实例列出，支持同 def 多件） */
 export function renderOfficialShopItemListHtml(ctx: OfficialExploreCtx): string {
-  const { entities: allE, affixes: allA, byDefId } = catalogDefs(ctx);
-  const { entities, affixes } = filterPoolItems(ctx.poolFilter, { entities: allE, affixes: allA });
-  const cs = ctx.poolFilter.collapsedPoolSections;
+  const items = [...ctx.catalogItems.values()];
+  const entities = items.filter(i => i.type === 'entity');
+  const affixes = items.filter(i => i.type === 'affix');
 
   let h = '<div id="fg-shop-item-list" class="sb-item-list">';
 
-  const entitySecCollapsed = cs.has('section:entity');
-  h += `<div class="sb-pool-sec-header" data-toggle-section="section:entity">${entitySecCollapsed ? '▸' : '▾'} 实体 <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${entities.length}</span></div>`;
-  if (!entitySecCollapsed) {
-    if (entities.length === 0) {
-      h += '<div class="sb-pool-empty">无匹配实体</div>';
-    } else {
-      for (const e of entities) {
-        const item = byDefId.get(e.id);
-        if (!item) continue;
-        const price = priceLabelFor(ctx, item, e);
-        h += `<div class="sb-pool-item" data-defid="${e.id}" data-type="entity" data-source="shop" data-instance="${item.instanceId}">
-          <span class="item-name">${e.name}</span>
-          <span class="item-stat">${price}  槽耗${e.slotCost}</span>
-        </div>`;
-      }
+  h += `<div class="sb-pool-sec-header">实体 <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${entities.length}</span></div>`;
+  if (entities.length === 0) {
+    h += '<div class="sb-pool-empty">暂无实体</div>';
+  } else {
+    for (const item of entities) {
+      const e = getEntityDef(item.defId);
+      if (!e) continue;
+      const price = priceLabelFor(ctx, item, e);
+      h += `<div class="sb-pool-item" data-defid="${e.id}" data-type="entity" data-source="shop" data-instance="${item.instanceId}">
+        <span class="item-name">${e.name}</span>
+        <span class="item-stat">${price}  槽耗${e.slotCost}</span>
+      </div>`;
     }
   }
 
-  const affixSecCollapsed = cs.has('section:affix');
-  h += `<div class="sb-pool-sec-header" data-toggle-section="section:affix">${affixSecCollapsed ? '▸' : '▾'} 词条 <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${affixes.length}</span></div>`;
-  if (!affixSecCollapsed) {
-    if (affixes.length === 0) {
-      h += '<div class="sb-pool-empty">无匹配词条</div>';
-    } else {
-      for (const a of affixes) {
-        const item = byDefId.get(a.id);
-        if (!item) continue;
-        const price = priceLabelFor(ctx, item, a);
-        h += `<div class="sb-pool-item" data-defid="${a.id}" data-type="affix" data-source="shop" data-instance="${item.instanceId}">
-          <span class="item-name">${a.name}</span>
-          <span class="item-stat">${price}  槽耗${a.slotCost}</span>
-        </div>`;
-      }
+  h += `<div class="sb-pool-sec-header">词条 <span style="font-weight:400;color:var(--sb-text-muted,inherit);">${affixes.length}</span></div>`;
+  if (affixes.length === 0) {
+    h += '<div class="sb-pool-empty">暂无词条</div>';
+  } else {
+    for (const item of affixes) {
+      const a = getAffixDef(item.defId);
+      if (!a) continue;
+      const price = priceLabelFor(ctx, item, a);
+      h += `<div class="sb-pool-item" data-defid="${a.id}" data-type="affix" data-source="shop" data-instance="${item.instanceId}">
+        <span class="item-name">${a.name}</span>
+        <span class="item-stat">${price}  槽耗${a.slotCost}</span>
+      </div>`;
     }
   }
 
@@ -165,39 +138,11 @@ export function renderOfficialShopItemListHtml(ctx: OfficialExploreCtx): string 
 
 export function renderOfficialShopHtml(ctx: OfficialExploreCtx): string {
   const cap = ctx.engine.getMerchantValueCap();
-  const { entities: catalogEntities, affixes: catalogAffixes } = catalogDefs(ctx);
-
-  // 可见实体分类名（货架有货）；「all」始终有效
-  const presentEntityCats = new Set<string>();
-  for (const e of catalogEntities) {
-    for (const name of getEntityCategory(e)) presentEntityCats.add(name);
-  }
-  if (
-    ctx.poolFilter.entityCatFilter !== 'all' &&
-    !presentEntityCats.has(ctx.poolFilter.entityCatFilter)
-  ) {
-    ctx.poolFilter.entityCatFilter = 'all';
-  }
-
-  // 可见词条分类：showInFilter ∩ 货架有货；不可见则回退「全部」
-  const shopCats = getShopAffixFilterCategories().filter(c =>
-    catalogAffixes.some(a => a.category === c.id),
-  );
-  if (
-    ctx.poolFilter.affixCatFilter !== 'all' &&
-    !shopCats.some(c => c.id === ctx.poolFilter.affixCatFilter)
-  ) {
-    ctx.poolFilter.affixCatFilter = 'all';
-  }
-
   let h = `<div class="panel fg-merchant" id="merchant-panel" data-fg-zone="sell">`;
-  h += `<div class="panel-title">固定商人（价值上限: ${cap}）</div>`;
+  h += `<div class="panel-title">商店货架（价值上限: ${cap}）</div>`;
   h += '<p class="fg-sell-hint">拖到左侧出场 BD：购买并装备 · 拖到下方仓库：购买并入库 · 拖入本面板：半价出售</p>';
-  h += renderPoolFiltersHtml(ctx.poolFilter, {
-    forShop: true,
-    catalogEntities,
-    catalogAffixes,
-  });
+  const refreshCost = ctx.engine.getShopRefreshCost();
+  h += `<button type="button" class="btn" id="btn-shop-refresh" style="margin-bottom:8px;">刷新（${refreshCost}金）· 已刷${ctx.engine.state.shopRefreshCount}次</button>`;
   h += renderOfficialShopItemListHtml(ctx);
   h += '</div>';
   return h;
@@ -278,6 +223,16 @@ function resolveOwnedItem(ctx: OfficialExploreCtx, session: PointerDragSession):
 function commitOfficialDrag(ctx: OfficialExploreCtx, session: PointerDragSession, hit: PointerDragHit): string | null {
   if (hit.action === 'invalid') return null;
 
+  // ── 工匠槽 ──
+  if (hit.parentInstanceId === '__craftsman__' && hit.action === 'mount') {
+    if (session.source === 'craftsman') return null;
+    const item = ctx.engine.findItem(session.id);
+    if (!item || item.type !== 'entity') return '只能放入实体';
+    const err = ctx.engine.moveEntityToCraftsman(item);
+    if (!err) collapseItemTree(item, ctx.collapse);
+    return err;
+  }
+
   // ── 出售 ──
   if (hit.action === 'sell') {
     if (session.source !== 'bd' && session.source !== 'warehouse') return null;
@@ -290,8 +245,15 @@ function commitOfficialDrag(ctx: OfficialExploreCtx, session: PointerDragSession
     return null;
   }
 
-  // ── BD → 仓库卸下 ──
+  // ── BD / 工匠 → 仓库卸下 ──
   if (hit.action === 'remove') {
+    if (session.source === 'craftsman') {
+      const item = ctx.engine.extractCraftsmanItem();
+      if (!item || item.instanceId !== session.id) return '工匠槽无此实体';
+      collapseItemTree(item, ctx.collapse);
+      ctx.engine.addToWarehouse(item);
+      return null;
+    }
     if (session.source !== 'bd') return null;
     const item = ctx.engine.findItem(session.id);
     if (!item) return '物品不存在';
@@ -352,7 +314,12 @@ function commitOfficialDrag(ctx: OfficialExploreCtx, session: PointerDragSession
         if (!item) return '物品不存在';
         const override = ctx.getCatalogPrice(session.id);
         collapseItemTree(item, ctx.collapse);
-        const err = ctx.engine.buyItem(item, override);
+        const inShop = ctx.engine.state.shopOffers.some(i => i.instanceId === item.instanceId);
+        const inEvent = ctx.engine.state.eventOffers.some(i => i.instanceId === item.instanceId);
+        let err: string | null;
+        if (inShop) err = ctx.engine.buyFromShopOffer(item, override);
+        else if (inEvent) err = ctx.engine.buyFromEventOffer(item);
+        else err = ctx.engine.buyItem(item, override);
         if (!err) {
           ctx.afterCatalogPurchase(session.id);
           ctx.showToast('已购买并入库');
@@ -364,6 +331,14 @@ function commitOfficialDrag(ctx: OfficialExploreCtx, session: PointerDragSession
         if (!item) return '物品不存在';
         collapseItemTree(item, ctx.collapse);
         return ctx.engine.moveToWarehouse(item);
+      }
+      if (session.source === 'craftsman') {
+        const held = ctx.engine.state.craftsmanSlot;
+        if (!held || held.instanceId !== session.id) return '工匠槽无此实体';
+        const item = ctx.engine.extractCraftsmanItem()!;
+        collapseItemTree(item, ctx.collapse);
+        ctx.engine.addToWarehouse(item);
+        return null;
       }
       if (session.source === 'warehouse') {
         // 顶层已在仓库，视为重排
@@ -388,7 +363,12 @@ function commitOfficialDrag(ctx: OfficialExploreCtx, session: PointerDragSession
       if (!item) return '物品不存在';
       const override = ctx.getCatalogPrice(session.id);
       collapseItemTree(item, ctx.collapse);
-      const err = ctx.engine.buyAndEquip(item, slotIdx, parentId, override);
+      const inShop = ctx.engine.state.shopOffers.some(i => i.instanceId === item.instanceId);
+      const inEvent = ctx.engine.state.eventOffers.some(i => i.instanceId === item.instanceId);
+      let err: string | null;
+      if (inShop) err = ctx.engine.buyAndEquipFromShop(item, slotIdx, parentId, override);
+      else if (inEvent) err = ctx.engine.buyAndEquipFromEvent(item, slotIdx, parentId);
+      else err = ctx.engine.buyAndEquip(item, slotIdx, parentId, override);
       if (!err) {
         ctx.afterCatalogPurchase(session.id);
         ctx.showToast('已购买并装备');
@@ -402,6 +382,22 @@ function commitOfficialDrag(ctx: OfficialExploreCtx, session: PointerDragSession
       collapseItemTree(item, ctx.collapse);
       // 已在目标父下且同列表 → 上面 reorder 已处理；此处为跨位置
       return ctx.engine.moveToDeploy(item, slotIdx, parentId);
+    }
+
+    if (session.source === 'craftsman') {
+      if (session.kind !== 'entity') return '只能拖出实体';
+      const held = ctx.engine.state.craftsmanSlot;
+      if (!held || held.instanceId !== session.id) return '工匠槽无此实体';
+      const item = ctx.engine.extractCraftsmanItem()!;
+      collapseItemTree(item, ctx.collapse);
+      const err = ctx.engine.moveToDeploy(item, slotIdx, parentId);
+      if (err) {
+        // 放置失败：塞回工匠槽，避免实体丢失
+        ctx.engine.state.craftsmanSlot = item;
+        ctx.engine.notify();
+        return err;
+      }
+      return null;
     }
 
     // pool 来源正式局不用
@@ -460,6 +456,7 @@ function bindBdPointer(bdEl: HTMLElement, source: 'bd' | 'warehouse', ctx: Offic
 }
 
 function bindCollapseToggles(root: HTMLElement, ctx: OfficialExploreCtx): void {
+  // 卡片整体折叠：就地切 CSS（与战斗壳/模拟战一致），避免全量 render 导致监听器叠绑或状态被二次翻转
   root.querySelectorAll('[data-cardtoggle]').forEach(el => {
     const htmlEl = el as HTMLElement;
     const instanceId = htmlEl.dataset.cardtoggle!;
@@ -470,9 +467,14 @@ function bindCollapseToggles(root: HTMLElement, ctx: OfficialExploreCtx): void {
         return;
       }
       e.stopPropagation();
-      if (ctx.collapse.collapsedCards.has(instanceId)) ctx.collapse.collapsedCards.delete(instanceId);
-      else ctx.collapse.collapsedCards.add(instanceId);
-      ctx.onExploreChanged();
+      const card = htmlEl.closest('.sb-card') as HTMLElement | null;
+      if (!card) return;
+      const collapsing = !ctx.collapse.collapsedCards.has(instanceId);
+      if (collapsing) ctx.collapse.collapsedCards.add(instanceId);
+      else ctx.collapse.collapsedCards.delete(instanceId);
+      card.classList.toggle('sb-card-collapsed', collapsing);
+      const btn = htmlEl.querySelector('.sb-card-collapse-btn');
+      if (btn) btn.textContent = collapsing ? '展开' : '收起';
     });
   });
 
@@ -481,9 +483,14 @@ function bindCollapseToggles(root: HTMLElement, ctx: OfficialExploreCtx): void {
     const instanceId = htmlEl.dataset.affixblocktoggle!;
     htmlEl.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (ctx.collapse.collapsedAffixBlocks.has(instanceId)) ctx.collapse.collapsedAffixBlocks.delete(instanceId);
-      else ctx.collapse.collapsedAffixBlocks.add(instanceId);
-      ctx.onExploreChanged();
+      const foldable = htmlEl.parentElement?.querySelector('.sb-foldable') as HTMLElement | null;
+      if (!foldable) return;
+      const collapsing = !ctx.collapse.collapsedAffixBlocks.has(instanceId);
+      if (collapsing) ctx.collapse.collapsedAffixBlocks.add(instanceId);
+      else ctx.collapse.collapsedAffixBlocks.delete(instanceId);
+      foldable.classList.toggle('sb-folded', collapsing);
+      const label = htmlEl.querySelector('span');
+      if (label) label.textContent = collapsing ? '展开' : '收起';
     });
   });
 
@@ -492,12 +499,20 @@ function bindCollapseToggles(root: HTMLElement, ctx: OfficialExploreCtx): void {
     const instanceId = htmlEl.dataset.childblocktoggle!;
     htmlEl.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (ctx.collapse.collapsedChildBlocks.has(instanceId)) ctx.collapse.collapsedChildBlocks.delete(instanceId);
-      else ctx.collapse.collapsedChildBlocks.add(instanceId);
-      ctx.onExploreChanged();
+      const foldable = htmlEl.parentElement?.querySelector('.sb-foldable') as HTMLElement | null;
+      const preview = htmlEl.parentElement?.querySelector('.sb-foldable-child-preview') as HTMLElement | null;
+      if (!foldable) return;
+      const collapsing = !ctx.collapse.collapsedChildBlocks.has(instanceId);
+      if (collapsing) ctx.collapse.collapsedChildBlocks.add(instanceId);
+      else ctx.collapse.collapsedChildBlocks.delete(instanceId);
+      foldable.classList.toggle('sb-folded', collapsing);
+      if (preview) preview.style.display = collapsing ? '' : 'none';
+      const label = htmlEl.querySelector('span');
+      if (label) label.textContent = collapsing ? '展开' : '收起';
     });
   });
 
+  // 固定词条/动态词条行等会改 DOM 结构，需全量重绘
   root.querySelectorAll('[data-fixtoggle]').forEach(el => {
     const htmlEl = el as HTMLElement;
     const instanceId = htmlEl.dataset.fixtoggle!;
@@ -532,6 +547,33 @@ function bindCollapseToggles(root: HTMLElement, ctx: OfficialExploreCtx): void {
   });
 }
 
+function bindCraftsmanPointer(slotEl: HTMLElement, ctx: OfficialExploreCtx): void {
+  const rootId = ctx.engine.state.craftsmanSlot?.instanceId;
+  if (!rootId) return;
+  slotEl.addEventListener('pointerdown', (e) => {
+    const pe = e as PointerEvent;
+    if (pe.button !== 0) return;
+    const handle = (pe.target as HTMLElement).closest('[data-drag-handle]') as HTMLElement | null;
+    if (!handle || !slotEl.contains(handle)) return;
+    if ((pe.target as HTMLElement).closest('.sb-card-collapse-btn')) return;
+    // 仅允许拖出工匠槽根实体（不可拖子树内物品单独出槽）
+    if (handle.dataset.instance !== rootId) return;
+    const defId = handle.dataset.defid || '';
+    const label = handle.querySelector('.sb-card-header-name')?.textContent
+      || handle.textContent?.trim().slice(0, 24)
+      || rootId;
+    beginPointerDrag(pe, {
+      kind: 'entity',
+      source: 'craftsman',
+      id: rootId,
+      defId,
+      side: 'warehouse',
+      label,
+      originEl: handle,
+    }, { onCommit: (s, h) => commitOfficialDrag(ctx, s, h) });
+  });
+}
+
 export function bindOfficialExplore(root: HTMLElement, ctx: OfficialExploreCtx): void {
   bindSbTooltips(root, id => ctx.engine.findItem(id) ?? ctx.catalogItems.get(id) ?? null, (id) => {
     const preview = ctx.engine.previewBdRuntimes(ctx.engine.state.deploySlots);
@@ -549,20 +591,17 @@ export function bindOfficialExplore(root: HTMLElement, ctx: OfficialExploreCtx):
 
   const shopPanel = root.querySelector('#merchant-panel') as HTMLElement | null;
   if (shopPanel) {
-    bindPoolFilterEvents(shopPanel, ctx.poolFilter, (reason) => {
-      if (reason === 'search') {
-        const list = document.getElementById('fg-shop-item-list');
-        if (list) {
-          const tmp = document.createElement('div');
-          tmp.innerHTML = renderOfficialShopItemListHtml(ctx);
-          const neu = tmp.firstElementChild as HTMLElement;
-          list.replaceWith(neu);
-          bindShopItemPointer(neu, ctx);
+    const refreshBtn = document.getElementById('btn-shop-refresh');
+    if (refreshBtn) {
+      refreshBtn.onclick = () => {
+        const err = ctx.engine.refreshShop();
+        if (err) ctx.showToast(err);
+        else {
+          ctx.showToast('货架已刷新');
+          ctx.onExploreChanged();
         }
-      } else {
-        ctx.onExploreChanged();
-      }
-    });
+      };
+    }
   }
 
   bindShopItemPointer(root, ctx);
@@ -572,6 +611,9 @@ export function bindOfficialExplore(root: HTMLElement, ctx: OfficialExploreCtx):
 
   const whArea = document.getElementById('fg-warehouse-area');
   if (whArea) bindBdPointer(whArea, 'warehouse', ctx);
+
+  const craftsmanSlot = document.getElementById('craftsman-slot');
+  if (craftsmanSlot) bindCraftsmanPointer(craftsmanSlot, ctx);
 
   bindCollapseToggles(root, ctx);
 }
