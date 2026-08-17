@@ -40,6 +40,8 @@ import {
   EVENT_CHOICE_COUNT,
   pickExploreEvents,
   getExploreEventName,
+  getPathAffixIds,
+  isPathGatedDef,
   type EventStatus,
   type CraftsmanReturnRef,
 } from './exploreEvents';
@@ -886,6 +888,7 @@ export class GameEngine {
     if (eventId === 'hire') this.rollHireOffers();
     else if (eventId === 'smuggler') this.rollSmugglerOffers();
     else if (eventId === 'open_path') this.rollOpenPathOffers();
+    else if (eventId === 'path_merchant') this.rollPathMerchantOffers();
     this.notify();
     return null;
   }
@@ -971,6 +974,35 @@ export class GameEngine {
     this.state.eventOfferPrices = prices;
   }
 
+  /** 路线商人：itemPool 内路线解锁物，有放回 6 实体 + 3 词条，原价 */
+  rollPathMerchantOffers() {
+    this.recomputeItemPool();
+    const pathIds = getPathAffixIds();
+    const rand = seededRandom(this.state.seed + this.state.round * 555 + 17);
+    const ents = ENTITY_DEFS.filter(
+      d => this.state.itemPool.includes(d.id) && isPathGatedDef(d, pathIds),
+    );
+    const affs = AFFIX_DEFS.filter(
+      d => this.state.itemPool.includes(d.id) && isPathGatedDef(d, pathIds),
+    );
+    const offers: ItemInstance[] = [];
+    const prices: Record<string, number> = {};
+    for (let i = 0; i < 6 && ents.length > 0; i++) {
+      const def = ents[Math.floor(rand() * ents.length)];
+      const item = this.createItem(def.id, 'entity');
+      offers.push(item);
+      prices[item.instanceId] = getItemTradeValue(item);
+    }
+    for (let i = 0; i < 3 && affs.length > 0; i++) {
+      const def = affs[Math.floor(rand() * affs.length)];
+      const item = this.createItem(def.id, 'affix');
+      offers.push(item);
+      prices[item.instanceId] = getItemTradeValue(item);
+    }
+    this.state.eventOffers = offers;
+    this.state.eventOfferPrices = prices;
+  }
+
   buyFromEventOffer(item: ItemInstance): string | null {
     const idx = this.state.eventOffers.findIndex(i => i.instanceId === item.instanceId);
     if (idx < 0) return '商品不在事件货架上';
@@ -1000,8 +1032,8 @@ export class GameEngine {
 
   doWorkEvent(): string | null {
     if (this.state.activeEventId !== 'work') return '非打工事件';
-    this.state.gold += 20;
-    this.recordGoldGained(20);
+    this.state.gold += 10;
+    this.recordGoldGained(10);
     this.completeEvent();
     return null;
   }
@@ -1010,9 +1042,17 @@ export class GameEngine {
     if (this.state.activeEventId !== 'invest') return '非投资事件';
     if (this.state.gold < 10) return `金币不足(需10,有${this.state.gold})`;
     this.state.gold -= 10;
-    this.addReserve(20);
-    this.recordGoldGained(20);
-    this.completeEvent();
+    this.addReserve(15);
+    this.recordGoldGained(15);
+    return null;
+  }
+
+  /** 九出十三归：每次 +9 金、备用池 −13；同次可连点，不自动结束 */
+  doNineThirteenEvent(): string | null {
+    if (this.state.activeEventId !== 'nine_thirteen') return '非九出十三归事件';
+    this.state.gold += 9;
+    this.recordGoldGained(9);
+    this.addReserve(-13);
     return null;
   }
 

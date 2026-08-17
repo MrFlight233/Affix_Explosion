@@ -1,5 +1,5 @@
 // 探险事件定义与选项生成
-import type { ItemInstance } from './data';
+import { AFFIX_DEFS } from './data';
 
 export const EVENT_CHOICE_COUNT = 3;
 
@@ -9,7 +9,9 @@ export type ExploreEventId =
   | 'craftsman'
   | 'work'
   | 'invest'
-  | 'open_path';
+  | 'open_path'
+  | 'nine_thirteen'
+  | 'path_merchant';
 
 export interface ExploreEventDef {
   id: ExploreEventId;
@@ -38,6 +40,8 @@ export const EXPLORE_EVENT_DEFS: ExploreEventDef[] = [
     canAppearOn: [],
     canAppearMinRound: 5,
   },
+  { id: 'nine_thirteen', name: '九出十三归', mustAppearOn: [], canAppearOn: [] },
+  { id: 'path_merchant', name: '路线商人', mustAppearOn: [], canAppearOn: [5, 7, 9] },
 ];
 
 export type EventStatus = 'pending' | 'active' | 'done';
@@ -57,6 +61,17 @@ function allExploreRounds(maxRound: number): number[] {
   const out: number[] = [];
   for (let r = 1; r <= maxRound; r += 2) out.push(r);
   return out;
+}
+
+/** 路线词条 id 集合（category === 'path'） */
+export function getPathAffixIds(): Set<string> {
+  return new Set(AFFIX_DEFS.filter(d => d.category === 'path').map(d => d.id));
+}
+
+/** 路线解锁物：poolPrerequisite 含任一路线词条 id */
+export function isPathGatedDef(def: { poolPrerequisite: string[] }, pathIds?: Set<string>): boolean {
+  const paths = pathIds ?? getPathAffixIds();
+  return def.poolPrerequisite.some(p => paths.has(p));
 }
 
 export function eventCanAppear(def: ExploreEventDef, round: number, maxRound: number): boolean {
@@ -105,11 +120,15 @@ export function getExploreEventDesc(id: string, cap: number, nextCap: number): s
     case 'craftsman':
       return `放入 1 个实体，七选一永久强化`;
     case 'work':
-      return `立刻获得 20 金`;
+      return `立刻获得 10 金（同次仅一次）`;
     case 'invest':
-      return `支付 10 金，备用池 +20（下次进探险结算）`;
+      return `支付 10 金，备用池 +15，可多次投资`;
     case 'open_path':
       return '全部路线词条各 1，原价，可任购';
+    case 'nine_thirteen':
+      return `立刻 +9 金，备用池 −13，可多次借贷`;
+    case 'path_merchant':
+      return '路线物品 6 实体+3 词条，原价（可重复）';
     default:
       return '';
   }

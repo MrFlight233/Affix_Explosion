@@ -1,7 +1,8 @@
 import './testLocalStorage';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { GameEngine } from './engine';
-import { reloadData, getEffectiveEntitySlots, computeStarterLoad, type EntityDef, type AffixDef } from './data';
+import { reloadData, getEffectiveEntitySlots, computeStarterLoad, getItemTradeValue, type EntityDef, type AffixDef } from './data';
+import { eventCanAppear, EXPLORE_EVENT_DEFS, getPathAffixIds } from './exploreEvents';
 
 function seedMinimal() {
   const entities = [
@@ -34,6 +35,42 @@ function seedMinimal() {
     {
       id: 'aff1', name: '词条A', category: 'misc', costValue: 3, slotCost: 1, value: 3,
       repeatable: true, prerequisite: [], poolPrerequisite: [], effect: '',
+      onHitEffects: [], staminaRegenerationBonus: 0, staminaBonus: 0,
+      hpRegenerationBonus: 0, hpBonus: 0, loadBonus: 0,
+    },
+  ] as unknown as AffixDef[];
+  reloadData(entities, affixes, []);
+}
+
+function seedPathMerchant() {
+  const entities = [
+    {
+      id: 'human', name: '人类', slotCost: 1, entitySlots: 2, weight: 0, value: 5,
+      fixedAffixes: ['starter'], dynamicAffixSlots: 2, poolPrerequisite: [],
+      hp: 100, maxStamina: 50, staminaRegen: 5, hpRegen: 0, maxLoad: 50,
+      isActive: true, staminaCost: 10, actionTime: 1000, damage: 0,
+      targetType: null, targetOrder: null, priorityTarget: null, targetFaction: 'enemy',
+      staminaRegenerationBonus: 0, staminaBonus: 0, hpRegenerationBonus: 0, hpBonus: 0,
+    },
+    {
+      id: 'route_only', name: '路线货', slotCost: 1, entitySlots: 0, weight: 1, value: 12,
+      fixedAffixes: [], dynamicAffixSlots: 0, poolPrerequisite: ['fighter'],
+      hp: 0, maxStamina: 0, staminaRegen: 0, hpRegen: 0, maxLoad: 0,
+      isActive: false, staminaCost: 0, actionTime: 0, damage: 0,
+      targetType: null, targetOrder: null, priorityTarget: null, targetFaction: null,
+      staminaRegenerationBonus: 0, staminaBonus: 0, hpRegenerationBonus: 0, hpBonus: 0,
+    },
+  ] as unknown as EntityDef[];
+  const affixes = [
+    {
+      id: 'fighter', name: '战士', category: 'path', costValue: 20, slotCost: 2, value: 20,
+      repeatable: false, prerequisite: [], poolPrerequisite: [], effect: '开启战士路线',
+      onHitEffects: [], staminaRegenerationBonus: 0, staminaBonus: 0,
+      hpRegenerationBonus: 0, hpBonus: 0, loadBonus: 0,
+    },
+    {
+      id: 'route_aff', name: '路线词', category: 'fighter', costValue: 5, slotCost: 1, value: 5,
+      repeatable: true, prerequisite: [], poolPrerequisite: ['fighter'], effect: '',
       onHitEffects: [], staminaRegenerationBonus: 0, staminaBonus: 0,
       hpRegenerationBonus: 0, hpBonus: 0, loadBonus: 0,
     },
@@ -89,7 +126,7 @@ describe('explore shop + reserve', () => {
     expect(eng.state.gold).toBe(goldBefore + win + exploreGrant);
   });
 
-  it('投资：扣现金加备用池', () => {
+  it('投资：扣现金加备用池（可连点，不自动结束）', () => {
     eng.state.currentEvents = ['invest'];
     eng.state.eventStatus = 'pending';
     eng.beginEvent('invest');
@@ -97,8 +134,67 @@ describe('explore shop + reserve', () => {
     const err = eng.doInvestEvent();
     expect(err).toBeNull();
     expect(eng.state.gold).toBe(g0 - 10);
-    expect(eng.state.reserveGold).toBe(20);
+    expect(eng.state.reserveGold).toBe(15);
+    expect(eng.state.eventStatus).toBe('active');
+    expect(eng.doInvestEvent()).toBeNull();
+    expect(eng.state.gold).toBe(g0 - 20);
+    expect(eng.state.reserveGold).toBe(30);
+    expect(eng.state.eventStatus).toBe('active');
+  });
+
+  it('九出十三归：可连点 +9 / 池 −13', () => {
+    eng.state.currentEvents = ['nine_thirteen'];
+    eng.state.eventStatus = 'pending';
+    eng.beginEvent('nine_thirteen');
+    const g0 = eng.state.gold;
+    const r0 = eng.state.reserveGold;
+    expect(eng.doNineThirteenEvent()).toBeNull();
+    expect(eng.doNineThirteenEvent()).toBeNull();
+    expect(eng.state.gold).toBe(g0 + 18);
+    expect(eng.state.reserveGold).toBe(r0 - 26);
+    expect(eng.state.eventStatus).toBe('active');
+  });
+
+  it('打工：+10 且领后结束', () => {
+    eng.state.currentEvents = ['work'];
+    eng.state.eventStatus = 'pending';
+    eng.beginEvent('work');
+    const g0 = eng.state.gold;
+    expect(eng.doWorkEvent()).toBeNull();
+    expect(eng.state.gold).toBe(g0 + 10);
     expect(eng.state.eventStatus).toBe('done');
+  });
+
+  it('路线商人：货架有放回 6+3 原价', () => {
+    seedPathMerchant();
+    eng = new GameEngine();
+    const pathIds = getPathAffixIds();
+    expect(pathIds.has('fighter')).toBe(true);
+
+    eng.state.round = 5;
+    eng.state.currentEvents = ['path_merchant'];
+    eng.state.eventStatus = 'pending';
+    const fighter = eng.createItem('fighter', 'affix');
+    eng.addToWarehouse(fighter);
+    eng.recomputeItemPool();
+    expect(eng.state.itemPool).toContain('route_only');
+    expect(eng.state.itemPool).toContain('route_aff');
+
+    eng.beginEvent('path_merchant');
+    const offers = eng.state.eventOffers;
+    const ents = offers.filter(o => o.type === 'entity');
+    const affs = offers.filter(o => o.type === 'affix');
+    expect(ents.length).toBe(6);
+    expect(affs.length).toBe(3);
+    expect(ents.every(o => o.defId === 'route_only')).toBe(true);
+    expect(affs.every(o => o.defId === 'route_aff')).toBe(true);
+    for (const o of offers) {
+      expect(eng.state.eventOfferPrices[o.instanceId]).toBe(getItemTradeValue(o));
+    }
+
+    const def = EXPLORE_EVENT_DEFS.find(d => d.id === 'path_merchant')!;
+    expect(eventCanAppear(def, 1, 10)).toBe(false);
+    expect(eventCanAppear(def, 5, 10)).toBe(true);
   });
 
   it('工匠强化 hp', () => {

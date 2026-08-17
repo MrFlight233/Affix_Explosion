@@ -533,14 +533,14 @@ export class UIManager {
   renderActiveEventPanel(c: HTMLElement, eid: string) {
     if (eid === 'work') {
       c.innerHTML = `<div class="panel"><div class="panel-title">打工</div>
-        <p>立刻获得 20 金</p>
+        <p>立刻获得 10 金（同次事件仅可领取一次）</p>
         <button class="btn hud-btn-primary" id="btn-ev-work">确认领取</button>
         <button class="btn" id="btn-close-ev" style="margin-left:6px;">结束事件</button></div>`;
       document.getElementById('btn-ev-work')!.onclick = () => {
         const err = this.engine.doWorkEvent();
         if (err) this.showToast(err);
         else {
-          this.showToast('+20 金');
+          this.showToast('+10 金');
           this.engine.requestExploreCommitSave();
           this.render();
         }
@@ -554,14 +554,35 @@ export class UIManager {
     }
     if (eid === 'invest') {
       c.innerHTML = `<div class="panel"><div class="panel-title">投资</div>
-        <p>支付 10 金，备用资金池 +20（下次进入探险时结算）</p>
+        <p>每次支付 10 金，备用资金池 +15（可多次；下次进入探险时结算）</p>
         <button class="btn hud-btn-primary" id="btn-ev-invest">确认投资</button>
         <button class="btn" id="btn-close-ev" style="margin-left:6px;">结束事件</button></div>`;
       document.getElementById('btn-ev-invest')!.onclick = () => {
         const err = this.engine.doInvestEvent();
         if (err) this.showToast(err);
         else {
-          this.showToast('已投资 · 备用池 +20');
+          this.showToast('已投资 · 备用池 +15');
+          this.engine.requestExploreCommitSave();
+          this.render();
+        }
+      };
+      document.getElementById('btn-close-ev')!.onclick = () => {
+        this.engine.completeEvent();
+        this.engine.requestExploreCommitSave();
+        this.render();
+      };
+      return;
+    }
+    if (eid === 'nine_thirteen') {
+      c.innerHTML = `<div class="panel"><div class="panel-title">九出十三归</div>
+        <p>每次立刻 +9 金，备用资金池 −13（可多次借贷；下次进入探险时结算）</p>
+        <button class="btn hud-btn-primary" id="btn-ev-nine">确认借贷</button>
+        <button class="btn" id="btn-close-ev" style="margin-left:6px;">结束事件</button></div>`;
+      document.getElementById('btn-ev-nine')!.onclick = () => {
+        const err = this.engine.doNineThirteenEvent();
+        if (err) this.showToast(err);
+        else {
+          this.showToast('+9 金 · 备用池 −13');
           this.engine.requestExploreCommitSave();
           this.render();
         }
