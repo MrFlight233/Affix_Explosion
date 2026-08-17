@@ -206,7 +206,7 @@ export class GameEngine {
 
   resetState() {
     this.state = {
-      gold: 40, reserveGold: 0, totalGoldGained: 0, round: 1, phase: 1,
+      gold: 30, reserveGold: 0, totalGoldGained: 0, round: 1, phase: 1,
       warehouse: [], deploySlots: [], itemPool: [], seed: Date.now(),
       currentEvents: [], eventStatus: 'pending', activeEventId: null,
       eventOffers: [], eventOfferPrices: {},
@@ -2093,7 +2093,7 @@ export class GameEngine {
     if ((data.saveVersion ?? 1) < 2 && data.phase != null) {
       round = phase === 1 ? round * 2 - 1 : round * 2;
     }
-    this.state.gold = data.gold ?? 40;
+    this.state.gold = data.gold ?? 30;
     this.state.reserveGold = data.reserveGold ?? 0;
     this.state.round = round;
     this.syncPhaseFromRound();
