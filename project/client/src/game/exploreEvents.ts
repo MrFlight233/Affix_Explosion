@@ -40,7 +40,7 @@ export const EXPLORE_EVENT_DEFS: ExploreEventDef[] = [
     canAppearOn: [],
     canAppearMinRound: 5,
   },
-  { id: 'nine_thirteen', name: '九出十三归', mustAppearOn: [], canAppearOn: [] },
+  { id: 'nine_thirteen', name: '九出十三归', mustAppearOn: [], canAppearOn: [1, 3, 5, 7] },
   { id: 'path_merchant', name: '路线商人', mustAppearOn: [], canAppearOn: [5, 7, 9] },
 ];
 

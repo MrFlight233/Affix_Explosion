@@ -29,7 +29,7 @@ describe('exploreEvents', () => {
     expect(eventCanAppear(def, 7, 10)).toBe(true);
   });
 
-  it('回合9不出 invest；path_merchant 可出', () => {
+  it('回合9不出 invest / nine_thirteen；path_merchant 可出', () => {
     const seq = [0.01, 0.2, 0.4, 0.6, 0.8];
     let i = 0;
     const rand = () => seq[i++ % seq.length];
@@ -37,6 +37,7 @@ describe('exploreEvents', () => {
     for (let t = 0; t < 40; t++) {
       const picked = pickExploreEvents(9, 10, EVENT_CHOICE_COUNT, rand);
       expect(picked).not.toContain('invest');
+      expect(picked).not.toContain('nine_thirteen');
       if (picked.includes('path_merchant')) sawPath = true;
       expect(picked.length).toBeLessThanOrEqual(EVENT_CHOICE_COUNT);
       expect(new Set(picked).size).toBe(picked.length);
@@ -53,11 +54,12 @@ describe('exploreEvents', () => {
     expect(eventCanAppear(def, 9, 10)).toBe(true);
   });
 
-  it('nine_thirteen 全部奇数探险可出', () => {
+  it('nine_thirteen 仅 1/3/5/7', () => {
     const def = EXPLORE_EVENT_DEFS.find(d => d.id === 'nine_thirteen')!;
     expect(eventCanAppear(def, 1, 10)).toBe(true);
     expect(eventCanAppear(def, 5, 10)).toBe(true);
-    expect(eventCanAppear(def, 9, 10)).toBe(true);
+    expect(eventCanAppear(def, 7, 10)).toBe(true);
+    expect(eventCanAppear(def, 9, 10)).toBe(false);
   });
 
   it('必出数突破 N / N=1 时 hire 独占', () => {
