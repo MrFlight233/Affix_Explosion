@@ -3,7 +3,13 @@ import type { ItemInstance } from './data';
 
 export const EVENT_CHOICE_COUNT = 3;
 
-export type ExploreEventId = 'hire' | 'smuggler' | 'craftsman' | 'work' | 'invest';
+export type ExploreEventId =
+  | 'hire'
+  | 'smuggler'
+  | 'craftsman'
+  | 'work'
+  | 'invest'
+  | 'open_path';
 
 export interface ExploreEventDef {
   id: ExploreEventId;
@@ -12,9 +18,11 @@ export interface ExploreEventDef {
   mustAppearOn: number[];
   /**
    * 可随机出现的游戏 round。
-   * 空数组 = 全部奇数探险回合（1..maxRound 中的奇数）。
+   * 空数组 = 全部奇数探险回合（1..maxRound 中的奇数），受 canAppearMinRound 约束。
    */
   canAppearOn: number[];
+  /** canAppearOn 为空时，仅 round >= 此值的奇数探险可随机出现 */
+  canAppearMinRound?: number;
 }
 
 export const EXPLORE_EVENT_DEFS: ExploreEventDef[] = [
@@ -23,6 +31,13 @@ export const EXPLORE_EVENT_DEFS: ExploreEventDef[] = [
   { id: 'craftsman', name: '工匠', mustAppearOn: [], canAppearOn: [] },
   { id: 'work', name: '打工', mustAppearOn: [], canAppearOn: [] },
   { id: 'invest', name: '投资', mustAppearOn: [], canAppearOn: [1, 3, 5, 7] },
+  {
+    id: 'open_path',
+    name: '开启路线',
+    mustAppearOn: [3],
+    canAppearOn: [],
+    canAppearMinRound: 5,
+  },
 ];
 
 export type EventStatus = 'pending' | 'active' | 'done';
@@ -46,7 +61,11 @@ function allExploreRounds(maxRound: number): number[] {
 
 export function eventCanAppear(def: ExploreEventDef, round: number, maxRound: number): boolean {
   if (def.mustAppearOn.includes(round)) return true;
-  const can = def.canAppearOn.length > 0 ? def.canAppearOn : allExploreRounds(maxRound);
+  const can = def.canAppearOn.length > 0
+    ? def.canAppearOn
+    : allExploreRounds(maxRound).filter(
+        r => def.canAppearMinRound == null || r >= def.canAppearMinRound,
+      );
   return can.includes(round);
 }
 
@@ -89,6 +108,8 @@ export function getExploreEventDesc(id: string, cap: number, nextCap: number): s
       return `立刻获得 20 金`;
     case 'invest':
       return `支付 10 金，备用池 +20（下次进探险结算）`;
+    case 'open_path':
+      return '全部路线词条各 1，原价，可任购';
     default:
       return '';
   }

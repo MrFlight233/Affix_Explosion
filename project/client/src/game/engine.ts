@@ -885,6 +885,7 @@ export class GameEngine {
     this.state.eventOfferPrices = {};
     if (eventId === 'hire') this.rollHireOffers();
     else if (eventId === 'smuggler') this.rollSmugglerOffers();
+    else if (eventId === 'open_path') this.rollOpenPathOffers();
     this.notify();
     return null;
   }
@@ -952,6 +953,19 @@ export class GameEngine {
       const item = this.createItem(def.id, 'affix');
       offers.push(item);
       prices[item.instanceId] = Math.floor(getItemTradeValue(item) * 1.5);
+    }
+    this.state.eventOffers = offers;
+    this.state.eventOfferPrices = prices;
+  }
+
+  rollOpenPathOffers() {
+    const offers: ItemInstance[] = [];
+    const prices: Record<string, number> = {};
+    for (const def of AFFIX_DEFS) {
+      if (def.category !== 'path') continue;
+      const item = this.createItem(def.id, 'affix');
+      offers.push(item);
+      prices[item.instanceId] = getItemTradeValue(item);
     }
     this.state.eventOffers = offers;
     this.state.eventOfferPrices = prices;

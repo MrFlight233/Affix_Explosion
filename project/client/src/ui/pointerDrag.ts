@@ -26,7 +26,7 @@ export interface PointerDragSession {
 }
 
 export interface PointerDragHit {
-  action: 'reorder' | 'mount' | 'remove' | 'sell' | 'invalid';
+  action: 'reorder' | 'mount' | 'remove' | 'sell' | 'craftsman' | 'invalid';
   side?: PointerDragSide;
   listKind?: 'top' | 'child' | 'affix';
   /** mount/reorder 的父；top 层为 null */
@@ -212,6 +212,14 @@ export function resolveHit(x: number, y: number, session: PointerDragSession): P
     !n.classList.contains('sb-drag-ghost') && !n.classList.contains('sb-drag-gap'),
   ) || null;
   if (!el) return { action: 'invalid' };
+
+  // 工匠槽（探险事件）
+  if (el.closest('[data-fg-zone="craftsman"]')) {
+    if (session.kind === 'entity' && (session.source === 'bd' || session.source === 'warehouse')) {
+      return { action: 'craftsman' };
+    }
+    return { action: 'invalid' };
+  }
 
   // 出售落点（正式商人）
   if (el.closest('[data-fg-zone="sell"]')) {

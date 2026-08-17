@@ -1,13 +1,32 @@
 import { describe, it, expect } from 'vitest';
-import { pickExploreEvents, EVENT_CHOICE_COUNT } from './exploreEvents';
+import {
+  EVENT_CHOICE_COUNT,
+  EXPLORE_EVENT_DEFS,
+  eventCanAppear,
+  pickExploreEvents,
+} from './exploreEvents';
 
-describe('pickExploreEvents', () => {
-  it('回合1必含 hire，且总数为 N（必出占坑）', () => {
+describe('exploreEvents', () => {
+  it('回合1必出 hire（数量为 N，必出占槽）', () => {
     const rand = () => 0.1;
     const picked = pickExploreEvents(1, 10, EVENT_CHOICE_COUNT, rand);
     expect(picked[0]).toBe('hire');
+    expect(picked).toContain('hire');
     expect(picked.length).toBe(EVENT_CHOICE_COUNT);
     expect(new Set(picked).size).toBe(picked.length);
+  });
+
+  it('回合3必出 open_path', () => {
+    const picked = pickExploreEvents(3, 10, EVENT_CHOICE_COUNT, () => 0.99);
+    expect(picked).toContain('open_path');
+  });
+
+  it('open_path 在第1回合不可出现，第5回合起可抽', () => {
+    const def = EXPLORE_EVENT_DEFS.find(d => d.id === 'open_path')!;
+    expect(eventCanAppear(def, 1, 10)).toBe(false);
+    expect(eventCanAppear(def, 3, 10)).toBe(true);
+    expect(eventCanAppear(def, 5, 10)).toBe(true);
+    expect(eventCanAppear(def, 7, 10)).toBe(true);
   });
 
   it('回合9不出 invest', () => {
@@ -22,8 +41,7 @@ describe('pickExploreEvents', () => {
     }
   });
 
-  it('必出可突破 N', () => {
-    // 无法轻易构造多 must，至少验证 N=1 时 hire 仍出
+  it('必出数突破 N / N=1 时 hire 独占', () => {
     const picked = pickExploreEvents(1, 10, 1, () => 0);
     expect(picked).toEqual(['hire']);
   });
