@@ -99,17 +99,17 @@ export const admin = {
     request<{ entities: any[]; version: number }>('/admin/entities'),
   getEntity: (id: string) =>
     request<{ entity: any }>(`/admin/entities/${encodeURIComponent(id)}`),
-  createEntity: (data: any) =>
-    request<{ ok: boolean; id: string }>('/admin/entities', {
-      method: 'POST', body: JSON.stringify(data),
+  createEntity: (entity: any) =>
+    request<{ entity: any }>('/admin/entities', {
+      method: 'POST', body: JSON.stringify({ entity }),
     }),
   importEntities: (items: any[], overwrite = false) =>
     request<{ imported: number; skipped: number; errors: any[] }>('/admin/entities/import', {
       method: 'POST', body: JSON.stringify({ items, overwrite }),
     }),
-  updateEntity: (id: string, data: any) =>
-    request<{ ok: boolean }>(`/admin/entities/${encodeURIComponent(id)}`, {
-      method: 'PUT', body: JSON.stringify(data),
+  updateEntity: (id: string, entity: any) =>
+    request<{ entity: any }>(`/admin/entities/${encodeURIComponent(id)}`, {
+      method: 'PUT', body: JSON.stringify({ entity }),
     }),
   deleteEntity: (id: string) =>
     request<{ ok: boolean }>(`/admin/entities/${encodeURIComponent(id)}`, { method: 'DELETE' }),
@@ -121,17 +121,17 @@ export const admin = {
     request<{ affixes: any[]; version: number }>('/admin/affixes'),
   getAffix: (id: string) =>
     request<{ affix: any }>(`/admin/affixes/${encodeURIComponent(id)}`),
-  createAffix: (data: any) =>
-    request<{ ok: boolean; id: string }>('/admin/affixes', {
-      method: 'POST', body: JSON.stringify(data),
+  createAffix: (affix: any) =>
+    request<{ affix: any }>('/admin/affixes', {
+      method: 'POST', body: JSON.stringify({ affix }),
     }),
   importAffixes: (items: any[], overwrite = false) =>
     request<{ imported: number; skipped: number; errors: any[] }>('/admin/affixes/import', {
       method: 'POST', body: JSON.stringify({ items, overwrite }),
     }),
-  updateAffix: (id: string, data: any) =>
-    request<{ ok: boolean }>(`/admin/affixes/${encodeURIComponent(id)}`, {
-      method: 'PUT', body: JSON.stringify(data),
+  updateAffix: (id: string, affix: any) =>
+    request<{ affix: any }>(`/admin/affixes/${encodeURIComponent(id)}`, {
+      method: 'PUT', body: JSON.stringify({ affix }),
     }),
   deleteAffix: (id: string) =>
     request<{ ok: boolean }>(`/admin/affixes/${encodeURIComponent(id)}`, { method: 'DELETE' }),
@@ -141,13 +141,13 @@ export const admin = {
   // Categories
   listCategories: () =>
     request<{ categories: any[] }>('/admin/categories'),
-  createCategory: (data: any) =>
-    request<{ ok: boolean; id: string }>('/admin/categories', {
-      method: 'POST', body: JSON.stringify(data),
+  createCategory: (category: any) =>
+    request<{ category: any }>('/admin/categories', {
+      method: 'POST', body: JSON.stringify({ category }),
     }),
-  updateCategory: (id: string, data: any) =>
-    request<{ ok: boolean }>(`/admin/categories/${encodeURIComponent(id)}`, {
-      method: 'PUT', body: JSON.stringify(data),
+  updateCategory: (id: string, category: any) =>
+    request<{ category: any }>(`/admin/categories/${encodeURIComponent(id)}`, {
+      method: 'PUT', body: JSON.stringify({ category }),
     }),
   deleteCategory: (id: string) =>
     request<{ ok: boolean }>(`/admin/categories/${encodeURIComponent(id)}`, { method: 'DELETE' }),

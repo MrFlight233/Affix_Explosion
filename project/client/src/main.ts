@@ -74,8 +74,8 @@ function showStartScreen() {
       <h1>词 条 爆 炸</h1>
       <div class="subtitle">Affix Explosion</div>
       <div id="start-menu">
-        <button id="btn-new-game" class="fg-btn-primary">新游戏</button>
-        <button id="btn-continue">继续游戏</button>
+        <button id="btn-new-game" class="fg-btn-primary" style="display:none">新游戏</button>
+        <button id="btn-continue" class="fg-btn-primary" style="display:none">继续游戏</button>
         <button id="btn-delete-save" style="display:none;border-color:#c33;color:#933;">删除存档</button>
         <button id="btn-history">历史回顾</button>
         <button id="btn-itempool">全物品池</button>
@@ -86,13 +86,14 @@ function showStartScreen() {
     </div>
   `;
 
+  const btnNewGame = document.getElementById('btn-new-game') as HTMLButtonElement;
   const btnContinue = document.getElementById('btn-continue') as HTMLButtonElement;
   const btnDeleteSave = document.getElementById('btn-delete-save') as HTMLButtonElement;
-  checkSaveAvailability(btnContinue, btnDeleteSave);
+  void refreshStartMenuSaveButtons(btnNewGame, btnContinue, btnDeleteSave);
 
-  document.getElementById('btn-new-game')!.addEventListener('click', () => startGame(true));
+  btnNewGame.addEventListener('click', () => startGame(true));
   btnContinue.addEventListener('click', () => startGame(false));
-  btnDeleteSave.addEventListener('click', () => deleteSave(btnContinue, btnDeleteSave));
+  btnDeleteSave.addEventListener('click', () => deleteSave());
   document.getElementById('btn-itempool')!.addEventListener('click', () => showFullItemPool(() => showStartScreen()));
   document.getElementById('btn-history')!.addEventListener('click', () => showHistoryScreen());
 
@@ -221,39 +222,50 @@ async function showHistoryRunDetail(id: number) {
   }
 }
 
-async function checkSaveAvailability(btn: HTMLButtonElement, btnDelete?: HTMLButtonElement) {
+/**
+ * 主菜单互斥：
+ * - 无进行中存档 → 仅「新游戏」
+ * - 有进行中存档 → 「继续游戏」+「删除存档」，无「新游戏」
+ */
+async function refreshStartMenuSaveButtons(
+  btnNew: HTMLButtonElement,
+  btnContinue: HTMLButtonElement,
+  btnDelete: HTMLButtonElement,
+) {
+  const hideAll = () => {
+    btnNew.style.display = 'none';
+    btnContinue.style.display = 'none';
+    btnDelete.style.display = 'none';
+  };
+
   const token = getToken();
   if (!token) {
-    btn.disabled = true;
-    btn.textContent = '继续游戏（请先登录）';
-    if (btnDelete) btnDelete.style.display = 'none';
+    hideAll();
     return;
   }
   try {
     const data = await savesApi.list();
     if (!data.save) {
-      btn.disabled = true;
-      btn.textContent = '继续游戏（无存档）';
-      if (btnDelete) btnDelete.style.display = 'none';
+      btnNew.style.display = '';
+      btnContinue.style.display = 'none';
+      btnDelete.style.display = 'none';
     } else {
-      btn.disabled = false;
-      btn.textContent = '继续游戏';
-      if (btnDelete) btnDelete.style.display = '';
+      btnNew.style.display = 'none';
+      btnContinue.style.display = '';
+      btnDelete.style.display = '';
     }
   } catch {
-    btn.disabled = true;
-    btn.textContent = '继续游戏（无法连接）';
-    if (btnDelete) btnDelete.style.display = 'none';
+    // 无法确认存档时不误显「新游戏」以免覆盖；提示重试
+    hideAll();
+    showAppToast('无法检查存档状态，请刷新页面重试');
   }
 }
 
-async function deleteSave(btnContinue: HTMLButtonElement, btnDelete: HTMLButtonElement) {
+async function deleteSave() {
   if (!confirm('确定要删除存档吗？此操作不可撤销。')) return;
   try {
     await savesApi.del();
-    btnContinue.disabled = true;
-    btnContinue.textContent = '继续游戏（无存档）';
-    btnDelete.style.display = 'none';
+    showStartScreen();
   } catch (e: any) {
     alert('删除存档失败: ' + (e.message || '未知错误'));
   }
@@ -296,7 +308,10 @@ async function launchGame(engine: GameEngine, isNew: boolean) {
   if (isNew) {
     try {
       const has = await engine.hasSave();
-      if (has && !confirm('将覆盖未通关进度，历史保留。确定开始新游戏？')) {
+      if (has) {
+        // 主菜单有档时不显示新游戏；此处兜底防直调
+        showAppToast('已有进行中存档，请先继续或删除存档');
+        showStartScreen();
         return;
       }
     } catch {
