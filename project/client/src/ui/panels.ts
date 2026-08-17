@@ -587,22 +587,20 @@ export class UIManager {
         h += '<div class="fg-drop-empty">工匠物品区：（空）· 拖入实体</div>';
       }
       h += '</div>';
-      if (slot) {
-        const choices: { id: string; label: string }[] = [
-          { id: 'hp', label: 'HP 上限 +100' },
-          { id: 'hpRegen', label: '生命恢复 +2' },
-          { id: 'staminaRegen', label: '耐力恢复 +1' },
-          { id: 'maxStamina', label: '耐力上限 +50' },
-          { id: 'maxLoad', label: '负重上限 +10000' },
-          { id: 'dynamicAffixSlots', label: '动态词条槽 +1' },
-          { id: 'entitySlots', label: '子实体槽 +1' },
-        ];
-        h += '<div style="display:flex;flex-direction:column;gap:4px;">';
-        for (const ch of choices) {
-          h += `<button class="btn" data-craft="${ch.id}">${ch.label}</button>`;
-        }
-        h += '</div>';
+      const choices: { id: string; label: string }[] = [
+        { id: 'hp', label: 'HP 上限 +100' },
+        { id: 'hpRegen', label: '生命恢复 +2' },
+        { id: 'staminaRegen', label: '耐力恢复 +1' },
+        { id: 'maxStamina', label: '耐力上限 +50' },
+        { id: 'maxLoad', label: '负重上限 +10000' },
+        { id: 'dynamicAffixSlots', label: '动态词条槽 +1' },
+        { id: 'entitySlots', label: '子实体槽 +1' },
+      ];
+      h += '<div style="display:flex;flex-direction:column;gap:4px;">';
+      for (const ch of choices) {
+        h += `<button class="btn" data-craft="${ch.id}">${ch.label}</button>`;
       }
+      h += '</div>';
       h += `<button class="btn" id="btn-close-ev" style="margin-top:8px;">结束事件</button></div>`;
       c.innerHTML = h;
       c.querySelectorAll('[data-craft]').forEach(btn => {
