@@ -7,6 +7,8 @@ import {
   EntityDef, ItemInstance, DeploySlot,
   getEntityDef, getAffixDef, getItemTradeValue,
 } from '../game/data';
+import { getExploreEventDesc } from '../game/exploreEvents';
+import { renderEntityCard } from './build/entityCard';
 import { renderPlaybackControlsHtml, bindPlaybackControls } from './playbackControls';
 import { bindSplitters, applySplit, loadSplit, applyCombatSplit, loadCombatSplit } from './splitters';
 import { createCollapseState, collapseAllOfficialBuild, collapseItemTree } from './build/types';
@@ -105,19 +107,11 @@ export class UIManager {
     }
   }
 
-  /** 购买成功后：若来自事件则关闭事件 */
+  /** 购买成功后：从目录移除（事件货架不关整场事件） */
   private afterCatalogPurchase(instanceId: string) {
     this.catalogItems.delete(instanceId);
     this.catalogPrices.delete(instanceId);
-    if (this.activeEventId) {
-      this.engine.state.visitedEventMerchants.push(this.activeEventId);
-      this.engine.state.currentEvents = [];
-      this.activeEventId = null;
-      this.catalogItems.clear();
-      this.catalogPrices.clear();
-      this.rightPanel = 'event';
-      this.render();
-    }
+    this.render();
   }
 
   private buildExploreCtx(): OfficialExploreCtx {
@@ -417,132 +411,162 @@ export class UIManager {
 
   // ---- 事件 ----
   renderEventPanel(c: HTMLElement) {
-    // 事件奖励态由 triggerEvent 写 DOM；整页 render 时勿冲掉
-    if (this.activeEventId) {
-      if (document.getElementById('event-items')) return;
-      // DOM 已丢则退出奖励态
-      this.activeEventId = null;
-      this.catalogItems.clear();
-      this.catalogPrices.clear();
-    }
     const g = this.engine.state;
-    this.catalogItems.clear();
-    this.catalogPrices.clear();
-    if (!this.engine.isExplore() || g.currentEvents.length === 0) {
+    if (!this.engine.isExplore()) {
       c.innerHTML = '<div class="panel"><div class="panel-title">事件</div><p style="color:var(--fg-text-muted,var(--text-dim));">探险阶段可查看事件</p></div>';
       return;
     }
-    const activeEvents = g.currentEvents.filter(eid => !g.visitedEventMerchants.includes(eid));
-    if (activeEvents.length === 0) {
-      c.innerHTML = '<div class="panel"><div class="panel-title">探险事件</div><p style="color:var(--fg-text-muted,var(--text-dim));">本回合事件已全部访问</p></div>';
+    if (g.eventStatus === 'done') {
+      c.innerHTML = '<div class="panel"><div class="panel-title">探险事件</div><p style="color:var(--fg-text-muted,var(--text-dim));">本回合事件已结束</p></div>';
+      this.activeEventId = null;
+      this.catalogItems.clear();
+      this.catalogPrices.clear();
       return;
     }
+    if (g.eventStatus === 'active' && g.activeEventId) {
+      this.renderActiveEvent(c, g.activeEventId);
+      return;
+    }
+    this.activeEventId = null;
+    this.catalogItems.clear();
+    this.catalogPrices.clear();
+    if (g.currentEvents.length === 0) {
+      c.innerHTML = '<div class="panel"><div class="panel-title">事件</div><p style="color:var(--fg-text-muted,var(--text-dim));">暂无事件</p></div>';
+      return;
+    }
+    const cap = this.engine.getMerchantValueCap();
+    const nextCap = this.engine.getNextExploreShopCap();
     let h = '<div class="panel"><div class="panel-title">探险事件（选择 1 个）</div>';
-    for (const eid of activeEvents)
-      h += `<div class="event-card" data-event="${eid}"><h4>${this.engine.getEventName(eid)}</h4><p>${this.eventDesc(eid)}</p></div>`;
-    h += '</div>'; c.innerHTML = h;
-    c.querySelectorAll('.event-card').forEach(card => card.addEventListener('click', () => this.triggerEvent((card as HTMLElement).dataset.event!)));
-  }
-
-  eventDesc(eid: string): string {
-    const cap = this.engine.getMerchantValueCap();
-    const m: Record<string, string> = {
-      good_merchant: `不限件数,实体+词条,价值${cap}~${cap + 3}`,
-      entity_merchant: `不限件数,仅实体,价值${cap}~${cap + 3}`,
-      affix_merchant: `不限件数,仅词条,价值${cap}~${cap + 3}`,
-      discount_merchant: `不限件数,实体+词条,半价`,
-      lottery: `不限件数,实体+词条,免费选1件`,
-    };
-    return m[eid] || '';
-  }
-
-  triggerEvent(eid: string) {
-    const cap = this.engine.getMerchantValueCap();
-    let items: ItemInstance[] = [];
-
-    if (eid === 'good_merchant') {
-      items = this.engine.generateShopItems('all').filter(item => {
-        const def = item.type === 'entity' ? getEntityDef(item.defId) : getAffixDef(item.defId);
-        const v = def ? ('costValue' in def ? Math.abs(def.costValue) : (def as EntityDef).value) : 999;
-        return v >= cap && v <= cap + 3;
-      });
-    } else if (eid === 'entity_merchant') {
-      items = this.engine.generateShopItems('entity').filter(item => {
-        const def = getEntityDef(item.defId);
-        return def && def.value >= cap && def.value <= cap + 3;
-      });
-    } else if (eid === 'affix_merchant') {
-      items = this.engine.generateShopItems('affix').filter(item => {
-        const def = getAffixDef(item.defId);
-        return def && Math.abs(def.costValue) >= cap && Math.abs(def.costValue) <= cap + 3;
-      });
-    } else if (eid === 'discount_merchant') {
-      items = this.engine.generateShopItems('all').filter(item => {
-        const def = item.type === 'entity' ? getEntityDef(item.defId) : getAffixDef(item.defId);
-        const v = def ? ('costValue' in def ? Math.abs(def.costValue) : (def as EntityDef).value) : 999;
-        return v >= 1 && v <= cap;
-      });
-    } else if (eid === 'lottery') {
-      items = this.engine.generateShopItems('all').filter(item => {
-        const def = item.type === 'entity' ? getEntityDef(item.defId) : getAffixDef(item.defId);
-        const v = def ? ('costValue' in def ? Math.abs(def.costValue) : (def as EntityDef).value) : 999;
-        return v >= 1 && v <= cap;
-      });
+    for (const eid of g.currentEvents) {
+      h += `<div class="event-card" data-event="${eid}"><h4>${this.engine.getEventName(eid)}</h4><p>${getExploreEventDesc(eid, cap, nextCap)}</p></div>`;
     }
+    h += '</div>';
+    c.innerHTML = h;
+    c.querySelectorAll('.event-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const eid = (card as HTMLElement).dataset.event!;
+        const err = this.engine.beginEvent(eid);
+        if (err) this.showToast(err);
+        else this.render();
+      });
+    });
+  }
 
-    const area = document.getElementById('event-area')!;
-    area.innerHTML = `<div class="panel"><div class="panel-title">${this.engine.getEventName(eid)}</div>
-      <p class="fg-sell-hint">拖到出场 BD 或下方仓库获取</p>
-      <div id="event-items"></div><button class="btn" id="btn-close-ev" style="margin-top:6px;">关闭</button></div>`;
-    const itemsDiv = document.getElementById('event-items')!;
+  renderActiveEvent(c: HTMLElement, eid: string) {
     this.activeEventId = eid;
-    const prices = new Map<string, number>();
-    for (const item of items) {
-      const def = item.type === 'entity' ? getEntityDef(item.defId) : getAffixDef(item.defId);
-      if (!def) continue;
-      const basePrice = getItemTradeValue(item);
-      const price = eid === 'discount_merchant' ? Math.floor(basePrice / 2) : eid === 'lottery' ? 0 : basePrice;
-      prices.set(item.instanceId, price);
+    if (eid === 'work') {
+      c.innerHTML = `<div class="panel"><div class="panel-title">${this.engine.getEventName(eid)}</div>
+        <p>立刻获得 20 金</p>
+        <button class="btn" id="btn-work">领取报酬</button>
+        <button class="btn" id="btn-close-ev" style="margin-top:8px;">结束事件</button></div>`;
+      document.getElementById('btn-work')!.onclick = () => {
+        const err = this.engine.doWorkEvent();
+        if (err) this.showToast(err);
+        else {
+          this.showToast('获得 20 金');
+          this.activeEventId = null;
+          this.render();
+        }
+      };
+      document.getElementById('btn-close-ev')!.onclick = () => {
+        this.engine.completeEvent();
+        this.activeEventId = null;
+        this.render();
+      };
+      return;
     }
-    this.setCatalog(items, prices);
-
-    if (items.length === 0) {
+    if (eid === 'invest') {
+      c.innerHTML = `<div class="panel"><div class="panel-title">${this.engine.getEventName(eid)}</div>
+        <p>支付 10 金，备用池 +20（下次进探险结算）</p>
+        <button class="btn" id="btn-invest">投资</button>
+        <button class="btn" id="btn-close-ev" style="margin-top:8px;">结束事件</button></div>`;
+      document.getElementById('btn-invest')!.onclick = () => {
+        const err = this.engine.doInvestEvent();
+        if (err) this.showToast(err);
+        else {
+          this.showToast('投资完成');
+          this.activeEventId = null;
+          this.render();
+        }
+      };
+      document.getElementById('btn-close-ev')!.onclick = () => {
+        this.engine.completeEvent();
+        this.activeEventId = null;
+        this.render();
+      };
+      return;
+    }
+    if (eid === 'craftsman') {
+      const slot = this.engine.state.craftsmanSlot;
+      let h = `<div class="panel"><div class="panel-title">${this.engine.getEventName(eid)}</div>
+        <p class="fg-sell-hint">拖入 1 个实体后七选一永久强化</p>
+        <div id="craftsman-slot" class="fg-craftsman-slot" data-fg-zone="craftsman" style="min-height:48px;margin:8px 0;padding:8px;border:1px dashed var(--fg-border,#ccc);">`;
+      if (slot) {
+        h += renderEntityCard(slot, 0, 'warehouse', 'build', this.exploreCollapse, null);
+      } else {
+        h += '<div class="fg-drop-empty">工匠物品区：（空）· 拖入实体</div>';
+      }
+      h += '</div>';
+      const choices: { id: string; label: string }[] = [
+        { id: 'hp', label: 'HP 上限 +100' },
+        { id: 'hpRegen', label: '生命恢复 +2' },
+        { id: 'staminaRegen', label: '耐力恢复 +1' },
+        { id: 'maxStamina', label: '耐力上限 +50' },
+        { id: 'maxLoad', label: '负重上限 +10000' },
+        { id: 'dynamicAffixSlots', label: '动态词条槽 +1' },
+        { id: 'entitySlots', label: '子实体槽 +1' },
+      ];
+      h += '<div style="display:flex;flex-direction:column;gap:4px;">';
+      for (const ch of choices) {
+        h += `<button class="btn" data-craft="${ch.id}">${ch.label}</button>`;
+      }
+      h += '</div>';
+      h += `<button class="btn" id="btn-close-ev" style="margin-top:8px;">结束事件</button></div>`;
+      c.innerHTML = h;
+      c.querySelectorAll('[data-craft]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = (btn as HTMLElement).dataset.craft as
+            'hp' | 'hpRegen' | 'staminaRegen' | 'maxStamina' | 'maxLoad' | 'dynamicAffixSlots' | 'entitySlots';
+          const err = this.engine.applyCraftsmanUpgrade(id);
+          if (err) this.showToast(err);
+          else {
+            this.showToast('强化完成');
+            this.activeEventId = null;
+            this.render();
+          }
+        });
+      });
+      document.getElementById('btn-close-ev')!.onclick = () => {
+        this.engine.completeEvent();
+        this.activeEventId = null;
+        this.render();
+      };
+      return;
+    }
+    const offers = this.engine.state.eventOffers;
+    const prices = this.engine.state.eventOfferPrices;
+    const priceMap = new Map(Object.entries(prices).map(([k, v]) => [k, Number(v)]));
+    this.setCatalog(offers, priceMap);
+    c.innerHTML = `<div class="panel"><div class="panel-title">${this.engine.getEventName(eid)}</div>
+      <p class="fg-sell-hint">拖到出场 BD 或下方仓库获取（不可刷新；事件货架不可出售）</p>
+      <div id="event-items"></div>
+      <button class="btn" id="btn-close-ev" style="margin-top:6px;">结束事件</button></div>`;
+    const itemsDiv = document.getElementById('event-items')!;
+    if (offers.length === 0) {
       itemsDiv.innerHTML = '<p style="color:var(--text-dim);">当前无可购买的物品</p>';
     } else {
       let rows = '';
-      for (const item of items) {
-        const price = prices.get(item.instanceId) ?? 0;
-        const label = eid === 'lottery' ? '免费' : `${price}金`;
-        rows += renderOfficialEventItemRow(item, label);
+      for (const item of offers) {
+        const price = prices[item.instanceId] ?? 0;
+        rows += renderOfficialEventItemRow(item, `${price}金`);
       }
       itemsDiv.innerHTML = rows;
     }
     document.getElementById('btn-close-ev')!.onclick = () => {
-      this.engine.state.visitedEventMerchants.push(eid);
+      this.engine.completeEvent();
       this.activeEventId = null;
-      this.rightPanel = 'event';
-      this.catalogItems.clear();
-      this.catalogPrices.clear();
       this.render();
     };
-    const layoutEl = document.getElementById('main-layout');
-    if (layoutEl) bindOfficialExplore(layoutEl, this.buildExploreCtx());
-  }
-
-  randomItems(n: number, minV: number, maxV: number, entOnly: boolean, affOnly: boolean): ItemInstance[] {
-    this.engine.recomputeItemPool();
-    const pool = this.engine.state.itemPool;
-    if (pool.length === 0) return [];
-    const items: ItemInstance[] = []; const seen = new Set<string>();
-    for (let i = 0; i < n * 3 && items.length < n; i++) {
-      const did = pool[Math.floor(Math.random() * pool.length)]; if (seen.has(did)) continue;
-      const ed = getEntityDef(did); const ad = getAffixDef(did);
-      const v = ed ? ed.value : ad ? Math.abs(ad.costValue) : 999;
-      if (v < minV || v > maxV) continue;
-      if (entOnly && !ed) continue; if (affOnly && !ad) continue;
-      seen.add(did); items.push(this.engine.createItem(did, ed ? 'entity' : 'affix'));
-    }
-    return items;
   }
 
   // ---- 仓库面板（右下常驻） ----

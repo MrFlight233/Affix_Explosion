@@ -276,6 +276,18 @@ function resolveOwnedItem(ctx: OfficialExploreCtx, session: PointerDragSession):
 function commitOfficialDrag(ctx: OfficialExploreCtx, session: PointerDragSession, hit: PointerDragHit): string | null {
   if (hit.action === 'invalid') return null;
 
+  // ── 工匠槽 ──
+  if (hit.action === 'craftsman') {
+    if (session.source !== 'bd' && session.source !== 'warehouse') return null;
+    const item = ctx.engine.findItem(session.id);
+    if (!item) return '物品不存在';
+    if (item.type !== 'entity') return '只能放入实体';
+    collapseItemTree(item, ctx.collapse);
+    const err = ctx.engine.moveEntityToCraftsman(item);
+    if (!err) ctx.showToast('已放入工匠槽');
+    return err;
+  }
+
   // ── 出售 ──
   if (hit.action === 'sell') {
     if (session.source !== 'bd' && session.source !== 'warehouse') return null;
@@ -348,8 +360,17 @@ function commitOfficialDrag(ctx: OfficialExploreCtx, session: PointerDragSession
       if (session.source === 'shop') {
         const item = ctx.resolveCatalogItem(session.id);
         if (!item) return '物品不存在';
-        const override = ctx.getCatalogPrice(session.id);
         collapseItemTree(item, ctx.collapse);
+        const inEvent = ctx.engine.state.eventOffers.some(i => i.instanceId === item.instanceId);
+        if (inEvent) {
+          const err = ctx.engine.purchaseFromEventOffer(item);
+          if (!err) {
+            ctx.afterCatalogPurchase(session.id);
+            ctx.showToast('已购买并入库');
+          }
+          return err;
+        }
+        const override = ctx.getCatalogPrice(session.id);
         const err = ctx.engine.buyItem(item, override);
         if (!err) {
           ctx.afterCatalogPurchase(session.id);
@@ -384,8 +405,20 @@ function commitOfficialDrag(ctx: OfficialExploreCtx, session: PointerDragSession
     if (session.source === 'shop') {
       const item = ctx.resolveCatalogItem(session.id);
       if (!item) return '物品不存在';
-      const override = ctx.getCatalogPrice(session.id);
       collapseItemTree(item, ctx.collapse);
+      const inEvent = ctx.engine.state.eventOffers.some(i => i.instanceId === item.instanceId);
+      if (inEvent) {
+        const err = ctx.engine.purchaseFromEventOffer(item, {
+          targetSlotIdx: slotIdx,
+          parentInstanceId: parentId,
+        });
+        if (!err) {
+          ctx.afterCatalogPurchase(session.id);
+          ctx.showToast('已购买并装备');
+        }
+        return err;
+      }
+      const override = ctx.getCatalogPrice(session.id);
       const err = ctx.engine.buyAndEquip(item, slotIdx, parentId, override);
       if (!err) {
         ctx.afterCatalogPurchase(session.id);
