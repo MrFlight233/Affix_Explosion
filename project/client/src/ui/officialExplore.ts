@@ -220,6 +220,24 @@ function resolveOwnedItem(ctx: OfficialExploreCtx, session: PointerDragSession):
   return ctx.engine.findItem(session.id) ?? ctx.resolveCatalogItem(session.id);
 }
 
+/** 正式局拖拽：抑制中途存档；松手无错后再提交型存 */
+function beginOfficialExploreDrag(
+  pe: PointerEvent,
+  session: Parameters<typeof beginPointerDrag>[1],
+  ctx: OfficialExploreCtx,
+): void {
+  ctx.engine.suppressExploreSave = true;
+  beginPointerDrag(pe, session, {
+    onCommit: (s, h) => commitOfficialDrag(ctx, s, h),
+    onFinished: ({ cancelled, commitError }) => {
+      ctx.engine.suppressExploreSave = false;
+      if (!cancelled && commitError == null) {
+        ctx.engine.requestExploreCommitSave();
+      }
+    },
+  });
+}
+
 function commitOfficialDrag(ctx: OfficialExploreCtx, session: PointerDragSession, hit: PointerDragHit): string | null {
   if (hit.action === 'invalid') return null;
 
@@ -417,14 +435,14 @@ function bindShopItemPointer(root: HTMLElement, ctx: OfficialExploreCtx): void {
     htmlEl.addEventListener('pointerdown', (e) => {
       const pe = e as PointerEvent;
       if (pe.button !== 0) return;
-      beginPointerDrag(pe, {
+      beginOfficialExploreDrag(pe, {
         kind: type,
         source: 'shop',
         id: instanceId,
         defId,
         label: name,
         originEl: htmlEl,
-      }, { onCommit: (s, h) => commitOfficialDrag(ctx, s, h) });
+      }, ctx);
     });
   });
 }
@@ -443,7 +461,7 @@ function bindBdPointer(bdEl: HTMLElement, source: 'bd' | 'warehouse', ctx: Offic
     const label = handle.querySelector('.sb-card-header-name')?.textContent
       || handle.textContent?.trim().slice(0, 24)
       || instanceId;
-    beginPointerDrag(pe, {
+    beginOfficialExploreDrag(pe, {
       kind,
       source,
       id: instanceId,
@@ -451,7 +469,7 @@ function bindBdPointer(bdEl: HTMLElement, source: 'bd' | 'warehouse', ctx: Offic
       side,
       label,
       originEl: handle,
-    }, { onCommit: (s, h) => commitOfficialDrag(ctx, s, h) });
+    }, ctx);
   });
 }
 
@@ -562,7 +580,7 @@ function bindCraftsmanPointer(slotEl: HTMLElement, ctx: OfficialExploreCtx): voi
     const label = handle.querySelector('.sb-card-header-name')?.textContent
       || handle.textContent?.trim().slice(0, 24)
       || rootId;
-    beginPointerDrag(pe, {
+    beginOfficialExploreDrag(pe, {
       kind: 'entity',
       source: 'craftsman',
       id: rootId,
@@ -570,7 +588,7 @@ function bindCraftsmanPointer(slotEl: HTMLElement, ctx: OfficialExploreCtx): voi
       side: 'warehouse',
       label,
       originEl: handle,
-    }, { onCommit: (s, h) => commitOfficialDrag(ctx, s, h) });
+    }, ctx);
   });
 }
 
@@ -648,6 +666,7 @@ export function bindOfficialExplore(root: HTMLElement, ctx: OfficialExploreCtx):
         if (err) ctx.showToast(err);
         else {
           ctx.showToast('货架已刷新');
+          ctx.engine.requestExploreCommitSave();
           ctx.onExploreChanged();
         }
       };

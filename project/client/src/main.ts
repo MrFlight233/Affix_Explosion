@@ -2,15 +2,19 @@
 // Affix Explosion — 入口 + 开始页面
 // ============================================================
 
-import { showAuthModal, hideAuthModal } from './ui/auth';
+import { showAuthModal } from './ui/auth';
 import { UIManager } from './ui/panels';
 import { GameEngine } from './game/engine';
-import { getToken, setToken, saves as savesApi } from './api/client';
+import { getToken, setToken, saves as savesApi, auth as authApi, setOnUnauthorized, ApiError } from './api/client';
 import { loadInitialData } from './game/data';
 import { showFullItemPool } from './ui/itemPool';
-// tooltip 已移至详情面板，不再需要 hover 提示
+import { showAppToast } from './ui/toast';
 
 const app = document.getElementById('app')!;
+
+/** 局内引擎引用：401 登录后 flush，不销毁引擎 */
+let activeEngine: GameEngine | null = null;
+let authModalOpen = false;
 
 async function main() {
   // Phase 4: 启动时从服务端加载游戏数据
@@ -36,12 +40,26 @@ async function main() {
     showLoginPage();
     return;
   }
-  // 验证 token 是否仍然有效
+  // 仅用 /auth/me 校验；网络/5xx 保留 token 并提示重试
   try {
-    await savesApi.list();
-  } catch {
-    setToken(null);
-    showLoginPage();
+    await authApi.me();
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 401) {
+      setToken(null);
+      showLoginPage();
+      return;
+    }
+    app.innerHTML = `
+      <div id="start-screen">
+        <h1>词 条 爆 炸</h1>
+        <div class="subtitle">Affix Explosion</div>
+        <p style="color:var(--warn);margin-top:24px;">
+          无法验证登录状态（网络或服务异常）。登录态已保留。<br>
+          <span style="font-size:12px;color:var(--text-dim);">${(e as Error).message || String(e)}</span>
+        </p>
+        <button class="btn" style="margin-top:16px;" onclick="location.reload()">重试</button>
+      </div>
+    `;
     return;
   }
   showStartScreen();
@@ -50,6 +68,7 @@ async function main() {
 // ---- 开始页面 ----
 
 function showStartScreen() {
+  activeEngine = null;
   app.innerHTML = `
     <div id="start-screen" class="fg-start">
       <h1>词 条 爆 炸</h1>
@@ -240,6 +259,22 @@ async function deleteSave(btnContinue: HTMLButtonElement, btnDelete: HTMLButtonE
   }
 }
 
+function promptReloginThenFlush() {
+  if (authModalOpen || !activeEngine) return;
+  authModalOpen = true;
+  showAppToast('登录已过期，请重新登录');
+  showAuthModal(async (username) => {
+    authModalOpen = false;
+    if (activeEngine) activeEngine.username = username;
+    try {
+      await activeEngine!.flushSave();
+      showAppToast('已重新登录并保存');
+    } catch (e: any) {
+      showAppToast('保存仍失败：' + (e?.message || e));
+    }
+  });
+}
+
 async function startGame(isNew: boolean) {
   const token = getToken();
   if (!token) {
@@ -255,25 +290,51 @@ async function startGame(isNew: boolean) {
 }
 
 async function launchGame(engine: GameEngine, isNew: boolean) {
-  app.innerHTML = '';
+  engine.onAuthExpired = () => promptReloginThenFlush();
+  setOnUnauthorized(() => promptReloginThenFlush());
+
   if (isNew) {
+    try {
+      const has = await engine.hasSave();
+      if (has && !confirm('将覆盖未通关进度，历史保留。确定开始新游戏？')) {
+        return;
+      }
+    } catch {
+      // 无法确认有无存档时仍允许新游戏
+    }
+    app.innerHTML = '';
     engine.resetState();
     engine.generateEvents();
-    engine.autoSave();
+    try {
+      await engine.flushSave();
+    } catch (e: any) {
+      showAppToast('新游戏存档失败：' + (e?.message || e));
+      showStartScreen();
+      return;
+    }
   } else {
+    app.innerHTML = '';
     const loaded = await engine.loadLatestSave();
     if (!loaded) {
-      engine.resetState();
-      engine.generateEvents();
+      showAppToast('读档失败，请稍后重试');
+      showStartScreen();
+      return;
     }
   }
+
   const ui = new UIManager(engine);
-  ui.render();
+  activeEngine = engine;
+  if (!isNew) {
+    await ui.resumeFromSave();
+  } else {
+    ui.render();
+  }
 }
 
 // ---- 登录页面（未登录时的默认页面） ----
 
 function showLoginPage() {
+  activeEngine = null;
   app.innerHTML = `
     <div id="start-screen">
       <h1>词 条 爆 炸</h1>
@@ -319,6 +380,8 @@ function showLoginPage() {
 
 /** 导出导航函数，供面板中"返回主菜单"使用 */
 export function navigateToStart() {
+  setOnUnauthorized(null);
+  activeEngine = null;
   showStartScreen();
 }
 

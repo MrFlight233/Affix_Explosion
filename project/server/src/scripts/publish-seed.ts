@@ -6,8 +6,9 @@
 import fs from 'fs';
 import path from 'path';
 import { initDB, closeDB, publishSeed, entityRepo, templateCache } from '../db';
+import { getSeedDir } from '../paths';
 
-const SEED_DIR = path.resolve(process.cwd(), 'data/seed');
+const SEED_DIR = getSeedDir(__dirname);
 
 function ensureSeedEntity(id: string): void {
   const entitiesPath = path.join(SEED_DIR, 'entities.json');

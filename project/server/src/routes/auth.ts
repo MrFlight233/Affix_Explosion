@@ -3,8 +3,14 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import db from '../db/schema';
 import { CONFIG } from '../config';
+import { authMiddleware, AuthRequest } from '../middleware/auth';
 
 const router = Router();
+
+// GET /api/auth/me — 校验 JWT，不依赖存档接口
+router.get('/me', authMiddleware, (req: AuthRequest, res: Response) => {
+  res.json({ userId: req.userId, username: req.username });
+});
 
 // POST /api/auth/register
 router.post('/register', (req: Request, res: Response) => {

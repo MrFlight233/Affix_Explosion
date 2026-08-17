@@ -75,11 +75,16 @@ export class UIManager {
   showingSettlement = false;
   /** 是否已处于战斗壳（用于进战斗时一次性默认折叠） */
   private combatShellActive = false;
+  /** 结束态 history 同步失败时阻断「继续」直至重试成功 */
+  private historySyncFailed = false;
+  /** 通关删档失败可重试 */
+  private settlementDelFailed = false;
 
   constructor(engine: GameEngine) {
     this.engine = engine;
     engine.onStateChange = () => this.render();
     engine.onToast = (msg) => this.showToast(msg);
+    engine.onSaveError = (msg) => this.showToast(msg);
     // 继续游戏 / 进局：BD+仓库可折叠卡默认折叠
     collapseAllOfficialBuild(engine.state.deploySlots, engine.state.warehouse, this.exploreCollapse);
   }
@@ -146,6 +151,21 @@ export class UIManager {
   }
 
   private continueAfterCombatUi() {
+    void this._continueAfterCombatUi();
+  }
+
+  private async _continueAfterCombatUi() {
+    if (this.historySyncFailed || this.engine.historySyncPending) {
+      try {
+        await this.engine.syncHistoryRun('in_progress');
+        this.historySyncFailed = false;
+        this.engine.historySyncPending = false;
+        await this.engine.flushSave();
+      } catch (e: any) {
+        this.showToast('历史同步仍失败：' + (e?.message || e));
+        return;
+      }
+    }
     if (this.combatUpdateTimer != null) {
       cancelAnimationFrame(this.combatUpdateTimer);
       this.combatUpdateTimer = null;
@@ -160,7 +180,14 @@ export class UIManager {
     this.finalPlayerUnits = null;
     this.finalEnemyUnits = null;
     this.pendingEnemySlots = null;
+    this.pendingAutoWin = false;
     const next = this.engine.continueAfterBattle();
+    try {
+      await this.engine.flushSave();
+    } catch (e: any) {
+      this.showToast('存档失败：' + (e?.message || e));
+      // 关键推进已发生；仍阻断反复点继续乱写——状态已前进
+    }
     if (next === 'settlement') {
       this.showingSettlement = true;
       this.renderSettlement();
@@ -168,6 +195,64 @@ export class UIManager {
     }
     this.rightPanel = 'event';
     this.render();
+  }
+
+  /**
+   * 读档后按 combatPhase / battles 幂等恢复（实现约定 E）。
+   */
+  async resumeFromSave() {
+    const kind = this.engine.resolveCombatResume();
+    if (kind === 'explore') {
+      this.render();
+      return;
+    }
+    if (kind === 'rollback_explore') {
+      this.engine.rollbackBattleToExplore();
+      this.engine.clearCombatSnapshot();
+      this.showToast('存档不完整，已回到开战前探险');
+      try { await this.engine.flushSave(); } catch { /* toast 已由 onSaveError */ }
+      this.render();
+      return;
+    }
+    if (kind === 'end_ui') {
+      this.restoreBattleEndUiFromSave();
+      this.render();
+      return;
+    }
+    // replay
+    this.showToast('检测到未完成的战斗，正在重播…');
+    this.pendingAutoWin = this.engine.pendingAutoWin;
+    this.pendingEnemySlots = this.engine.pendingEnemyBd
+      ? JSON.parse(JSON.stringify(this.engine.pendingEnemyBd))
+      : null;
+    this.combatEnemySlots = this.pendingEnemySlots
+      ? JSON.parse(JSON.stringify(this.pendingEnemySlots))
+      : null;
+    this.applyCombatDefaultCollapse();
+    this.render();
+    await this._doStartCombat();
+  }
+
+  private restoreBattleEndUiFromSave() {
+    const rec = this.engine.getBattleRecordForRound();
+    this.pendingAutoWin = this.engine.pendingAutoWin
+      || this.engine.combatResultSummary?.autoWin
+      || rec?.result === 'auto_win'
+      || false;
+    const enemyBd = this.engine.pendingEnemyBd ?? rec?.enemyBd ?? null;
+    this.pendingEnemySlots = enemyBd ? JSON.parse(JSON.stringify(enemyBd)) : null;
+    this.combatEnemySlots = this.pendingEnemySlots
+      ? JSON.parse(JSON.stringify(this.pendingEnemySlots))
+      : null;
+    this.combatFinished = true;
+    this.combatResultSummary = this.engine.combatResultSummary ?? (rec ? {
+      win: rec.result !== 'loss',
+      gold: rec.rewardGold,
+      autoWin: rec.result === 'auto_win',
+    } : null);
+    this.combatLog = rec?.log ? [...rec.log] : [];
+    this.historySyncFailed = this.engine.historySyncPending;
+    this.applyCombatDefaultCollapse();
   }
 
   // ======================== 主渲染 ========================
@@ -313,16 +398,19 @@ export class UIManager {
     const btnReturn = document.getElementById('btn-return-menu');
     if (btnReturn) {
       btnReturn.onclick = async () => {
-        if (confirm('确定要返回主菜单吗？未保存的进度将丢失。')) {
-          if (this.combatUpdateTimer != null) {
-            cancelAnimationFrame(this.combatUpdateTimer);
-            this.combatUpdateTimer = null;
-          }
-          disposeOfficialBattleLog(this.buildCombatCtx());
-          this.battleLogBridge = null;
-          const { navigateToStart } = await import('../main');
-          navigateToStart();
+        if (this.combatUpdateTimer != null) {
+          cancelAnimationFrame(this.combatUpdateTimer);
+          this.combatUpdateTimer = null;
         }
+        disposeOfficialBattleLog(this.buildCombatCtx());
+        this.battleLogBridge = null;
+        try {
+          await this.engine.flushSave();
+        } catch (e: any) {
+          this.showToast('存档失败，进度可能未保存');
+        }
+        const { navigateToStart } = await import('../main');
+        navigateToStart();
       };
     }
 
@@ -436,6 +524,7 @@ export class UIManager {
       if (err) this.showToast(err);
       else {
         this.activeEventId = eid;
+        this.engine.requestExploreCommitSave();
         this.render();
       }
     }));
@@ -450,9 +539,17 @@ export class UIManager {
       document.getElementById('btn-ev-work')!.onclick = () => {
         const err = this.engine.doWorkEvent();
         if (err) this.showToast(err);
-        else { this.showToast('+20 金'); this.render(); }
+        else {
+          this.showToast('+20 金');
+          this.engine.requestExploreCommitSave();
+          this.render();
+        }
       };
-      document.getElementById('btn-close-ev')!.onclick = () => { this.engine.completeEvent(); this.render(); };
+      document.getElementById('btn-close-ev')!.onclick = () => {
+        this.engine.completeEvent();
+        this.engine.requestExploreCommitSave();
+        this.render();
+      };
       return;
     }
     if (eid === 'invest') {
@@ -463,9 +560,17 @@ export class UIManager {
       document.getElementById('btn-ev-invest')!.onclick = () => {
         const err = this.engine.doInvestEvent();
         if (err) this.showToast(err);
-        else { this.showToast('已投资 · 备用池 +20'); this.render(); }
+        else {
+          this.showToast('已投资 · 备用池 +20');
+          this.engine.requestExploreCommitSave();
+          this.render();
+        }
       };
-      document.getElementById('btn-close-ev')!.onclick = () => { this.engine.completeEvent(); this.render(); };
+      document.getElementById('btn-close-ev')!.onclick = () => {
+        this.engine.completeEvent();
+        this.engine.requestExploreCommitSave();
+        this.render();
+      };
       return;
     }
     if (eid === 'craftsman') {
@@ -505,10 +610,18 @@ export class UIManager {
           const id = (btn as HTMLElement).dataset.craft as any;
           const err = this.engine.applyCraftsmanUpgrade(id);
           if (err) this.showToast(err);
-          else { this.showToast('强化完成'); this.render(); }
+          else {
+            this.showToast('强化完成');
+            this.engine.requestExploreCommitSave();
+            this.render();
+          }
         });
       });
-      document.getElementById('btn-close-ev')!.onclick = () => { this.engine.completeEvent(); this.render(); };
+      document.getElementById('btn-close-ev')!.onclick = () => {
+        this.engine.completeEvent();
+        this.engine.requestExploreCommitSave();
+        this.render();
+      };
       // 拖拽/折叠由 render() 末尾统一 bindOfficialExplore，此处勿重复绑定
       return;
     }
@@ -534,6 +647,7 @@ export class UIManager {
     document.getElementById('btn-close-ev')!.onclick = () => {
       this.engine.completeEvent();
       this.activeEventId = null;
+      this.engine.requestExploreCommitSave();
       this.render();
     };
     // 拖拽/折叠由 render() 末尾统一 bindOfficialExplore
@@ -631,11 +745,27 @@ export class UIManager {
     this.pendingEnemySlots = prep.enemySlots;
     this.combatEnemySlots = prep.enemySlots ? JSON.parse(JSON.stringify(prep.enemySlots)) : null;
     this.applyCombatDefaultCollapse();
-    await this.engine.autoSave();
+
+    this.engine.beginBattlePending({
+      enemyBd: prep.enemySlots,
+      autoWin: prep.autoWin,
+    });
+    try {
+      await this.engine.flushSave();
+    } catch (e: any) {
+      this.engine.rollbackBattleToExplore();
+      this.engine.clearCombatSnapshot();
+      this.pendingEnemySlots = null;
+      this.pendingAutoWin = false;
+      this.combatEnemySlots = null;
+      this.showToast('开战存档失败：' + (e?.message || e));
+      this.render();
+      return;
+    }
     await this._doStartCombat();
   }
 
-  /** 匹配完成后开战 */
+  /** 匹配完成后开战（含读档重播） */
   private async _doStartCombat() {
     this.combatLog = [];
     this.combatFinished = false;
@@ -646,6 +776,7 @@ export class UIManager {
     this.finalEnemyUnits = null;
     this.lastLogCount = 0;
     this.weaponPrevRemaining.clear();
+    this.historySyncFailed = false;
 
     const onEvent = (evt: CombatEvent) => {
       this.combatLog.push(evt);
@@ -664,27 +795,38 @@ export class UIManager {
       else this.showToast('战斗失败');
       this.combatFinished = true;
       this.combatResultSummary = { win, gold, autoWin: this.pendingAutoWin };
+      this.engine.markBattleEnd({ win, gold, autoWin: this.pendingAutoWin });
       const battles = this.engine.state.battles;
-      if (battles.length > 0) {
-        if (this.combatLog.length > 0) {
-          battles[battles.length - 1].log = [...this.combatLog];
-        }
-        void (async () => {
-          try {
-            await this.engine.autoSave();
-            await this.engine.syncHistoryRun('in_progress');
-          } catch (e) {
-            console.warn('历史归档同步失败', e);
-          }
-        })();
+      if (battles.length > 0 && this.combatLog.length > 0) {
+        battles[battles.length - 1].log = [...this.combatLog];
       }
+      // 结束态：先 flush 存档，再旁路 sync history；勿清 engine.pendingEnemyBd
       this.pendingEnemySlots = null;
-      this.pendingAutoWin = false;
-      if (this.combatUpdateTimer != null) {
-        cancelAnimationFrame(this.combatUpdateTimer);
-        this.combatUpdateTimer = null;
-      }
-      this.render();
+      void (async () => {
+        try {
+          await this.engine.flushSave();
+        } catch (e: any) {
+          this.showToast('结束态存档失败：' + (e?.message || e));
+          this.render();
+          return;
+        }
+        try {
+          await this.engine.syncHistoryRun('in_progress');
+          this.historySyncFailed = false;
+          this.engine.historySyncPending = false;
+        } catch (e) {
+          console.warn('历史归档同步失败', e);
+          this.historySyncFailed = true;
+          this.engine.historySyncPending = true;
+          this.showToast('历史同步失败，点继续时将重试');
+          try { await this.engine.flushSave(); } catch { /* ignore */ }
+        }
+        if (this.combatUpdateTimer != null) {
+          cancelAnimationFrame(this.combatUpdateTimer);
+          this.combatUpdateTimer = null;
+        }
+        this.render();
+      })();
     };
 
     if (this.pendingAutoWin || !this.pendingEnemySlots) {
@@ -761,7 +903,7 @@ export class UIManager {
           statusBadge: 'cleared',
           battles: g.battles,
           statusHtml: '<span id="settlement-status" class="fg-settlement-status">正在标记本局已通关…</span>',
-          leadingHtml: '<button type="button" id="btn-settlement-home" class="btn" disabled>返回主菜单</button>',
+          leadingHtml: '<button type="button" id="btn-settlement-home" class="btn" disabled>返回主菜单</button><button type="button" id="btn-settlement-retry-del" class="btn" style="display:none;margin-left:8px;">重试删除存档</button>',
         })}
       </div>
     `;
@@ -771,19 +913,41 @@ export class UIManager {
 
     const status = document.getElementById('settlement-status')!;
     const homeBtn = document.getElementById('btn-settlement-home') as HTMLButtonElement;
+    const retryDelBtn = document.getElementById('btn-settlement-retry-del') as HTMLButtonElement;
+
+    const tryDeleteSave = async (): Promise<boolean> => {
+      const { saves } = await import('../api/client');
+      try {
+        await saves.del();
+        this.engine.historyRunId = null;
+        this.settlementDelFailed = false;
+        retryDelBtn.style.display = 'none';
+        status.textContent = '已通关并写入历史，进行中存档已清除';
+        return true;
+      } catch (e: any) {
+        this.settlementDelFailed = true;
+        retryDelBtn.style.display = '';
+        status.textContent = '历史已通关，但删除进行中存档失败：' + (e?.message || e) + '（请重试，否则「继续游戏」仍可进入）';
+        return false;
+      }
+    };
 
     try {
-      const { saves } = await import('../api/client');
       await this.engine.syncHistoryRun('cleared');
-      await saves.del();
-      this.engine.historyRunId = null;
-      status.textContent = '已通关并写入历史，进行中存档已清除';
+      await tryDeleteSave();
     } catch (e: any) {
-      status.textContent = '历史更新失败：' + (e?.message || e) + '（仍可浏览本页并返回主菜单）';
+      status.textContent = '历史更新失败：' + (e?.message || e) + '（未删档；仍可浏览本页并返回主菜单）';
     }
 
     homeBtn.disabled = false;
+    retryDelBtn.onclick = () => { void tryDeleteSave(); };
     homeBtn.onclick = async () => {
+      if (this.settlementDelFailed) {
+        const ok = await tryDeleteSave();
+        if (!ok) {
+          // 仍允许回主菜单，但已提示风险
+        }
+      }
       this.showingSettlement = false;
       const { navigateToStart } = await import('../main');
       navigateToStart();

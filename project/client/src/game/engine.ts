@@ -28,7 +28,7 @@ import {
 } from './passiveBonusUtil';
 import type { PassiveSourceRuntime } from './battle/types';
 import type { SubtreeCondition } from '@shared/types';
-import { data as dataApi, saves as savesApi } from '../api/client';
+import { data as dataApi, saves as savesApi, ApiError } from '../api/client';
 import {
   runBattleWithOptionalWorker,
   buildCombatRuntime,
@@ -43,6 +43,7 @@ import {
   type EventStatus,
   type CraftsmanReturnRef,
 } from './exploreEvents';
+import { createSaveQueue, type SaveQueue } from './saveQueue';
 
 export type {
   CombatUnitSnapshot, CombatUnitRuntime, CombatEvent,
@@ -53,6 +54,15 @@ export type { ExploreEventId, EventStatus, CraftsmanReturnRef } from './exploreE
 
 /** 兼容旧存档：1=探险 2=战斗；正式语义以 round 奇偶为准 */
 export type GamePhase = 1 | 2;
+
+/** 进行中存档战斗子阶段 */
+export type CombatPhase = 'explore' | 'battle_pending' | 'battle_end';
+
+/** 读档恢复决策 */
+export type CombatResumeKind = 'explore' | 'replay' | 'end_ui' | 'rollback_explore';
+
+/** 正式局 RNG 协议版本；不匹配则按残缺快照回滚 */
+export const COMBAT_RNG_VERSION = 1;
 
 /** 默认最大设计回合（可配置） */
 export const MAX_ROUND = 10;
@@ -140,6 +150,9 @@ function seededRandom(seed: number): () => number {
   return () => { s = (s * 16807 + 0) % 2147483647; return (s - 1) / 2147483646; };
 }
 
+/** 导出供单测 / 正式局重播使用 */
+export { seededRandom };
+
 export class GameEngine {
   state!: GameState;
   username = '';
@@ -148,6 +161,10 @@ export class GameEngine {
 
   onStateChange?: () => void;
   onToast?: (msg: string) => void;
+  /** 自动存失败（非 401）；UI 注入 toast */
+  onSaveError?: (msg: string, err?: unknown) => void;
+  /** 存档/API 401；UI 弹登录，勿开战回滚 */
+  onAuthExpired?: () => void;
   rightPanel: string | null = null;
 
   // 战斗相关
@@ -161,7 +178,29 @@ export class GameEngine {
   onCombatEvent?: (event: CombatEvent) => void;
   onCombatEnd?: (win: boolean, goldReward: number) => void;
 
-  constructor() { this.resetState(); }
+  /** 存档战斗子阶段 */
+  combatPhase: CombatPhase = 'explore';
+  pendingEnemyBd: DeploySlot[] | null = null;
+  pendingAutoWin = false;
+  combatSeed: number | null = null;
+  combatResultSummary: { win: boolean; gold: number; autoWin: boolean } | null = null;
+  combatRngVersion = COMBAT_RNG_VERSION;
+  /** 拖拽中禁止提交型存 */
+  suppressExploreSave = false;
+  /** 结束态 history sync 失败时，点继续前需重试 */
+  historySyncPending = false;
+
+  private saveQueue: SaveQueue;
+  private saveFailToasted = false;
+
+  constructor() {
+    this.saveQueue = createSaveQueue({
+      getPayload: () => this.toSaveData(),
+      put: async (payload) => { await savesApi.put(payload); },
+      onError: (e) => this.handleSaveError(e, false),
+    });
+    this.resetState();
+  }
 
   resetState() {
     this.state = {
@@ -177,6 +216,8 @@ export class GameEngine {
     this.rebuildItemPool();
     this.rightPanel = null;
     this.historyRunId = null;
+    this.clearCombatSnapshot();
+    this.historySyncPending = false;
     this.enterExploreSetup({ autoSave: false });
     this.notify();
   }
@@ -239,7 +280,7 @@ export class GameEngine {
     this.generateEvents();
     if (opts?.autoSave !== false) {
       // 开局 reset 时 username 可能未就绪，失败仅 warn
-      void this.autoSave();
+      this.requestSave({ reason: 'explore-enter' });
     }
   }
 
@@ -790,8 +831,10 @@ export class GameEngine {
    */
   continueAfterBattle(): 'explore' | 'settlement' {
     if (this.state.round >= this.state.maxRound) {
+      this.clearCombatSnapshot();
       return 'settlement';
     }
+    this.clearCombatSnapshot();
     this.state.round += 1;
     this.syncPhaseFromRound();
     this.enterExploreSetup({ autoSave: true });
@@ -1606,6 +1649,7 @@ export class GameEngine {
     isPaused?: () => boolean,
     isCancelled?: () => boolean,
     speed?: PlaybackSpeed | (() => PlaybackSpeed),
+    opts?: { forceMainThread?: boolean; rng?: () => number },
   ): Promise<{ win: boolean }> {
     this.combatTime = 0;
     this.combatPlayerUnits = playerUnits;
@@ -1618,6 +1662,8 @@ export class GameEngine {
       enemyOnHitEffects,
       onEvent,
       speed: speed ?? (() => this.combatSpeed),
+      forceMainThread: opts?.forceMainThread,
+      rng: opts?.rng,
       onTick: (combatTime, player, enemy) => {
         this.combatTime = combatTime;
         this.combatPlayerUnits = player;
@@ -1637,10 +1683,74 @@ export class GameEngine {
     return goldReward;
   }
 
-  /** 记录本场战斗并自动存档（结束态） */
+  /** 记录本场战斗（不直接写盘；由 UI 写 battle_end 后 flush） */
   recordBattle(rec: BattleRecord) {
+    if (this.combatSeed != null && rec.combatSeed == null) {
+      rec.combatSeed = this.combatSeed;
+    }
     this.state.battles.push(rec);
-    this.autoSave();
+  }
+
+  /** 匹配成功后写入开战快照字段（随后必须 flushSave） */
+  beginBattlePending(opts: { enemyBd: DeploySlot[] | null; autoWin: boolean }) {
+    this.combatPhase = 'battle_pending';
+    this.pendingEnemyBd = opts.enemyBd
+      ? JSON.parse(JSON.stringify(opts.enemyBd)) as DeploySlot[]
+      : null;
+    this.pendingAutoWin = opts.autoWin;
+    this.combatSeed = (Date.now() ^ (Math.floor(Math.random() * 1e9))) >>> 0;
+    if (this.combatSeed === 0) this.combatSeed = 1;
+    this.combatRngVersion = COMBAT_RNG_VERSION;
+    this.combatResultSummary = null;
+    this.historySyncPending = false;
+  }
+
+  /** 战斗结束态：保留 pendingEnemyBd 供读档还原 UI */
+  markBattleEnd(summary: { win: boolean; gold: number; autoWin: boolean }) {
+    this.combatPhase = 'battle_end';
+    this.combatResultSummary = { ...summary };
+  }
+
+  clearCombatSnapshot() {
+    this.combatPhase = 'explore';
+    this.pendingEnemyBd = null;
+    this.pendingAutoWin = false;
+    this.combatSeed = null;
+    this.combatResultSummary = null;
+    this.combatRngVersion = COMBAT_RNG_VERSION;
+  }
+
+  hasBattleRecordForRound(round: number = this.state.round): boolean {
+    return this.state.battles.some(b => b.round === round);
+  }
+
+  getBattleRecordForRound(round: number = this.state.round): BattleRecord | null {
+    const list = this.state.battles.filter(b => b.round === round);
+    return list.length ? list[list.length - 1] : null;
+  }
+
+  /**
+   * 读档恢复决策（实现约定 E）。
+   * 先看本回合是否已有 battles，再看 combatPhase。
+   */
+  resolveCombatResume(): CombatResumeKind {
+    if (this.isExplore()) {
+      return 'explore';
+    }
+    // 偶数战斗回合
+    if (this.hasBattleRecordForRound(this.state.round) || this.combatPhase === 'battle_end') {
+      return 'end_ui';
+    }
+    if (this.combatPhase === 'battle_pending') {
+      const rngOk = (this.combatRngVersion ?? COMBAT_RNG_VERSION) === COMBAT_RNG_VERSION;
+      const hasSnapshot = this.pendingAutoWin || (this.pendingEnemyBd != null && this.combatSeed != null);
+      if (rngOk && hasSnapshot && this.combatSeed != null) {
+        return 'replay';
+      }
+      return 'rollback_explore';
+    }
+    // 缺省旧档：偶数无快照
+    return 'rollback_explore';
   }
 
   /**
@@ -1758,10 +1868,15 @@ export class GameEngine {
 
     await new Promise(r => setTimeout(r, 300));
 
+    let seed = this.combatSeed ?? ((Date.now() ^ (Math.floor(Math.random() * 1e9))) >>> 0);
+    if (!seed) seed = 1;
+    if (this.combatSeed == null) this.combatSeed = seed;
+
     try {
       const result = await this._playWithSimulator(
         playerUnits, enemyUnits, playerOnHitEffects, enemyOnHitEffects, onEvent,
         isPaused, isCancelled, speed ?? (() => this.combatSpeed),
+        { forceMainThread: true, rng: seededRandom(seed) },
       );
 
       let goldReward = 0;
@@ -1780,6 +1895,7 @@ export class GameEngine {
         durationMs: this.combatTime,
         log: [], // UI 侧应在调用前通过外层收集完整日志后覆盖；此处保底
         endedBy: result.win ? 'enemy_down' : 'player_down',
+        combatSeed: seed,
       });
 
       onEnd(result.win, goldReward);
@@ -1876,8 +1992,15 @@ export class GameEngine {
       battles: this.state.battles,
       maxRound: this.state.maxRound,
       historyRunId: this.historyRunId,
+      combatPhase: this.combatPhase,
+      pendingEnemyBd: this.pendingEnemyBd,
+      pendingAutoWin: this.pendingAutoWin,
+      combatSeed: this.combatSeed,
+      combatResultSummary: this.combatResultSummary,
+      combatRngVersion: this.combatRngVersion,
+      historySyncPending: this.historySyncPending,
       savedAt: new Date().toISOString(),
-      saveVersion: 3,
+      saveVersion: 4,
     };
   }
 
@@ -1911,7 +2034,7 @@ export class GameEngine {
     if (this.historyRunId == null) {
       const r = await history.create(run);
       this.historyRunId = r.id;
-      await this.autoSave();
+      await this.flushSave();
     } else {
       await history.update(this.historyRunId, run);
     }
@@ -1954,6 +2077,40 @@ export class GameEngine {
     this.state.eventOfferPrices = data.eventOfferPrices ?? {};
     this.state.craftsmanSlot = data.craftsmanSlot ?? null;
     this.state.craftsmanReturn = data.craftsmanReturn ?? null;
+
+    // 战斗快照字段（saveVersion 4+）
+    const phaseRaw = data.combatPhase;
+    this.combatPhase =
+      phaseRaw === 'battle_pending' || phaseRaw === 'battle_end' || phaseRaw === 'explore'
+        ? phaseRaw
+        : (this.isBattlePhase() ? 'battle_pending' : 'explore');
+    this.pendingEnemyBd = Array.isArray(data.pendingEnemyBd) ? data.pendingEnemyBd : null;
+    this.pendingAutoWin = !!data.pendingAutoWin;
+    this.combatSeed = typeof data.combatSeed === 'number' ? data.combatSeed : null;
+    this.combatResultSummary = data.combatResultSummary && typeof data.combatResultSummary === 'object'
+      ? data.combatResultSummary
+      : null;
+    this.combatRngVersion = typeof data.combatRngVersion === 'number' ? data.combatRngVersion : COMBAT_RNG_VERSION;
+    this.historySyncPending = !!data.historySyncPending;
+
+    // 若已有本回合战报但 phase 仍 pending，校正为 end
+    if (this.isBattlePhase() && this.hasBattleRecordForRound(this.state.round)) {
+      this.combatPhase = 'battle_end';
+      if (!this.combatResultSummary) {
+        const rec = this.getBattleRecordForRound();
+        if (rec) {
+          this.combatResultSummary = {
+            win: rec.result !== 'loss',
+            gold: rec.rewardGold,
+            autoWin: rec.result === 'auto_win',
+          };
+        }
+      }
+      if (!this.pendingEnemyBd && this.getBattleRecordForRound()?.enemyBd) {
+        this.pendingEnemyBd = JSON.parse(JSON.stringify(this.getBattleRecordForRound()!.enemyBd));
+      }
+      this.pendingAutoWin = this.combatResultSummary?.autoWin ?? this.pendingAutoWin;
+    }
 
     const legacyMerchantEvents = ['good_merchant', 'entity_merchant', 'affix_merchant', 'discount_merchant', 'lottery'];
     if (Array.isArray(data.currentEvents) && data.currentEvents.length > 0
@@ -2007,12 +2164,46 @@ export class GameEngine {
       .filter(item => item.type !== 'entity' || !!getEntityDef(item.defId));
   }
 
+  private handleSaveError(e: unknown, rethrow: boolean) {
+    if (e instanceof ApiError && e.status === 401) {
+      this.onAuthExpired?.();
+      if (rethrow) throw e;
+      return;
+    }
+    if (!this.saveFailToasted) {
+      this.saveFailToasted = true;
+      this.onSaveError?.('自动存档失败，请稍后手动存档', e);
+    }
+    if (rethrow) throw e;
+  }
+
+  /** 探险提交型即时存（约定 A）；拖拽 suppress 时跳过 */
+  requestExploreCommitSave() {
+    if (this.suppressExploreSave) return;
+    if (!this.isExplore() || this.combatPhase !== 'explore') return;
+    this.requestSave({ reason: 'explore-commit' });
+  }
+
+  requestSave(_opts?: { reason?: string }) {
+    this.saveQueue.request();
+  }
+
+  async flushSave(): Promise<void> {
+    try {
+      await this.saveQueue.flush();
+      this.saveFailToasted = false;
+    } catch (e) {
+      this.handleSaveError(e, true);
+    }
+  }
+
+  /** @deprecated 使用 requestSave / flushSave */
   async autoSave() {
-    try { await savesApi.put(this.toSaveData()); } catch (e) { console.warn('自动存档失败'); }
+    this.requestSave({ reason: 'legacy-auto' });
   }
 
   async manualSave() {
-    await savesApi.put(this.toSaveData());
+    await this.flushSave();
   }
 
   async hasSave(): Promise<boolean> {
@@ -2025,6 +2216,8 @@ export class GameEngine {
       if (!d.save) return false;
       this.loadSaveData(JSON.parse(d.save.data_json));
       return true;
-    } catch { return false; }
+    } catch {
+      return false;
+    }
   }
 }

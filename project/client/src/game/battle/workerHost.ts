@@ -1,4 +1,5 @@
 // Worker 宿主：max 模式优先走 Worker 无头演算，失败则回退主线程 Simulator
+// 正式局可 forceMainThread，保证 combatSeed 可重播
 
 import type { OnHitEffect } from '../data';
 import {
@@ -21,6 +22,9 @@ export interface WorkerBattleOpts {
   isPaused?: () => boolean;
   isCancelled?: () => boolean;
   speed: PlaybackSpeed | (() => PlaybackSpeed);
+  /** 正式局重播：强制主线程 + 可选确定性 RNG */
+  forceMainThread?: boolean;
+  rng?: () => number;
 }
 
 function resolveSpeed(speed: PlaybackSpeed | (() => PlaybackSpeed)): PlaybackSpeed {
@@ -31,47 +35,39 @@ export function createBattleWorker(): Worker {
   return new Worker(new URL('./battle.worker.ts', import.meta.url), { type: 'module' });
 }
 
+function runOnMainThread(opts: WorkerBattleOpts, speed: PlaybackSpeed): Promise<{ win: boolean }> {
+  const simulator = new BattleSimulator({
+    playerUnits: opts.playerUnits,
+    enemyUnits: opts.enemyUnits,
+    playerOnHitEffects: opts.playerOnHitEffects,
+    enemyOnHitEffects: opts.enemyOnHitEffects,
+    rng: opts.rng,
+  });
+  return playBattle({
+    simulator,
+    speed,
+    onEvent: opts.onEvent,
+    onTick: (sim) => opts.onTick?.(sim.combatTime, sim.playerUnits, sim.enemyUnits),
+    isPaused: opts.isPaused,
+    isCancelled: opts.isCancelled,
+  });
+}
+
 /**
- * 运行战斗：1/2/4 主线程 Playback；max 尝试 Worker，失败回退主线程 max。
+ * 运行战斗：1/2/4 主线程 Playback；max 尝试 Worker（除非 forceMainThread）。
  */
 export async function runBattleWithOptionalWorker(opts: WorkerBattleOpts): Promise<{ win: boolean }> {
   const spd = resolveSpeed(opts.speed);
 
-  if (spd !== 'max') {
-    const simulator = new BattleSimulator({
-      playerUnits: opts.playerUnits,
-      enemyUnits: opts.enemyUnits,
-      playerOnHitEffects: opts.playerOnHitEffects,
-      enemyOnHitEffects: opts.enemyOnHitEffects,
-    });
-    return playBattle({
-      simulator,
-      speed: opts.speed,
-      onEvent: opts.onEvent,
-      onTick: (sim) => opts.onTick?.(sim.combatTime, sim.playerUnits, sim.enemyUnits),
-      isPaused: opts.isPaused,
-      isCancelled: opts.isCancelled,
-    });
+  if (opts.forceMainThread || spd !== 'max') {
+    return runOnMainThread(opts, opts.forceMainThread && spd === 'max' ? 'max' : spd);
   }
 
   try {
     return await runMaxViaWorker(opts);
   } catch (e) {
     console.warn('[battle] Worker 不可用，回退主线程', e);
-    const simulator = new BattleSimulator({
-      playerUnits: opts.playerUnits,
-      enemyUnits: opts.enemyUnits,
-      playerOnHitEffects: opts.playerOnHitEffects,
-      enemyOnHitEffects: opts.enemyOnHitEffects,
-    });
-    return playBattle({
-      simulator,
-      speed: 'max',
-      onEvent: opts.onEvent,
-      onTick: (sim) => opts.onTick?.(sim.combatTime, sim.playerUnits, sim.enemyUnits),
-      isPaused: opts.isPaused,
-      isCancelled: opts.isCancelled,
-    });
+    return runOnMainThread(opts, 'max');
   }
 }
 

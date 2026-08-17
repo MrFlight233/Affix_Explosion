@@ -5,7 +5,7 @@
 
 import { getDB } from '../connection';
 
-const MAX_SAVE_SIZE = 500_000; // 500KB
+const MAX_SAVE_SIZE = 2_000_000; // 2MB（对齐 Express json body）
 
 export class SaveRepo {
   /** 获取用户存档 */

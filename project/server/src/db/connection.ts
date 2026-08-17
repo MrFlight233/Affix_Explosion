@@ -40,7 +40,7 @@ export function initDB(): void {
   // 临时表放在内存
   _db.pragma('temp_store = MEMORY');
 
-  console.log('[DB] better-sqlite3 初始化完成 (WAL mode)');
+  console.log(`[DB] better-sqlite3 初始化完成 (WAL mode) path=${path.resolve(CONFIG.DB_PATH)}`);
 }
 
 /**

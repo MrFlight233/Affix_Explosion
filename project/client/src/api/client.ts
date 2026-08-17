@@ -6,6 +6,13 @@ const BASE = '/api';
 
 let token: string | null = localStorage.getItem('ae_token');
 
+/** 401 钩子：局内过期时由 main/UI 注入（不销毁引擎） */
+let onUnauthorized: (() => void) | null = null;
+
+export function setOnUnauthorized(handler: (() => void) | null) {
+  onUnauthorized = handler;
+}
+
 export function setToken(t: string | null) {
   token = t;
   if (t) localStorage.setItem('ae_token', t);
@@ -13,6 +20,15 @@ export function setToken(t: string | null) {
 }
 
 export function getToken(): string | null { return token; }
+
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+    this.name = 'ApiError';
+  }
+}
 
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
@@ -28,7 +44,10 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: '请求失败' }));
-    throw new Error(body.error || `HTTP ${res.status}`);
+    if (res.status === 401) {
+      onUnauthorized?.();
+    }
+    throw new ApiError(body.error || `HTTP ${res.status}`, res.status);
   }
   return res.json();
 }
@@ -43,6 +62,7 @@ export const auth = {
     request<{token:string;user:{id:number;username:string}}>('/auth/login', {
       method:'POST', body:JSON.stringify({username,password}),
     }),
+  me: () => request<{ userId: number; username: string }>('/auth/me'),
 };
 
 // Data
@@ -78,71 +98,67 @@ export const admin = {
   listEntities: () =>
     request<{ entities: any[]; version: number }>('/admin/entities'),
   getEntity: (id: string) =>
-    request<{ entity: any }>('/admin/entities/' + encodeURIComponent(id)),
-  createEntity: (entity: any) =>
-    request<{ entity: any }>('/admin/entities', {
-      method: 'POST', body: JSON.stringify({ entity }),
+    request<{ entity: any }>(`/admin/entities/${encodeURIComponent(id)}`),
+  createEntity: (data: any) =>
+    request<{ ok: boolean; id: string }>('/admin/entities', {
+      method: 'POST', body: JSON.stringify(data),
     }),
-  updateEntity: (id: string, entity: any) =>
-    request<{ entity: any }>('/admin/entities/' + encodeURIComponent(id), {
-      method: 'PUT', body: JSON.stringify({ entity }),
+  importEntities: (items: any[], overwrite = false) =>
+    request<{ imported: number; skipped: number; errors: any[] }>('/admin/entities/import', {
+      method: 'POST', body: JSON.stringify({ items, overwrite }),
+    }),
+  updateEntity: (id: string, data: any) =>
+    request<{ ok: boolean }>(`/admin/entities/${encodeURIComponent(id)}`, {
+      method: 'PUT', body: JSON.stringify(data),
     }),
   deleteEntity: (id: string) =>
-    request<{ ok: boolean }>('/admin/entities/' + encodeURIComponent(id), { method: 'DELETE' }),
+    request<{ ok: boolean }>(`/admin/entities/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  clearAllEntities: () =>
+    request<{ ok: boolean; deleted: number }>('/admin/entities', { method: 'DELETE' }),
 
   // Affixes
   listAffixes: () =>
     request<{ affixes: any[]; version: number }>('/admin/affixes'),
   getAffix: (id: string) =>
-    request<{ affix: any }>('/admin/affixes/' + encodeURIComponent(id)),
-  createAffix: (affix: any) =>
-    request<{ affix: any }>('/admin/affixes', {
-      method: 'POST', body: JSON.stringify({ affix }),
+    request<{ affix: any }>(`/admin/affixes/${encodeURIComponent(id)}`),
+  createAffix: (data: any) =>
+    request<{ ok: boolean; id: string }>('/admin/affixes', {
+      method: 'POST', body: JSON.stringify(data),
     }),
-  updateAffix: (id: string, affix: any) =>
-    request<{ affix: any }>('/admin/affixes/' + encodeURIComponent(id), {
-      method: 'PUT', body: JSON.stringify({ affix }),
+  importAffixes: (items: any[], overwrite = false) =>
+    request<{ imported: number; skipped: number; errors: any[] }>('/admin/affixes/import', {
+      method: 'POST', body: JSON.stringify({ items, overwrite }),
+    }),
+  updateAffix: (id: string, data: any) =>
+    request<{ ok: boolean }>(`/admin/affixes/${encodeURIComponent(id)}`, {
+      method: 'PUT', body: JSON.stringify(data),
     }),
   deleteAffix: (id: string) =>
-    request<{ ok: boolean }>('/admin/affixes/' + encodeURIComponent(id), { method: 'DELETE' }),
-
-  // Import batch
-  importEntities: (items: any[], overwrite: boolean) =>
-    request<{ imported: number; skipped: number; errors: { index: number; id: string; message: string }[] }>(
-      '/admin/entities/import', { method: 'POST', body: JSON.stringify({ items, overwrite }) }
-    ),
-  importAffixes: (items: any[], overwrite: boolean) =>
-    request<{ imported: number; skipped: number; errors: { index: number; id: string; message: string }[] }>(
-      '/admin/affixes/import', { method: 'POST', body: JSON.stringify({ items, overwrite }) }
-    ),
-
-  // Clear all
-  clearAllEntities: () =>
-    request<{ ok: boolean; message: string }>('/admin/entities', { method: 'DELETE' }),
+    request<{ ok: boolean }>(`/admin/affixes/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   clearAllAffixes: () =>
-    request<{ ok: boolean; message: string }>('/admin/affixes', { method: 'DELETE' }),
+    request<{ ok: boolean; deleted: number }>('/admin/affixes', { method: 'DELETE' }),
 
   // Categories
   listCategories: () =>
     request<{ categories: any[] }>('/admin/categories'),
-  createCategory: (category: any) =>
-    request<{ category: any }>('/admin/categories', {
-      method: 'POST', body: JSON.stringify({ category }),
+  createCategory: (data: any) =>
+    request<{ ok: boolean; id: string }>('/admin/categories', {
+      method: 'POST', body: JSON.stringify(data),
     }),
-  updateCategory: (id: string, category: any) =>
-    request<{ category: any }>('/admin/categories/' + encodeURIComponent(id), {
-      method: 'PUT', body: JSON.stringify({ category }),
+  updateCategory: (id: string, data: any) =>
+    request<{ ok: boolean }>(`/admin/categories/${encodeURIComponent(id)}`, {
+      method: 'PUT', body: JSON.stringify(data),
     }),
   deleteCategory: (id: string) =>
-    request<{ ok: boolean }>('/admin/categories/' + encodeURIComponent(id), { method: 'DELETE' }),
+    request<{ ok: boolean }>(`/admin/categories/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
-  // Template seed (Git)
-  seedStatus: () =>
-    request<{ seedDir: string; exists: boolean; meta: any | null }>('/admin/seed/status'),
+  // Seed
   publishSeed: () =>
-    request<{ ok: boolean; path: string; entities: number; affixes: number; categories: number; version: number; exportedAt: string }>(
-      '/admin/seed/publish', { method: 'POST' }
+    request<{ ok: boolean; path: string; entities: number; affixes: number; categories: number; version: number }>(
+      '/admin/seed/publish', { method: 'POST' },
     ),
+  seedStatus: () =>
+    request<{ exists: boolean; path: string; meta: any }>('/admin/seed/status'),
 };
 
 // Saves
@@ -166,6 +182,7 @@ export interface HistoryRunSummary {
   maxRound?: number;
   battles: number;
   gold?: number;
+  totalGoldGained?: number;
 }
 
 export const history = {

@@ -7,9 +7,10 @@ import fs from 'fs';
 import path from 'path';
 import { getDB } from './connection';
 import { templateCache, entityDefToRow, affixDefToRow } from './cache';
+import { getSeedDir } from '../paths';
 
-/** 种子始终写在服务端工作目录 data/seed/（与 Git 跟踪路径一致；不随 DB_PATH 漂移） */
-const SEED_DIR = path.resolve(process.cwd(), 'data/seed');
+/** 种子相对 server 根 data/seed/（与 Git 跟踪路径一致；不随 cwd / DB_PATH 漂移） */
+const SEED_DIR = getSeedDir(__dirname);
 
 export interface SeedPublishResult {
   path: string;

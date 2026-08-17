@@ -38,6 +38,8 @@ export interface PointerDragHandlers {
   /** 提交；返回错误文案则由引擎 toast */
   onCommit: (session: PointerDragSession, hit: PointerDragHit) => string | null;
   onCancel?: () => void;
+  /** 拖拽结束（含取消）；正式局用于清 suppressExploreSave / 提交型存 */
+  onFinished?: (info: { cancelled: boolean; commitError?: string | null }) => void;
 }
 
 interface ActiveDrag {
@@ -167,17 +169,16 @@ function onPointerUp(e: PointerEvent): void {
   e.stopPropagation();
   const { session, handlers, lastHit } = active;
   const err = handlers.onCommit(session, lastHit);
-  teardown(false);
+  teardown(false, err);
   if (err) showAppToast(err);
 }
 
 function onPointerCancel(e: PointerEvent): void {
   if (!active || e.pointerId !== active.pointerId) return;
-  active.handlers.onCancel?.();
   teardown(true);
 }
 
-function teardown(cancelled: boolean): void {
+function teardown(cancelled: boolean, commitError?: string | null): void {
   if (!active) return;
   const a = active;
   active = null;
@@ -193,6 +194,10 @@ function teardown(cancelled: boolean): void {
     suppressNextClick = false;
     a.handlers.onCancel?.();
   }
+  a.handlers.onFinished?.({
+    cancelled,
+    commitError: cancelled ? undefined : (commitError ?? null),
+  });
 }
 
 function moveGhost(x: number, y: number): void {
