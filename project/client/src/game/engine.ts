@@ -1860,11 +1860,7 @@ export class GameEngine {
     this.combatPlayerUnits = playerUnits;
     this.combatEnemyUnits = enemyUnits;
 
-    onEvent({
-      time: 0, actorName: '', weaponName: '',
-      targetName: '战斗开始', damage: 0,
-      targetHpAfter: 0, targetMaxHp: 0, effects: [],
-    });
+    // 0.0s 开战预处理日志由 Simulator.bootstrapAtZero 产出（勿再注入空洞「战斗开始」）
 
     await new Promise(r => setTimeout(r, 300));
 
@@ -1947,11 +1943,7 @@ export class GameEngine {
     this.combatPlayerUnits = playerUnits;
     this.combatEnemyUnits = enemyUnits;
 
-    onEvent({
-      time: 0, actorName: '', weaponName: '',
-      targetName: '战斗开始', damage: 0,
-      targetHpAfter: 0, targetMaxHp: 0, effects: [],
-    });
+    // 0.0s 开战预处理日志由 Simulator.bootstrapAtZero 产出
 
     await new Promise(r => setTimeout(r, 300));
 

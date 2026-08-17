@@ -159,6 +159,9 @@ export interface CombatEvent {
   /** 已格式化的效果子行（或击杀/特殊标记） */
   effects: string[];
   targetingLabel?: string;
+  /** 日志着色：我方 / 敌方 */
+  actorSide?: 'player' | 'enemy';
+  targetSide?: 'player' | 'enemy';
 }
 
 export type PlaybackSpeed = 1 | 2 | 4 | 'max';

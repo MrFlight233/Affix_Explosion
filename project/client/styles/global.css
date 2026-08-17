@@ -153,6 +153,8 @@ body {
   --sb-indicator: #404040;
   --sb-drag-over-bg: rgba(64, 64, 64, 0.14);
   --sb-drag-over-border: #404040;
+  --sb-log-side-player: #5b6b73;
+  --sb-log-side-enemy: #7a655c;
   --sb-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 }
 #left-zone {
@@ -1825,6 +1827,8 @@ body.fg-resizing-row { cursor: row-resize !important; user-select: none; }
   --sb-indicator: #404040;
   --sb-drag-over-bg: rgba(64, 64, 64, 0.14);
   --sb-drag-over-border: #404040;
+  --sb-log-side-player: #5b6b73;
+  --sb-log-side-enemy: #7a655c;
   --sb-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 }
 
@@ -2250,6 +2254,9 @@ body.sb-pointer-dragging [data-drag-handle] { cursor: grabbing; }
 }
 .sb-log-entry { padding: 1px 0; color: var(--sb-text-secondary); }
 .sb-log-entry.kill { font-weight: 600; color: #dc2626; }
+.sb-log-side-player { color: var(--sb-log-side-player, #5b6b73); font-weight: 600; }
+.sb-log-side-enemy { color: var(--sb-log-side-enemy, #7a655c); font-weight: 600; }
+.sb-log-block { display: contents; }
 
 /* 战斗结果 */
 #sb-battle-result {

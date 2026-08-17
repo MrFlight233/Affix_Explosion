@@ -30,6 +30,24 @@ export interface CombatLogHeaderInput {
   actorName: string;
   targetName: string;
   weaponName: string;
+  actorSide?: 'player' | 'enemy';
+  targetSide?: 'player' | 'enemy';
+}
+
+/** 日志中单位名着色（无 side 则纯文本） */
+export function formatSideNameHtml(name: string, side?: 'player' | 'enemy'): string {
+  const safe = escapeLogHtml(name);
+  if (side === 'player') return `<span class="sb-log-side-player">${safe}</span>`;
+  if (side === 'enemy') return `<span class="sb-log-side-enemy">${safe}</span>`;
+  return safe;
+}
+
+function escapeLogHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 /** 配置面效果行：每条效果一行；多 applyTo 用 / 合并角色；持续用「每/总」时长 */
@@ -107,7 +125,9 @@ export function formatActiveActionCollapseSummary(opts: {
 }
 
 export function formatCombatLogHeader(evt: CombatLogHeaderInput): string {
-  return `[${(evt.time / 1000).toFixed(1)}s] ${evt.actorName} 对 ${evt.targetName} 使用 ${evt.weaponName}`;
+  const actor = formatSideNameHtml(evt.actorName, evt.actorSide);
+  const target = formatSideNameHtml(evt.targetName, evt.targetSide);
+  return `[${(evt.time / 1000).toFixed(1)}s] ${actor} 对 ${target} 使用 ${escapeLogHtml(evt.weaponName)}`;
 }
 
 export function formatCombatEffectLine(line: CombatLogEffectLine): string {
@@ -119,8 +139,8 @@ export function formatCombatEffectLine(line: CombatLogEffectLine): string {
   return `${line.displayName} ${line.affectedName} ${st} ${sym} ${line.value}  (${pool}: ${before} -> ${after})`;
 }
 
-export function formatCombatKillLine(time: number, targetName: string): string {
-  return `[${(time / 1000).toFixed(1)}s] ${targetName} 击杀!`;
+export function formatCombatKillLine(time: number, targetName: string, targetSide?: 'player' | 'enemy'): string {
+  return `[${(time / 1000).toFixed(1)}s] ${formatSideNameHtml(targetName, targetSide)} 击杀!`;
 }
 
 /** 战斗日志 HTML 片段（共用） */
@@ -130,36 +150,41 @@ export function formatCombatEventLogHtml(evt: {
   weaponName: string;
   targetName: string;
   effects: string[];
+  actorSide?: 'player' | 'enemy';
+  targetSide?: 'player' | 'enemy';
 }): string {
   if (evt.effects?.includes('击杀')) {
-    return `<div class="sb-log-entry kill">${formatCombatKillLine(evt.time, evt.targetName)}</div>`;
+    return `<div class="sb-log-entry kill">${formatCombatKillLine(evt.time, evt.targetName, evt.targetSide)}</div>`;
   }
-  if (evt.targetName === '战斗开始') {
-    return `<div class="sb-log-entry">[0.0s] 战斗开始</div>`;
+  if (evt.targetName === '开战预处理' || evt.targetName === '战斗开始') {
+    return `<div class="sb-log-entry">[0.0s] 开战预处理 · 被动生效</div>`;
   }
   if (evt.effects?.includes('空池自动获胜') || evt.targetName === '玩家胜利') {
     return `<div class="sb-log-entry">[0.0s] 对战池无对手 · 自动获胜</div>`;
   }
   if (evt.targetName === '超时惩罚') {
     const sec = evt.effects?.[0] || '';
-    return `<div class="sb-log-entry">[${(evt.time / 1000).toFixed(1)}s] 超时惩罚 ${sec}</div>`;
+    return `<div class="sb-log-entry">[${(evt.time / 1000).toFixed(1)}s] 超时惩罚 ${escapeLogHtml(sec)}</div>`;
   }
   if (!evt.actorName && !evt.weaponName) {
-    // 持续 Tick 等无攻击方事件：时间戳 + 效果子行
     if (evt.effects?.length) {
-      let h = `<div class="sb-log-entry">[${(evt.time / 1000).toFixed(1)}s]</div>`;
+      let h = `<div class="sb-log-entry">[${(evt.time / 1000).toFixed(1)}s]`;
+      if (evt.targetName) {
+        h += ` ${formatSideNameHtml(evt.targetName, evt.targetSide)}`;
+      }
+      h += `</div>`;
       for (const eff of evt.effects) {
         if (eff === '击杀') continue;
-        h += `<div class="sb-log-entry" style="padding-left:20px">${eff}</div>`;
+        h += `<div class="sb-log-entry" style="padding-left:20px">${escapeLogHtml(eff)}</div>`;
       }
       return h;
     }
-    return `<div class="sb-log-entry">[${(evt.time / 1000).toFixed(1)}s] ${evt.targetName}</div>`;
+    return `<div class="sb-log-entry">[${(evt.time / 1000).toFixed(1)}s] ${formatSideNameHtml(evt.targetName, evt.targetSide)}</div>`;
   }
   let h = `<div class="sb-log-entry">${formatCombatLogHeader(evt)}</div>`;
   for (const eff of evt.effects || []) {
     if (eff === '击杀') continue;
-    h += `<div class="sb-log-entry" style="padding-left:20px">${eff}</div>`;
+    h += `<div class="sb-log-entry" style="padding-left:20px">${escapeLogHtml(eff)}</div>`;
   }
   return h;
 }

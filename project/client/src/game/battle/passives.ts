@@ -7,6 +7,20 @@ import { recomputeChassis } from './durations';
 import type { CombatUnitRuntime, CombatWeaponRuntime, PassiveModBag } from './types';
 import { emptyPassiveMods, round6 } from './types';
 
+export type CombatSide = 'player' | 'enemy';
+
+/** 单次被动施加记录（开战预处理明细日志） */
+export interface PassiveApplyRecord {
+  sourceName: string;
+  sourceSide: CombatSide;
+  targetName: string;
+  targetSide: CombatSide;
+  displayName: string;
+  stat: PassiveStat;
+  op: 'gain' | 'loss';
+  amount: number;
+}
+
 function addMod(bag: PassiveModBag, stat: PassiveStat, signed: number): void {
   switch (stat) {
     case 'maxHp': bag.maxHp = round6(bag.maxHp + signed); break;
@@ -36,22 +50,44 @@ function fakeWeapon(
   };
 }
 
+const STAT_LABEL: Record<PassiveStat, string> = {
+  maxHp: 'HP上限',
+  maxStamina: '耐力上限',
+  maxLoad: '负重上限',
+  hpRegen: '生命恢复',
+  staminaRegen: '耐力恢复',
+};
+
+/** 预处理明细子行文案（无 HTML） */
+export function formatPassiveApplyEffectLine(r: PassiveApplyRecord): string {
+  const label = STAT_LABEL[r.stat] || r.stat;
+  const signed = r.op === 'gain' ? r.amount : -r.amount;
+  const sym = signed >= 0 ? '+' : '';
+  const name = r.displayName || '被动';
+  return `${name} ${label} ${sym}${signed}`;
+}
+
 /**
  * 全量重算双方被动修饰并刷新底盘。
- * 仅存活单位作为来源与受益者。
+ * 默认仅存活单位作为来源与受益者；includeDead=true 用于开战 0.0s 预处理。
  */
 export function recomputePassiveBonuses(
   playerUnits: CombatUnitRuntime[],
   enemyUnits: CombatUnitRuntime[],
   rng?: () => number,
   includeDead = false,
+  onApply?: (rec: PassiveApplyRecord) => void,
 ): void {
   const all = [...playerUnits, ...enemyUnits];
   for (const u of all) {
     u.passiveMods = emptyPassiveMods();
   }
 
+  const sideOf = (u: CombatUnitRuntime): CombatSide =>
+    playerUnits.includes(u) ? 'player' : 'enemy';
+
   const applyFromSide = (side: CombatUnitRuntime[], isPlayer: boolean) => {
+    const sourceSide: CombatSide = isPlayer ? 'player' : 'enemy';
     for (const actor of side) {
       if (!includeDead && actor.currentHp <= 0) continue;
       const sources = actor.passiveSources || [];
@@ -72,6 +108,16 @@ export function recomputePassiveBonuses(
           for (const e of src.effects) {
             const signed = e.op === 'gain' ? e.params.amount : -e.params.amount;
             addMod(t.passiveMods, e.stat, signed);
+            onApply?.({
+              sourceName: actor.entityName,
+              sourceSide,
+              targetName: t.entityName,
+              targetSide: sideOf(t),
+              displayName: e.displayName || '被动',
+              stat: e.stat,
+              op: e.op,
+              amount: e.params.amount,
+            });
           }
         }
       }
@@ -115,7 +161,7 @@ export function summarizePassiveModsBySource(unit: CombatUnitRuntime): string[] 
   };
   for (const src of sources) {
     const srcName = src.ownerName || '未知来源';
-    for (const e of src.effects) {
+    for (const e of src.effects || []) {
       const label = statLabel[e.stat] || e.stat;
       const signed = e.op === 'loss' ? -e.params.amount : e.params.amount;
       if (signed === 0) continue;

@@ -277,6 +277,8 @@ export interface CombatEvent {
   targetMaxHp: number;
   effects: string[];
   targetingLabel?: string;
+  actorSide?: 'player' | 'enemy';
+  targetSide?: 'player' | 'enemy';
   /** @deprecated 旧多伤种字段，勿再写入 */
   physicalDamage?: number;
   fireDamage?: number;

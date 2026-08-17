@@ -10,7 +10,7 @@ import {
   advanceDurations,
   clearDurationsOnDeath,
 } from './durations';
-import { recomputePassiveBonuses } from './passives';
+import { recomputePassiveBonuses, formatPassiveApplyEffectLine } from './passives';
 import {
   applyDeferredRemainingTime,
   applyInstantEffectToUnit,
@@ -43,6 +43,8 @@ export class BattleSimulator {
   private finished = false;
   private win = false;
   private readonly eventBuffer: CombatEvent[] = [];
+  /** 0.0s 预处理是否已执行 */
+  private bootstrapped = false;
 
   constructor(opts: SimulatorOptions) {
     this.playerUnits = opts.playerUnits;
@@ -50,12 +52,12 @@ export class BattleSimulator {
     this.playerOnHitEffects = opts.playerOnHitEffects;
     this.enemyOnHitEffects = opts.enemyOnHitEffects;
     this.rng = opts.rng ?? Math.random;
-    // 预初始化阶段：所有被动先算（包括 hp=0 的单位）
-    recomputePassiveBonuses(this.playerUnits, this.enemyUnits, this.rng, true);
+    // 被动预初始化改由 bootstrapAtZero（0.0s 执行相位）完成
   }
 
   get isFinished(): boolean { return this.finished; }
   get resultWin(): boolean { return this.win; }
+  get hasBootstrapped(): boolean { return this.bootstrapped; }
 
   /** 取出并清空事件缓冲 */
   drainEvents(): CombatEvent[] {
@@ -67,9 +69,85 @@ export class BattleSimulator {
     return this.eventBuffer;
   }
 
-  /** 推进一个逻辑 tick（100ms）。返回本 tick 是否已结束战斗 */
+  private sideOf(u: CombatUnitRuntime): 'player' | 'enemy' {
+    return this.playerUnits.includes(u) ? 'player' : 'enemy';
+  }
+
+  /**
+   * 0.0s 执行相位：含 0 血的被动全量生效 + 上限同步；写明细日志；
+   * 仍为 0 血则击杀。不开火、不回复。
+   */
+  bootstrapAtZero(): void {
+    if (this.bootstrapped || this.finished) return;
+    this.bootstrapped = true;
+    this.combatTime = 0;
+
+    const records: import('./passives').PassiveApplyRecord[] = [];
+    recomputePassiveBonuses(
+      this.playerUnits,
+      this.enemyUnits,
+      this.rng,
+      true,
+      (r) => records.push(r),
+    );
+
+    this.emit({
+      time: 0,
+      actorName: '',
+      weaponName: '',
+      targetName: '开战预处理',
+      damage: 0,
+      targetHpAfter: 0,
+      targetMaxHp: 0,
+      effects: [],
+    });
+
+    for (const r of records) {
+      this.emit({
+        time: 0,
+        actorName: r.sourceName,
+        actorSide: r.sourceSide,
+        weaponName: r.displayName || '被动',
+        targetName: r.targetName,
+        targetSide: r.targetSide,
+        damage: 0,
+        targetHpAfter: 0,
+        targetMaxHp: 0,
+        effects: [formatPassiveApplyEffectLine(r)],
+      });
+    }
+
+    for (const u of [...this.playerUnits, ...this.enemyUnits]) {
+      if (u.currentHp > 0) continue;
+      clearDurationsOnDeath(u);
+      this.weaponsDirty = true;
+      this.emit({
+        time: 0,
+        actorName: '',
+        weaponName: '',
+        targetName: u.entityName,
+        targetSide: this.sideOf(u),
+        damage: 0,
+        targetHpAfter: 0,
+        targetMaxHp: u.totalHp,
+        effects: ['击杀'],
+      });
+    }
+
+    if (!this.playerUnits.some(u => u.currentHp > 0) ||
+        !this.enemyUnits.some(e => e.currentHp > 0)) {
+      this.finalize();
+    }
+  }
+
+  /** 推进一个逻辑 tick（100ms）。首次调用先跑 0.0s bootstrap。 */
   step(): boolean {
     if (this.finished) return true;
+
+    if (!this.bootstrapped) {
+      this.bootstrapAtZero();
+      return this.finished;
+    }
 
     if (!this.playerUnits.some(u => u.currentHp > 0) ||
         !this.enemyUnits.some(e => e.currentHp > 0) ||
@@ -116,6 +194,7 @@ export class BattleSimulator {
       const label = buildTargetingLabel(weapon);
       const effectsList = weapon.onHitEffects || [];
       const allDeferred: DeferredRemainingTimeOp[] = [];
+      const actorSide = isPlayer ? 'player' as const : 'enemy' as const;
 
       for (const target of targets) {
         if (target.currentHp <= 0) continue;
@@ -133,8 +212,10 @@ export class BattleSimulator {
         this.emit({
           time: Math.round(this.combatTime),
           actorName: unit.entityName,
+          actorSide,
           weaponName: weapon.name,
           targetName: target.entityName,
+          targetSide: this.sideOf(target),
           damage: netDamage,
           targetHpAfter: Math.min(Math.max(target.currentHp, 0), target.totalHp),
           targetMaxHp: target.totalHp,
@@ -150,6 +231,7 @@ export class BattleSimulator {
             actorName: '',
             weaponName: '',
             targetName: target.entityName,
+            targetSide: this.sideOf(target),
             damage: 0,
             targetHpAfter: 0,
             targetMaxHp: target.totalHp,
@@ -235,6 +317,7 @@ export class BattleSimulator {
             actorName: '',
             weaponName: '',
             targetName: unit.entityName,
+            targetSide: this.sideOf(unit),
             damage: netDamage,
             targetHpAfter: Math.min(Math.max(unit.currentHp, 0), unit.totalHp),
             targetMaxHp: unit.totalHp,
@@ -249,6 +332,7 @@ export class BattleSimulator {
             actorName: '',
             weaponName: '',
             targetName: unit.entityName,
+            targetSide: this.sideOf(unit),
             damage: 0,
             targetHpAfter: 0,
             targetMaxHp: unit.totalHp,
@@ -293,7 +377,8 @@ export class BattleSimulator {
         this.weaponsDirty = true;
         this.emit({
           time: Math.round(this.combatTime), actorName: '', weaponName: '',
-          targetName: u.entityName, damage: penaltyDamage,
+          targetName: u.entityName, targetSide: this.sideOf(u),
+          damage: penaltyDamage,
           targetHpAfter: 0, targetMaxHp: u.totalHp, effects: ['击杀'],
         });
       }

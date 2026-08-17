@@ -89,4 +89,61 @@ describe('BattleSimulator', () => {
     expect(win).toBe(true);
     expect(enemy[0].currentHp).toBeLessThanOrEqual(0);
   });
+
+  it('bootstrapAtZero 产出 time=0 预处理事件，其后 tick 从 0.1s 起', () => {
+    const player = buildCombatRuntime([makeUnit('p1', '玩家', 50, 10)]);
+    const enemy = buildCombatRuntime([
+      {
+        ...makeUnit('e1', '木桩', 0, 0),
+        currentHp: 0,
+        totalHp: 0,
+        isStarter: false,
+        activeWeapons: [],
+        passiveSources: [],
+      },
+    ]);
+    // 友方被动给木桩加 HP 上限以便对照；此处用玩家自 buff
+    player[0].passiveSources = [{
+      effects: [{ displayName: '生命加成', stat: 'maxHp', op: 'gain', params: { amount: 20 } }],
+      targetCondition: { sortBy: 'random', filterBy: ['根实体'] },
+      targetCount: 1,
+    }];
+
+    const sim = new BattleSimulator({
+      playerUnits: player,
+      enemyUnits: enemy,
+      playerOnHitEffects: new Map(),
+      enemyOnHitEffects: new Map(),
+      rng: () => 0,
+    });
+    sim.bootstrapAtZero();
+    const events = sim.drainEvents();
+    expect(events.length).toBeGreaterThan(0);
+    expect(events.every(e => e.time === 0)).toBe(true);
+    expect(events.some(e => e.targetName === '开战预处理')).toBe(true);
+    expect(events.some(e => e.actorName === '玩家' && e.weaponName === '生命加成')).toBe(true);
+    // 0 血木桩拉不起 → 击杀
+    expect(events.some(e => e.effects.includes('击杀') && e.targetName === '木桩')).toBe(true);
+    expect(sim.resultWin).toBe(true);
+  });
+
+  it('同 seed 胜负不受预处理日志影响', () => {
+    const mk = () => {
+      const player = buildCombatRuntime([makeUnit('p1', '玩家', 80, 15)]);
+      const enemy = buildCombatRuntime([makeUnit('e1', '敌人', 60, 8)]);
+      return new BattleSimulator({
+        playerUnits: player,
+        enemyUnits: enemy,
+        playerOnHitEffects: new Map(),
+        enemyOnHitEffects: new Map(),
+        rng: () => 0.3,
+      });
+    };
+    const a = mk();
+    const b = mk();
+    a.runToEnd();
+    b.runToEnd();
+    expect(a.resultWin).toBe(b.resultWin);
+    expect(a.combatTime).toBe(b.combatTime);
+  });
 });
