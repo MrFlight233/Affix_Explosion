@@ -11,6 +11,7 @@
       "admin"
     ],
     "effect": "特殊能力",
+    "description": "特殊能力",
     "onHitEffects": [],
     "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
@@ -25,7 +26,25 @@
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [],
+      "enabled": false,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": false,
+      "effectBindings": [],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "accessory",
@@ -39,6 +58,7 @@
       "admin"
     ],
     "effect": "很多都有被动加成",
+    "description": "很多都有被动加成",
     "onHitEffects": [],
     "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
@@ -53,7 +73,25 @@
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [],
+      "enabled": false,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": false,
+      "effectBindings": [],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "admin",
@@ -67,6 +105,7 @@
       "admin"
     ],
     "effect": "管理员专属词条",
+    "description": "管理员专属词条",
     "onHitEffects": [],
     "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
@@ -81,7 +120,25 @@
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [],
+      "enabled": false,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": false,
+      "effectBindings": [],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "animal",
@@ -95,6 +152,7 @@
       "admin"
     ],
     "effect": "一般智力低下",
+    "description": "一般智力低下",
     "onHitEffects": [],
     "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
@@ -109,7 +167,25 @@
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [],
+      "enabled": false,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": false,
+      "effectBindings": [],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "beast_control",
@@ -123,6 +199,7 @@
       "admin"
     ],
     "effect": "开启御兽路线",
+    "description": "开启御兽路线",
     "onHitEffects": [],
     "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
@@ -137,7 +214,25 @@
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [],
+      "enabled": false,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": false,
+      "effectBindings": [],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "bleed_3",
@@ -149,23 +244,8 @@
     "prerequisite": [],
     "poolPrerequisite": [],
     "effect": "命中造成流血，每秒3点持续6秒",
-    "onHitEffects": [
-      {
-        "displayName": "流血",
-        "kind": "duration",
-        "stat": "hp",
-        "op": "loss",
-        "params": {
-          "amount": 3
-        },
-        "durationMs": 6000,
-        "tickIntervalMs": 1000,
-        "buffKey": "bleed",
-        "applyTo": [
-          "target"
-        ]
-      }
-    ],
+    "description": "命中造成流血，每秒3点持续6秒",
+    "onHitEffects": [],
     "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
     "staminaBonus": 0,
@@ -179,7 +259,30 @@
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [
+        {
+          "effectId": "a_duration_hp_loss_3_d6000_t1000",
+          "order": 0
+        }
+      ],
+      "enabled": true,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": false,
+      "effectBindings": [],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "blood_for_blood",
@@ -191,21 +294,8 @@
     "prerequisite": [],
     "poolPrerequisite": [],
     "effect": "伤敌40，自损40",
-    "onHitEffects": [
-      {
-        "displayName": "伤害",
-        "kind": "instant",
-        "stat": "hp",
-        "op": "loss",
-        "params": {
-          "amount": 40
-        },
-        "applyTo": [
-          "target",
-          "starter"
-        ]
-      }
-    ],
+    "description": "伤敌40，自损40",
+    "onHitEffects": [],
     "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
     "staminaBonus": 0,
@@ -219,7 +309,30 @@
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [
+        {
+          "effectId": "a_instant_hp_loss_40_5ca355",
+          "order": 0
+        }
+      ],
+      "enabled": true,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": false,
+      "effectBindings": [],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "cripple",
@@ -231,22 +344,8 @@
     "prerequisite": [],
     "poolPrerequisite": [],
     "effect": "命中降低目标耐力恢复5点持续8秒",
-    "onHitEffects": [
-      {
-        "displayName": "致残",
-        "kind": "duration",
-        "stat": "staminaRegen",
-        "op": "loss",
-        "params": {
-          "amount": 5
-        },
-        "durationMs": 8000,
-        "buffKey": "cripple",
-        "applyTo": [
-          "target"
-        ]
-      }
-    ],
+    "description": "命中降低目标耐力恢复5点持续8秒",
+    "onHitEffects": [],
     "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
     "staminaBonus": 0,
@@ -260,7 +359,30 @@
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [
+        {
+          "effectId": "a_duration_staminaRegen_loss_5_d8000",
+          "order": 0
+        }
+      ],
+      "enabled": true,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": false,
+      "effectBindings": [],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "damage_bonus_1",
@@ -272,20 +394,8 @@
     "prerequisite": [],
     "poolPrerequisite": [],
     "effect": "增加最上层实体伤害 1 点",
-    "onHitEffects": [
-      {
-        "displayName": "伤害",
-        "kind": "instant",
-        "stat": "hp",
-        "op": "loss",
-        "params": {
-          "amount": 1
-        },
-        "applyTo": [
-          "target"
-        ]
-      }
-    ],
+    "description": "增加最上层实体伤害 1 点",
+    "onHitEffects": [],
     "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
     "staminaBonus": 0,
@@ -299,7 +409,30 @@
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [
+        {
+          "effectId": "a_instant_hp_loss_1",
+          "order": 0
+        }
+      ],
+      "enabled": true,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": false,
+      "effectBindings": [],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "double_edge",
@@ -311,43 +444,50 @@
     "prerequisite": [],
     "poolPrerequisite": [],
     "effect": "+10耐力恢复，每次攻击自损8HP",
-    "onHitEffects": [
-      {
-        "displayName": "双刃剑-反噬",
-        "kind": "instant",
-        "stat": "hp",
-        "op": "loss",
-        "params": {
-          "amount": 8
-        },
-        "applyTo": [
-          "starter"
-        ]
-      }
-    ],
+    "description": "+10耐力恢复，每次攻击自损8HP",
+    "onHitEffects": [],
     "hasPassiveBonuses": true,
     "staminaRegenerationBonus": 0,
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "passiveEffects": [
-      {
-        "displayName": "双刃剑-狂涌",
-        "stat": "staminaRegen",
-        "op": "gain",
-        "params": {
-          "amount": 10
-        }
-      }
-    ],
+    "passiveEffects": [],
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [
+        {
+          "effectId": "a_instant_hp_loss_8",
+          "order": 0
+        }
+      ],
+      "enabled": true,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": true,
+      "effectBindings": [
+        {
+          "effectId": "p_instant_staminaRegen_gain_10",
+          "order": 0
+        }
+      ],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "execute_25",
@@ -359,20 +499,8 @@
     "prerequisite": [],
     "poolPrerequisite": [],
     "effect": "命中附加目标25%生命上限的伤害",
-    "onHitEffects": [
-      {
-        "displayName": "处决",
-        "kind": "instant",
-        "stat": "hp",
-        "op": "loss",
-        "params": {
-          "percent": 25
-        },
-        "applyTo": [
-          "target"
-        ]
-      }
-    ],
+    "description": "命中附加目标25%生命上限的伤害",
+    "onHitEffects": [],
     "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
     "staminaBonus": 0,
@@ -386,7 +514,30 @@
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [
+        {
+          "effectId": "a_instant_hp_loss_1ac9cc",
+          "order": 0
+        }
+      ],
+      "enabled": true,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": false,
+      "effectBindings": [],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "expansion",
@@ -400,6 +551,7 @@
       "admin"
     ],
     "effect": "扩充实体槽位",
+    "description": "扩充实体槽位",
     "onHitEffects": [],
     "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
@@ -414,7 +566,25 @@
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [],
+      "enabled": false,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": false,
+      "effectBindings": [],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "fighter",
@@ -426,6 +596,7 @@
     "prerequisite": [],
     "poolPrerequisite": [],
     "effect": "开启战士路线",
+    "description": "开启战士路线",
     "onHitEffects": [],
     "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
@@ -440,7 +611,25 @@
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [],
+      "enabled": false,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": false,
+      "effectBindings": [],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "frenzy",
@@ -452,6 +641,7 @@
     "prerequisite": [],
     "poolPrerequisite": [],
     "effect": "随机选择目标",
+    "description": "随机选择目标",
     "onHitEffects": [],
     "targetingModifier": {
       "sortBy": "random",
@@ -473,7 +663,25 @@
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [],
+      "enabled": false,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": false,
+      "effectBindings": [],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "glass_cannon",
@@ -485,47 +693,54 @@
     "prerequisite": [],
     "poolPrerequisite": [],
     "effect": "命中附加20%HP上限伤害，自身HP上限-100点",
-    "onHitEffects": [
-      {
-        "displayName": "玻璃大炮",
-        "kind": "instant",
-        "stat": "hp",
-        "op": "loss",
-        "params": {
-          "percent": 20
-        },
-        "applyTo": [
-          "target"
-        ]
-      }
-    ],
+    "description": "命中附加20%HP上限伤害，自身HP上限-100点",
+    "onHitEffects": [],
     "hasPassiveBonuses": true,
     "staminaRegenerationBonus": 0,
     "staminaBonus": 0,
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "passiveEffects": [
-      {
-        "displayName": "生命削减-100",
-        "stat": "maxHp",
-        "op": "loss",
-        "params": {
-          "amount": 100
-        },
-        "condition": {
-          "matchIds": [],
-          "min": 2
-        }
-      }
-    ],
+    "passiveEffects": [],
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [
+        {
+          "effectId": "a_instant_hp_loss_22f6f0",
+          "order": 0
+        }
+      ],
+      "enabled": true,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": true,
+      "effectBindings": [
+        {
+          "effectId": "p_instant_maxHp_loss_100",
+          "condition": {
+            "matchIds": [],
+            "min": 2
+          },
+          "order": 0
+        }
+      ],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "greedy_soul",
@@ -537,6 +752,7 @@
     "prerequisite": [],
     "poolPrerequisite": [],
     "effect": "+5000负重上限，-30HP上限",
+    "description": "+5000负重上限，-30HP上限",
     "onHitEffects": [],
     "hasPassiveBonuses": true,
     "staminaRegenerationBonus": 0,
@@ -544,31 +760,41 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "passiveEffects": [
-      {
-        "displayName": "贪婪-负重+5000",
-        "stat": "maxLoad",
-        "op": "gain",
-        "params": {
-          "amount": 5000
-        }
-      },
-      {
-        "displayName": "贪婪-代价-30HP",
-        "stat": "maxHp",
-        "op": "loss",
-        "params": {
-          "amount": 30
-        }
-      }
-    ],
+    "passiveEffects": [],
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [],
+      "enabled": false,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": true,
+      "effectBindings": [
+        {
+          "effectId": "p_instant_maxLoad_gain_5000",
+          "order": 0
+        },
+        {
+          "effectId": "p_instant_maxHp_loss_30",
+          "order": 1
+        }
+      ],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "hp_bonus_40",
@@ -580,6 +806,7 @@
     "prerequisite": [],
     "poolPrerequisite": [],
     "effect": "增加最上层实体生命上限40点",
+    "description": "增加最上层实体生命上限40点",
     "onHitEffects": [],
     "hasPassiveBonuses": true,
     "staminaRegenerationBonus": 0,
@@ -587,23 +814,37 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "passiveEffects": [
-      {
-        "displayName": "生命加成",
-        "stat": "maxHp",
-        "op": "gain",
-        "params": {
-          "amount": 40
-        }
-      }
-    ],
+    "passiveEffects": [],
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [],
+      "enabled": false,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": true,
+      "effectBindings": [
+        {
+          "effectId": "p_instant_maxHp_gain_40",
+          "order": 0
+        }
+      ],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "hp_bonus_50",
@@ -615,6 +856,7 @@
     "prerequisite": [],
     "poolPrerequisite": [],
     "effect": "增加最上层实体HP 50 点",
+    "description": "增加最上层实体HP 50 点",
     "onHitEffects": [],
     "hasPassiveBonuses": true,
     "staminaRegenerationBonus": 0,
@@ -622,23 +864,37 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "passiveEffects": [
-      {
-        "displayName": "生命加成",
-        "stat": "maxHp",
-        "op": "gain",
-        "params": {
-          "amount": 50
-        }
-      }
-    ],
+    "passiveEffects": [],
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [],
+      "enabled": false,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": true,
+      "effectBindings": [
+        {
+          "effectId": "p_instant_maxHp_gain_50",
+          "order": 0
+        }
+      ],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "hp_regeneration_bonus_2",
@@ -650,6 +906,7 @@
     "prerequisite": [],
     "poolPrerequisite": [],
     "effect": "增加最上层实体生命回复 2 点",
+    "description": "增加最上层实体生命回复 2 点",
     "onHitEffects": [],
     "hasPassiveBonuses": true,
     "staminaRegenerationBonus": 0,
@@ -657,23 +914,37 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "passiveEffects": [
-      {
-        "displayName": "生命恢复加成",
-        "stat": "hpRegen",
-        "op": "gain",
-        "params": {
-          "amount": 2
-        }
-      }
-    ],
+    "passiveEffects": [],
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [],
+      "enabled": false,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": true,
+      "effectBindings": [
+        {
+          "effectId": "p_instant_hpRegen_gain_2",
+          "order": 0
+        }
+      ],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "hp_steal_2",
@@ -685,32 +956,8 @@
     "prerequisite": [],
     "poolPrerequisite": [],
     "effect": "攻击命中时回复2HP",
-    "onHitEffects": [
-      {
-        "displayName": "吸血",
-        "kind": "instant",
-        "stat": "hp",
-        "op": "gain",
-        "params": {
-          "amount": 2
-        },
-        "applyTo": [
-          "starter"
-        ]
-      },
-      {
-        "displayName": "伤害",
-        "kind": "instant",
-        "stat": "hp",
-        "op": "loss",
-        "params": {
-          "amount": 2
-        },
-        "applyTo": [
-          "target"
-        ]
-      }
-    ],
+    "description": "攻击命中时回复2HP",
+    "onHitEffects": [],
     "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
     "staminaBonus": 0,
@@ -724,7 +971,34 @@
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [
+        {
+          "effectId": "a_instant_hp_gain_2",
+          "order": 0
+        },
+        {
+          "effectId": "a_instant_hp_loss_2",
+          "order": 1
+        }
+      ],
+      "enabled": true,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": false,
+      "effectBindings": [],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "humanoid",
@@ -738,6 +1012,7 @@
       "admin"
     ],
     "effect": "类人生物",
+    "description": "类人生物",
     "onHitEffects": [],
     "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
@@ -752,7 +1027,25 @@
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [],
+      "enabled": false,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": false,
+      "effectBindings": [],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "item",
@@ -766,6 +1059,7 @@
       "admin"
     ],
     "effect": "普通物品类型",
+    "description": "普通物品类型",
     "onHitEffects": [],
     "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
@@ -780,7 +1074,25 @@
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [],
+      "enabled": false,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": false,
+      "effectBindings": [],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "knockback",
@@ -792,20 +1104,8 @@
     "prerequisite": [],
     "poolPrerequisite": [],
     "effect": "命中增加目标武器冷却1秒",
-    "onHitEffects": [
-      {
-        "displayName": "击退",
-        "kind": "instant",
-        "stat": "remainingTime",
-        "op": "gain",
-        "params": {
-          "amount": 1000
-        },
-        "applyTo": [
-          "target"
-        ]
-      }
-    ],
+    "description": "命中增加目标武器冷却1秒",
+    "onHitEffects": [],
     "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
     "staminaBonus": 0,
@@ -819,7 +1119,30 @@
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [
+        {
+          "effectId": "a_instant_remainingTime_gain_1000",
+          "order": 0
+        }
+      ],
+      "enabled": true,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": false,
+      "effectBindings": [],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "load_bonus_5000",
@@ -831,6 +1154,7 @@
     "prerequisite": [],
     "poolPrerequisite": [],
     "effect": "增加最上层实体负重上限5000g",
+    "description": "增加最上层实体负重上限5000g",
     "onHitEffects": [],
     "hasPassiveBonuses": true,
     "staminaRegenerationBonus": 0,
@@ -838,23 +1162,37 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "passiveEffects": [
-      {
-        "displayName": "负重加成",
-        "stat": "maxLoad",
-        "op": "gain",
-        "params": {
-          "amount": 5000
-        }
-      }
-    ],
+    "passiveEffects": [],
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [],
+      "enabled": false,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": true,
+      "effectBindings": [
+        {
+          "effectId": "p_instant_maxLoad_gain_5000",
+          "order": 0
+        }
+      ],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "mechanic",
@@ -868,6 +1206,7 @@
       "admin"
     ],
     "effect": "开启机械路线",
+    "description": "开启机械路线",
     "onHitEffects": [],
     "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
@@ -882,7 +1221,25 @@
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [],
+      "enabled": false,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": false,
+      "effectBindings": [],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "poison_2",
@@ -894,23 +1251,8 @@
     "prerequisite": [],
     "poolPrerequisite": [],
     "effect": "使敌人每秒中毒5持续4秒",
-    "onHitEffects": [
-      {
-        "displayName": "毒",
-        "kind": "duration",
-        "stat": "hp",
-        "op": "loss",
-        "params": {
-          "amount": 5
-        },
-        "durationMs": 4000,
-        "tickIntervalMs": 1000,
-        "buffKey": "poison",
-        "applyTo": [
-          "target"
-        ]
-      }
-    ],
+    "description": "使敌人每秒中毒5持续4秒",
+    "onHitEffects": [],
     "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
     "staminaBonus": 0,
@@ -924,7 +1266,30 @@
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [
+        {
+          "effectId": "a_duration_hp_loss_5_d4000_t1000",
+          "order": 0
+        }
+      ],
+      "enabled": true,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": false,
+      "effectBindings": [],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "reckless_charge",
@@ -936,6 +1301,7 @@
     "prerequisite": [],
     "poolPrerequisite": [],
     "effect": "+15耐力恢复，-3生命恢复",
+    "description": "+15耐力恢复，-3生命恢复",
     "onHitEffects": [],
     "hasPassiveBonuses": true,
     "staminaRegenerationBonus": 0,
@@ -943,31 +1309,41 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "passiveEffects": [
-      {
-        "displayName": "鲁莽-狂涌",
-        "stat": "staminaRegen",
-        "op": "gain",
-        "params": {
-          "amount": 15
-        }
-      },
-      {
-        "displayName": "鲁莽-失血",
-        "stat": "hpRegen",
-        "op": "loss",
-        "params": {
-          "amount": 3
-        }
-      }
-    ],
+    "passiveEffects": [],
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [],
+      "enabled": false,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": true,
+      "effectBindings": [
+        {
+          "effectId": "p_instant_staminaRegen_gain_15",
+          "order": 0
+        },
+        {
+          "effectId": "p_instant_hpRegen_loss_3",
+          "order": 1
+        }
+      ],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "slavery",
@@ -981,6 +1357,7 @@
       "admin"
     ],
     "effect": "开启奴役路线",
+    "description": "开启奴役路线",
     "onHitEffects": [],
     "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
@@ -995,7 +1372,25 @@
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [],
+      "enabled": false,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": false,
+      "effectBindings": [],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "spell_casting",
@@ -1007,6 +1402,7 @@
     "prerequisite": [],
     "poolPrerequisite": [],
     "effect": "开启施法路线",
+    "description": "开启施法路线",
     "onHitEffects": [],
     "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
@@ -1021,7 +1417,25 @@
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [],
+      "enabled": false,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": false,
+      "effectBindings": [],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "splash_3",
@@ -1033,20 +1447,8 @@
     "prerequisite": [],
     "poolPrerequisite": [],
     "effect": "命中后附带3点溅射伤害",
-    "onHitEffects": [
-      {
-        "displayName": "溅射",
-        "kind": "instant",
-        "stat": "hp",
-        "op": "loss",
-        "params": {
-          "amount": 3
-        },
-        "applyTo": [
-          "target"
-        ]
-      }
-    ],
+    "description": "命中后附带3点溅射伤害",
+    "onHitEffects": [],
     "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
     "staminaBonus": 0,
@@ -1060,7 +1462,30 @@
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [
+        {
+          "effectId": "a_instant_hp_loss_3",
+          "order": 0
+        }
+      ],
+      "enabled": true,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": false,
+      "effectBindings": [],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "stamina_bonus_20",
@@ -1072,6 +1497,7 @@
     "prerequisite": [],
     "poolPrerequisite": [],
     "effect": "增加最上层实体耐力 20 点",
+    "description": "增加最上层实体耐力 20 点",
     "onHitEffects": [],
     "hasPassiveBonuses": true,
     "staminaRegenerationBonus": 0,
@@ -1079,23 +1505,37 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "passiveEffects": [
-      {
-        "displayName": "耐力加成",
-        "stat": "maxStamina",
-        "op": "gain",
-        "params": {
-          "amount": 20
-        }
-      }
-    ],
+    "passiveEffects": [],
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [],
+      "enabled": false,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": true,
+      "effectBindings": [
+        {
+          "effectId": "p_instant_maxStamina_gain_20",
+          "order": 0
+        }
+      ],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "stamina_drain_5",
@@ -1107,21 +1547,8 @@
     "prerequisite": [],
     "poolPrerequisite": [],
     "effect": "攻击后减少敌人5点耐力",
-    "onHitEffects": [
-      {
-        "displayName": "削耐",
-        "kind": "instant",
-        "stat": "stamina",
-        "op": "loss",
-        "params": {
-          "amount": 5,
-          "percent": 0
-        },
-        "applyTo": [
-          "target"
-        ]
-      }
-    ],
+    "description": "攻击后减少敌人5点耐力",
+    "onHitEffects": [],
     "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
     "staminaBonus": 0,
@@ -1135,7 +1562,30 @@
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [
+        {
+          "effectId": "a_instant_stamina_loss_5",
+          "order": 0
+        }
+      ],
+      "enabled": true,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": false,
+      "effectBindings": [],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "stamina_regen_6",
@@ -1147,6 +1597,7 @@
     "prerequisite": [],
     "poolPrerequisite": [],
     "effect": "增加最上层实体耐力恢复6点",
+    "description": "增加最上层实体耐力恢复6点",
     "onHitEffects": [],
     "hasPassiveBonuses": true,
     "staminaRegenerationBonus": 0,
@@ -1154,23 +1605,37 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "passiveEffects": [
-      {
-        "displayName": "耐力恢复加成",
-        "stat": "staminaRegen",
-        "op": "gain",
-        "params": {
-          "amount": 6
-        }
-      }
-    ],
+    "passiveEffects": [],
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [],
+      "enabled": false,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": true,
+      "effectBindings": [
+        {
+          "effectId": "p_instant_staminaRegen_gain_6",
+          "order": 0
+        }
+      ],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "stamina_regeneration_bonus_5",
@@ -1182,6 +1647,7 @@
     "prerequisite": [],
     "poolPrerequisite": [],
     "effect": "增加最上层实体耐力回复 5 点",
+    "description": "增加最上层实体耐力回复 5 点",
     "onHitEffects": [],
     "hasPassiveBonuses": true,
     "staminaRegenerationBonus": 0,
@@ -1189,23 +1655,37 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "passiveEffects": [
-      {
-        "displayName": "耐力恢复加成",
-        "stat": "staminaRegen",
-        "op": "gain",
-        "params": {
-          "amount": 5
-        }
-      }
-    ],
+    "passiveEffects": [],
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [],
+      "enabled": false,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": true,
+      "effectBindings": [
+        {
+          "effectId": "p_instant_staminaRegen_gain_5",
+          "order": 0
+        }
+      ],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "starter",
@@ -1219,6 +1699,7 @@
       "admin"
     ],
     "effect": "可以触发实体的主动动作",
+    "description": "可以触发实体的主动动作",
     "onHitEffects": [],
     "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
@@ -1233,7 +1714,25 @@
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [],
+      "enabled": false,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": false,
+      "effectBindings": [],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "target_enemy",
@@ -1245,6 +1744,7 @@
     "prerequisite": [],
     "poolPrerequisite": [],
     "effect": "只针对敌人",
+    "description": "只针对敌人",
     "onHitEffects": [],
     "targetingModifier": {
       "targetFaction": "敌人"
@@ -1262,7 +1762,25 @@
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [],
+      "enabled": false,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": false,
+      "effectBindings": [],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "target_friend",
@@ -1274,6 +1792,7 @@
     "prerequisite": [],
     "poolPrerequisite": [],
     "effect": "只针对友方",
+    "description": "只针对友方",
     "onHitEffects": [],
     "targetingModifier": {
       "targetFaction": "友方"
@@ -1291,7 +1810,25 @@
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [],
+      "enabled": false,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": false,
+      "effectBindings": [],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "weapon",
@@ -1305,6 +1842,7 @@
       "admin"
     ],
     "effect": "有主动动作的物品",
+    "description": "有主动动作的物品",
     "onHitEffects": [],
     "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
@@ -1319,7 +1857,25 @@
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [],
+      "enabled": false,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": false,
+      "effectBindings": [],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "weapon_training",
@@ -1335,20 +1891,8 @@
       "fighter"
     ],
     "effect": "伤害加成 2",
-    "onHitEffects": [
-      {
-        "displayName": "武器训练",
-        "kind": "instant",
-        "stat": "hp",
-        "op": "loss",
-        "params": {
-          "amount": 2
-        },
-        "applyTo": [
-          "target"
-        ]
-      }
-    ],
+    "description": "伤害加成 2",
+    "onHitEffects": [],
     "hasPassiveBonuses": false,
     "staminaRegenerationBonus": 0,
     "staminaBonus": 0,
@@ -1362,7 +1906,30 @@
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [
+        {
+          "effectId": "a_instant_hp_loss_2",
+          "order": 0
+        }
+      ],
+      "enabled": true,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": false,
+      "effectBindings": [],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "weight_bonus_5000",
@@ -1374,6 +1941,7 @@
     "prerequisite": [],
     "poolPrerequisite": [],
     "effect": "增加负重上限5kg",
+    "description": "增加负重上限5kg",
     "onHitEffects": [],
     "hasPassiveBonuses": true,
     "staminaRegenerationBonus": 0,
@@ -1381,23 +1949,37 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "passiveEffects": [
-      {
-        "displayName": "负重加成",
-        "stat": "maxLoad",
-        "op": "gain",
-        "params": {
-          "amount": 5000
-        }
-      }
-    ],
+    "passiveEffects": [],
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [],
+      "enabled": false,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": true,
+      "effectBindings": [
+        {
+          "effectId": "p_instant_maxLoad_gain_5000",
+          "order": 0
+        }
+      ],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   },
   {
     "id": "weight_training_5000",
@@ -1413,6 +1995,7 @@
       "fighter"
     ],
     "effect": "增加负重上限 5 kg",
+    "description": "增加负重上限 5 kg",
     "onHitEffects": [],
     "hasPassiveBonuses": true,
     "staminaRegenerationBonus": 0,
@@ -1420,22 +2003,36 @@
     "hpRegenerationBonus": 0,
     "hpBonus": 0,
     "loadBonus": 0,
-    "passiveEffects": [
-      {
-        "displayName": "负重加成",
-        "stat": "maxLoad",
-        "op": "gain",
-        "params": {
-          "amount": 5000
-        }
-      }
-    ],
+    "passiveEffects": [],
     "passiveTargetCondition": {
       "sortBy": "random",
       "filterBy": [
         "根实体"
       ]
     },
-    "passiveTargetCount": 1
+    "passiveTargetCount": 1,
+    "activeChannel": {
+      "effectBindings": [],
+      "enabled": false,
+      "actionTime": 0,
+      "staminaCost": 0
+    },
+    "passiveChannel": {
+      "enabled": true,
+      "effectBindings": [
+        {
+          "effectId": "p_instant_maxLoad_gain_5000",
+          "order": 0
+        }
+      ],
+      "targetCondition": {
+        "sortBy": "random",
+        "filterBy": [
+          "根实体"
+        ]
+      },
+      "targetCount": 1
+    },
+    "damageBonus": 0
   }
 ]

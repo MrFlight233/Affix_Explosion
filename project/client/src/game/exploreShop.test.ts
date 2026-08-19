@@ -86,7 +86,7 @@ describe('explore shop + reserve', () => {
   });
 
   it('开局进入探险：现金含探险发放静默结算，货架有实体', () => {
-    expect(eng.state.gold).toBe(50);
+    expect(eng.state.gold).toBe(40);
     expect(eng.state.reserveGold).toBe(0);
     expect(eng.state.shopOffers.length).toBeGreaterThan(0);
     expect(eng.state.currentEvents).toContain('hire');

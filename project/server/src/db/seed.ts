@@ -7,7 +7,15 @@ import {
   DEFAULT_PASSIVE_TARGET,
   migrateLegacyPassiveScalars,
   normalizePassiveEffects,
+  PASSIVE_STATS,
 } from '@shared/passiveBonusUtil';
+import { normalizeOnHitEffects, effectKind } from '@shared/hitEffectUtil';
+import {
+  suggestEffectId,
+  DEFAULT_ACTIVE_PARAM_SCHEMA,
+  DEFAULT_PASSIVE_PARAM_SCHEMA,
+} from '@shared/effectDef';
+import { createHash } from 'crypto';
 
 /** 首次启动时建表 + 导入种子数据 */
 export function initTables(): void {
@@ -150,6 +158,8 @@ export function initTables(): void {
   migrateTargetCountV9(db);
   // ---- 迁移：v10 被动列表 + 目标 ----
   migratePassiveEffectsV10(db);
+  // ---- 迁移：v11 效果库独立化 ----
+  migrateEffectCatalogV11(db);
 
   console.log('[DB] 所有表创建/验证完成');
 }
@@ -567,4 +577,335 @@ function migratePassiveEffectsV10(db: ReturnType<typeof getDB>): void {
   } catch (e) {
     console.warn('[DB] v10 passive_effects 迁移跳过:', (e as Error).message);
   }
+}
+
+/** v11：效果库表 + 通道列；内联 onHit/passive → EffectDef + bindings；清空旧列与存档/历史/匹配池 */
+function migrateEffectCatalogV11(db: ReturnType<typeof getDB>): void {
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS effects (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        allow_active INTEGER NOT NULL DEFAULT 1,
+        allow_passive INTEGER NOT NULL DEFAULT 0,
+        kind TEXT NOT NULL DEFAULT 'instant',
+        stat TEXT NOT NULL,
+        op TEXT NOT NULL DEFAULT 'gain',
+        default_params TEXT NOT NULL DEFAULT '{}',
+        default_duration_ms INTEGER,
+        default_tick_interval_ms INTEGER,
+        default_display_name TEXT,
+        default_apply_to TEXT,
+        param_schema TEXT,
+        category TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+
+    const addChannelCols = (table: string) => {
+      const cols = db.prepare(`PRAGMA table_info('${table}')`).all() as { name: string }[];
+      const names = new Set(cols.map(c => c.name));
+      if (!names.has('active_channel')) {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN active_channel TEXT`);
+        console.log(`[DB] ${table} 添加 active_channel`);
+      }
+      if (!names.has('passive_channel')) {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN passive_channel TEXT`);
+        console.log(`[DB] ${table} 添加 passive_channel`);
+      }
+    };
+    addChannelCols('entities');
+    addChannelCols('affixes');
+
+    // 仅当两侧都不再残留旧内联列表时视为已迁完（空通道 JSON 不算已迁）
+    const legacyLeft = (db.prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM entities WHERE
+          (on_hit_effects IS NOT NULL AND on_hit_effects != '[]' AND on_hit_effects != 'null')
+          OR (passive_effects IS NOT NULL AND passive_effects != '[]' AND passive_effects != 'null')
+        ) +
+        (SELECT COUNT(*) FROM affixes WHERE
+          (on_hit_effects IS NOT NULL AND on_hit_effects != '[]' AND on_hit_effects != 'null')
+          OR (passive_effects IS NOT NULL AND passive_effects != '[]' AND passive_effects != 'null')
+        ) AS c
+    `).get() as { c: number }).c;
+    if (legacyLeft === 0) {
+      ensurePlayerDataClearedV11(db);
+      return;
+    }
+
+    type Sig = string;
+    const catalog = new Map<Sig, { id: string; row: Record<string, any> }>();
+
+    // 预载已有效果库，避免 INSERT OR IGNORE 撞 id 却未入内存 catalog
+    for (const row of db.prepare('SELECT * FROM effects').all() as Record<string, any>[]) {
+      let params: any = {};
+      try { params = row.default_params ? JSON.parse(row.default_params) : {}; } catch { params = {}; }
+      let applyTo: any = null;
+      try { applyTo = row.default_apply_to ? JSON.parse(row.default_apply_to) : null; } catch { applyTo = null; }
+      const isPassive = row.category === 'passive_chassis' || row.allow_passive === 1 && row.allow_active === 1 && row.kind === 'instant'
+        && ['maxHp', 'maxStamina', 'maxLoad', 'hpRegen', 'staminaRegen'].includes(row.stat);
+      const sig: Sig = isPassive
+        ? JSON.stringify({ s: row.stat, o: row.op, a: params?.amount ?? null, pass: 1 })
+        : JSON.stringify({
+          k: row.kind || 'instant',
+          s: row.stat,
+          o: row.op,
+          a: params?.amount ?? null,
+          p: params?.percent ?? null,
+          d: row.default_duration_ms ?? null,
+          t: row.default_tick_interval_ms ?? null,
+          at: applyTo || null,
+        });
+      if (!catalog.has(sig)) {
+        catalog.set(sig, { id: row.id, row });
+      }
+    }
+
+    const upsertEffect = (sig: Sig, row: Record<string, any>) => {
+      const existing = catalog.get(sig);
+      if (existing) return existing.id;
+      let id = row.id as string;
+      const clash = [...catalog.values()].some(v => v.id === id);
+      if (clash) {
+        id = `${id}_${createHash('sha1').update(sig).digest('hex').slice(0, 6)}`;
+        row.id = id;
+      }
+      catalog.set(sig, { id, row });
+      return id;
+    };
+
+    const onHitSig = (e: any): Sig => JSON.stringify({
+      k: e.kind || 'instant',
+      s: e.stat,
+      o: e.op,
+      a: e.params?.amount ?? null,
+      p: e.params?.percent ?? null,
+      d: e.durationMs ?? null,
+      t: e.tickIntervalMs ?? null,
+      at: e.applyTo || null,
+    });
+
+    const passiveSig = (e: any): Sig => JSON.stringify({
+      s: e.stat,
+      o: e.op,
+      a: e.params?.amount ?? null,
+      pass: 1,
+    });
+
+    const ingestOnHit = (list: any[]): { effectId: string; params?: any; applyTo?: any; condition?: any; order: number }[] => {
+      const bindings: any[] = [];
+      const normalized = normalizeOnHitEffects(list);
+      normalized.forEach((e, order) => {
+        const kind = effectKind(e);
+        const isInstantPool = e.stat === 'hp' || e.stat === 'stamina' || e.stat === 'remainingTime';
+        const allowPassive = kind === 'duration' && !isInstantPool;
+        const baseId = suggestEffectId({
+          kind,
+          stat: String(e.stat),
+          op: String(e.op),
+          amount: e.params?.amount,
+          durationMs: e.durationMs,
+          tickIntervalMs: e.tickIntervalMs,
+          passive: false,
+        });
+        const sig = onHitSig(e);
+        const id = upsertEffect(sig, {
+          id: baseId,
+          name: e.displayName || baseId,
+          description: '',
+          allow_active: 1,
+          allow_passive: allowPassive ? 1 : 0,
+          kind,
+          stat: e.stat,
+          op: e.op,
+          default_params: JSON.stringify(e.params || {}),
+          default_duration_ms: e.durationMs ?? null,
+          default_tick_interval_ms: e.tickIntervalMs ?? null,
+          default_display_name: e.displayName || null,
+          default_apply_to: e.applyTo ? JSON.stringify(e.applyTo) : null,
+          param_schema: JSON.stringify(DEFAULT_ACTIVE_PARAM_SCHEMA),
+          category: kind === 'duration' ? 'duration' : 'instant',
+        });
+        const binding: any = { effectId: id, order };
+        if (e.condition) binding.condition = e.condition;
+        bindings.push(binding);
+      });
+      return bindings;
+    };
+
+    const ingestPassive = (list: any[]): { effectId: string; condition?: any; order: number }[] => {
+      const bindings: any[] = [];
+      const normalized = normalizePassiveEffects(list);
+      normalized.forEach((e, order) => {
+        if (!PASSIVE_STATS.has(e.stat)) return;
+        const baseId = suggestEffectId({
+          kind: 'instant',
+          stat: e.stat,
+          op: e.op,
+          amount: e.params.amount,
+          passive: true,
+        });
+        const sig = passiveSig(e);
+        const id = upsertEffect(sig, {
+          id: baseId,
+          name: e.displayName || baseId,
+          description: '',
+          allow_active: 1,
+          allow_passive: 1,
+          kind: 'instant',
+          stat: e.stat,
+          op: e.op,
+          default_params: JSON.stringify({ amount: e.params.amount }),
+          default_duration_ms: null,
+          default_tick_interval_ms: null,
+          default_display_name: e.displayName || null,
+          default_apply_to: null,
+          param_schema: JSON.stringify(DEFAULT_PASSIVE_PARAM_SCHEMA),
+          category: 'passive_chassis',
+        });
+        const binding: any = { effectId: id, order };
+        if (e.condition) binding.condition = e.condition;
+        bindings.push(binding);
+      });
+      return bindings;
+    };
+
+    const insertEffect = db.prepare(`
+      INSERT OR IGNORE INTO effects (
+        id, name, description, allow_active, allow_passive, kind, stat, op,
+        default_params, default_duration_ms, default_tick_interval_ms,
+        default_display_name, default_apply_to, param_schema, category, updated_at
+      ) VALUES (
+        @id, @name, @description, @allow_active, @allow_passive, @kind, @stat, @op,
+        @default_params, @default_duration_ms, @default_tick_interval_ms,
+        @default_display_name, @default_apply_to, @param_schema, @category, datetime('now')
+      )
+    `);
+
+    const migrateTable = (table: string) => {
+      const rows = db.prepare(`SELECT * FROM ${table}`).all() as Record<string, any>[];
+      const upd = db.prepare(`
+        UPDATE ${table} SET
+          active_channel = @active_channel,
+          passive_channel = @passive_channel,
+          on_hit_effects = '[]',
+          passive_effects = '[]',
+          damage_bonus = 0,
+          has_passive_bonuses = @has_passive_bonuses
+        WHERE id = @id
+      `);
+      for (const row of rows) {
+        let onHit: any[] = [];
+        let passive: any[] = [];
+        try { onHit = row.on_hit_effects ? JSON.parse(row.on_hit_effects) : []; } catch { onHit = []; }
+        try { passive = row.passive_effects ? JSON.parse(row.passive_effects) : []; } catch { passive = []; }
+
+        let existingActive: any = null;
+        let existingPassive: any = null;
+        try {
+          if (row.active_channel && row.active_channel !== '' && row.active_channel !== 'null') {
+            existingActive = JSON.parse(row.active_channel);
+          }
+        } catch { existingActive = null; }
+        try {
+          if (row.passive_channel && row.passive_channel !== '' && row.passive_channel !== 'null') {
+            existingPassive = JSON.parse(row.passive_channel);
+          }
+        } catch { existingPassive = null; }
+
+        const existingActiveBinds = Array.isArray(existingActive?.effectBindings)
+          ? existingActive.effectBindings
+          : [];
+        const existingPassiveBinds = Array.isArray(existingPassive?.effectBindings)
+          ? existingPassive.effectBindings
+          : [];
+
+        // 通道缺失、或通道空绑定但仍有旧列表 → 补迁；否则保留已有绑定
+        const needActive = !existingActive || (existingActiveBinds.length === 0 && onHit.length > 0);
+        const needPassive = !existingPassive || (existingPassiveBinds.length === 0 && passive.length > 0);
+
+        const activeBindings = needActive ? ingestOnHit(onHit) : existingActiveBinds;
+        const passiveBindings = needPassive ? ingestPassive(passive) : existingPassiveBinds;
+        const hasPassive = row.has_passive_bonuses === 1
+          || !!existingPassive?.enabled
+          || passiveBindings.length > 0;
+        let ptc: any = existingPassive?.targetCondition;
+        if (!ptc) {
+          try { ptc = row.passive_target_condition ? JSON.parse(row.passive_target_condition) : undefined; } catch { /* */ }
+        }
+        const pcount = existingPassive?.targetCount != null
+          ? existingPassive.targetCount
+          : (row.passive_target_count === -1 ? 'all' : (row.passive_target_count ?? 1));
+
+        const activeChannel = {
+          enabled: existingActive?.enabled != null
+            ? !!existingActive.enabled
+            : (table === 'entities' ? row.is_active === 1 : activeBindings.length > 0),
+          actionTime: existingActive?.actionTime ?? row.action_time ?? 0,
+          staminaCost: existingActive?.staminaCost ?? row.stamina_cost ?? 0,
+          targetCondition: existingActive?.targetCondition ?? (() => {
+            try { return row.target_condition ? JSON.parse(row.target_condition) : undefined; } catch { return undefined; }
+          })(),
+          targetCount: existingActive?.targetCount != null
+            ? existingActive.targetCount
+            : (row.target_count === -1 ? 'all' : row.target_count),
+          effectBindings: activeBindings,
+        };
+        const passiveChannel = {
+          enabled: !!hasPassive,
+          targetCondition: ptc || { ...DEFAULT_PASSIVE_TARGET, filterBy: ['根实体'] },
+          targetCount: pcount,
+          effectBindings: passiveBindings,
+        };
+        upd.run({
+          id: row.id,
+          active_channel: JSON.stringify(activeChannel),
+          passive_channel: JSON.stringify(passiveChannel),
+          has_passive_bonuses: hasPassive ? 1 : 0,
+        });
+      }
+    };
+
+    // 先扫一遍收集 catalog，再写 effects，再写通道
+    // 简化：ingest 时写入 catalog map，migrateTable 内 ingest，最后 flush catalog
+    migrateTable('entities');
+    migrateTable('affixes');
+
+    for (const { row } of catalog.values()) {
+      insertEffect.run(row);
+    }
+
+    console.log(`[DB] v11 效果库迁移完成: ${catalog.size} 条效果`);
+    ensurePlayerDataClearedV11(db);
+  } catch (e) {
+    console.warn('[DB] v11 效果库迁移跳过:', (e as Error).message);
+  }
+}
+
+function ensurePlayerDataClearedV11(db: ReturnType<typeof getDB>): void {
+  try {
+    const flag = db.prepare(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name='schema_flags'`,
+    ).get();
+    if (!flag) {
+      db.exec(`CREATE TABLE IF NOT EXISTS schema_flags (key TEXT PRIMARY KEY, value TEXT)`);
+    }
+    const row = db.prepare(`SELECT value FROM schema_flags WHERE key = 'v11_player_data_cleared'`).get() as { value?: string } | undefined;
+    if (row?.value === '1') return;
+    db.exec(`DELETE FROM saves; DELETE FROM run_history; DELETE FROM battle_pool;`);
+    db.prepare(
+      `INSERT OR REPLACE INTO schema_flags (key, value) VALUES ('v11_player_data_cleared', '1')`,
+    ).run();
+    console.log('[DB] v11 已清空存档 / 历史 / 匹配池');
+  } catch (e) {
+    console.warn('[DB] v11 清档跳过:', (e as Error).message);
+  }
+}
+
+/** 供空库灌种子后再跑一遍（种子若仍为旧 onHit/passive） */
+export function migrateEffectCatalogV11AfterSeed(): void {
+  migrateEffectCatalogV11(getDB());
 }

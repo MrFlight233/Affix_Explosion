@@ -11,6 +11,7 @@ import {
   ENTITY_DEFS, AFFIX_DEFS, getEntityCategory,
   getEffectiveValue, getItemTradeValue, OnHitEffect, TargetCondition, TargetingModifier,
   evaluateSubtreeCondition,
+  getEffectCatalogMap,
 } from './data';
 import {
   mergeFiltersWithLegacyFaction, normalizeTargetCount, resolveSortBy,
@@ -26,6 +27,8 @@ import {
   clonePassiveEffects,
   stampPassiveEffectList,
 } from './passiveBonusUtil';
+import { resolveActiveBindings } from '@shared/effectResolve';
+import type { ActiveChannel } from '@shared/effectDef';
 import type { PassiveSourceRuntime } from './battle/types';
 import type { SubtreeCondition } from '@shared/types';
 import { data as dataApi, saves as savesApi, ApiError } from '../api/client';
@@ -1197,11 +1200,17 @@ export class GameEngine {
   }
 
   /** 递归计算战斗快照：遍历嵌套的装备树，聚合所有加成（v5: 支持 ItemInstance.overrides） */
-  /** 宿主贡献袋：实体 onHitEffects（含旧 damage 迁移）+ 直属词条，语义等价 */
+  /** 宿主贡献袋：优先通道 bindings 解析，否则读已解析 onHitEffects */
   private collectHostOnHitBag(host: ItemInstance, extraChildLists: ItemInstance[][] = []): OnHitEffect[] {
     const def = getEntityDef(host.defId);
     if (!def) return [];
-    const raw = (host.overrides?.onHitEffects ?? def.onHitEffects) as OnHitEffect[] | undefined;
+    const channel = ((host.overrides as any)?.activeChannel ?? def.activeChannel) as ActiveChannel | undefined;
+    let raw: OnHitEffect[] | undefined;
+    if (channel?.effectBindings?.length) {
+      raw = resolveActiveBindings(channel.effectBindings, getEffectCatalogMap(), def.name);
+    } else {
+      raw = (host.overrides?.onHitEffects ?? def.onHitEffects) as OnHitEffect[] | undefined;
+    }
     const damage = Number(getEffectiveValue(host, 'damage') ?? def.damage ?? 0);
     const bag = migrateLegacyDamageToOnHitEffects(raw, damage);
     const entityName = def.name?.trim();
@@ -1210,12 +1219,18 @@ export class GameEngine {
       for (const c of list) {
         if (c.type !== 'affix') continue;
         const adef = getAffixDef(c.defId);
-        if (adef?.onHitEffects?.length) {
-          const affixEffects = cloneOnHitEffects(normalizeOnHitEffects(adef.onHitEffects));
-          const affixName = adef.name?.trim();
-          if (affixName) stampOnHitEffectList(affixEffects, affixName);
-          bag.push(...affixEffects);
+        if (!adef) continue;
+        const aCh = adef.activeChannel;
+        let affixEffects: OnHitEffect[] = [];
+        if (aCh?.effectBindings?.length) {
+          affixEffects = resolveActiveBindings(aCh.effectBindings, getEffectCatalogMap(), adef.name);
+        } else if (adef.onHitEffects?.length) {
+          affixEffects = cloneOnHitEffects(normalizeOnHitEffects(adef.onHitEffects));
         }
+        if (!affixEffects.length) continue;
+        const affixName = adef.name?.trim();
+        if (affixName) stampOnHitEffectList(affixEffects, affixName);
+        bag.push(...affixEffects);
       }
     }
     return bag;

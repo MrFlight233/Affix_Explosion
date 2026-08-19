@@ -6,8 +6,13 @@
 import { getDB } from './connection';
 import { normalizeOnHitEffects } from '@shared/hitEffectUtil';
 import { resolvePassiveBonusConfig } from '@shared/passiveBonusUtil';
-
-// ---- DB 行 ↔ 前端 EntityDef/AffixDef 转换 ----
+import {
+  normalizeActiveChannel,
+  normalizeEffectDef,
+  normalizePassiveChannel,
+  type EffectDef,
+} from '@shared/effectDef';
+import { resolveActiveBindings, resolvePassiveBindings } from '@shared/effectResolve';
 
 function parseJsonField(val: string | null | undefined): any {
   if (val == null || val === '') return undefined;
@@ -18,25 +23,109 @@ function serializeJsonField(val: any): string {
   return JSON.stringify(val ?? []);
 }
 
-function attachResolvedPassives(def: Record<string, any>): Record<string, any> {
-  const cfg = resolvePassiveBonusConfig(def);
-  def.hasPassiveBonuses = cfg.hasPassiveBonuses;
-  def.passiveEffects = cfg.passiveEffects;
-  def.passiveTargetCondition = cfg.passiveTargetCondition;
-  def.passiveTargetCount = cfg.passiveTargetCount;
-  // 旧五列清零展示（数值已在 effects）
-  if (cfg.passiveEffects.length > 0) {
-    def.hpBonus = 0;
-    def.hpRegenerationBonus = 0;
-    def.staminaBonus = 0;
-    def.staminaRegenerationBonus = 0;
-    def.loadBonus = 0;
+function attachChannelsAndResolvedEffects(def: Record<string, any>): Record<string, any> {
+  const activeChannel = normalizeActiveChannel(def.activeChannel);
+  const passiveChannel = normalizePassiveChannel(
+    def.passiveChannel ?? {
+      enabled: def.hasPassiveBonuses === true,
+      effectBindings: [],
+      targetCondition: def.passiveTargetCondition,
+      targetCount: def.passiveTargetCount,
+    },
+  );
+
+  const catalog = templateCache.getEffectMap();
+  if (activeChannel.effectBindings.length > 0 && catalog.size > 0) {
+    def.onHitEffects = resolveActiveBindings(activeChannel.effectBindings, catalog, def.name);
+  } else {
+    def.onHitEffects = normalizeOnHitEffects(def.onHitEffects ?? []);
   }
+
+  if (passiveChannel.enabled && passiveChannel.effectBindings.length > 0 && catalog.size > 0) {
+    def.passiveEffects = resolvePassiveBindings(passiveChannel.effectBindings, catalog, def.name);
+    def.hasPassiveBonuses = true;
+  } else if (passiveChannel.enabled) {
+    const cfg = resolvePassiveBonusConfig({
+      hasPassiveBonuses: true,
+      passiveEffects: def.passiveEffects,
+      passiveTargetCondition: passiveChannel.targetCondition ?? def.passiveTargetCondition,
+      passiveTargetCount: passiveChannel.targetCount ?? def.passiveTargetCount,
+      hpBonus: def.hpBonus,
+      hpRegenerationBonus: def.hpRegenerationBonus,
+      staminaBonus: def.staminaBonus,
+      staminaRegenerationBonus: def.staminaRegenerationBonus,
+      loadBonus: def.loadBonus,
+    });
+    def.passiveEffects = cfg.passiveEffects;
+    def.hasPassiveBonuses = cfg.hasPassiveBonuses;
+  } else {
+    def.passiveEffects = [];
+    def.hasPassiveBonuses = false;
+  }
+
+  def.activeChannel = activeChannel;
+  def.passiveChannel = {
+    ...passiveChannel,
+    targetCondition: passiveChannel.targetCondition ?? def.passiveTargetCondition,
+    targetCount: passiveChannel.targetCount ?? def.passiveTargetCount ?? 1,
+  };
+  def.passiveTargetCondition = def.passiveChannel.targetCondition;
+  def.passiveTargetCount = def.passiveChannel.targetCount;
+  def.hpBonus = 0;
+  def.hpRegenerationBonus = 0;
+  def.staminaBonus = 0;
+  def.staminaRegenerationBonus = 0;
+  def.loadBonus = 0;
   return def;
 }
 
+export function effectRowToDef(row: Record<string, any>): EffectDef {
+  const def = normalizeEffectDef({
+    id: row.id,
+    name: row.name,
+    description: row.description ?? '',
+    allowActive: row.allow_active === 1,
+    allowPassive: row.allow_passive === 1,
+    kind: row.kind,
+    stat: row.stat,
+    op: row.op,
+    defaultParams: parseJsonField(row.default_params) ?? {},
+    defaultDurationMs: row.default_duration_ms ?? undefined,
+    defaultTickIntervalMs: row.default_tick_interval_ms ?? undefined,
+    defaultDisplayName: row.default_display_name ?? undefined,
+    defaultApplyTo: parseJsonField(row.default_apply_to),
+    paramSchema: parseJsonField(row.param_schema),
+    category: row.category ?? undefined,
+  });
+  if (!def) throw new Error(`无效效果行: ${row.id}`);
+  return def;
+}
+
+export function effectDefToRow(def: EffectDef | Record<string, any>): Record<string, any> {
+  const n = normalizeEffectDef(def);
+  if (!n) throw new Error('无效效果定义');
+  return {
+    id: n.id,
+    name: n.name,
+    description: n.description ?? '',
+    allow_active: n.allowActive ? 1 : 0,
+    allow_passive: n.allowPassive ? 1 : 0,
+    kind: n.kind,
+    stat: n.stat,
+    op: n.op,
+    default_params: JSON.stringify(n.defaultParams ?? {}),
+    default_duration_ms: n.defaultDurationMs ?? null,
+    default_tick_interval_ms: n.defaultTickIntervalMs ?? null,
+    default_display_name: n.defaultDisplayName ?? null,
+    default_apply_to: n.defaultApplyTo != null ? JSON.stringify(n.defaultApplyTo) : null,
+    param_schema: n.paramSchema != null ? JSON.stringify(n.paramSchema) : null,
+    category: n.category ?? null,
+    updated_at: new Date().toISOString(),
+  };
+}
+
 export function entityRowToDef(row: Record<string, any>): Record<string, any> {
-  return attachResolvedPassives({
+  return attachChannelsAndResolvedEffects({
     id: row.id,
     name: row.name,
     slotCost: row.slot_cost,
@@ -57,7 +146,7 @@ export function entityRowToDef(row: Record<string, any>): Record<string, any> {
     staminaCost: row.stamina_cost,
     actionTime: row.action_time,
     damage: row.damage,
-    onHitEffects: normalizeOnHitEffects(parseJsonField(row.on_hit_effects) ?? []),
+    onHitEffects: parseJsonField(row.on_hit_effects) ?? [],
     targetType: row.target_type,
     targetOrder: row.target_order,
     priorityTarget: row.priority_target,
@@ -73,11 +162,30 @@ export function entityRowToDef(row: Record<string, any>): Record<string, any> {
     passiveEffects: parseJsonField(row.passive_effects) ?? [],
     passiveTargetCondition: parseJsonField(row.passive_target_condition),
     passiveTargetCount: row.passive_target_count === -1 ? 'all' : (row.passive_target_count ?? undefined),
+    activeChannel: parseJsonField(row.active_channel),
+    passiveChannel: parseJsonField(row.passive_channel),
   });
 }
 
 export function entityDefToRow(def: Record<string, any>): Record<string, any> {
-  const cfg = resolvePassiveBonusConfig(def);
+  const activeChannel = normalizeActiveChannel(
+    def.activeChannel ?? {
+      enabled: def.isActive,
+      actionTime: def.actionTime,
+      staminaCost: def.staminaCost,
+      targetCondition: def.targetCondition,
+      targetCount: def.targetCount,
+      effectBindings: [],
+    },
+  );
+  const passiveChannel = normalizePassiveChannel(
+    def.passiveChannel ?? {
+      enabled: def.hasPassiveBonuses === true,
+      targetCondition: def.passiveTargetCondition,
+      targetCount: def.passiveTargetCount,
+      effectBindings: [],
+    },
+  );
   return {
     id: def.id,
     name: def.name,
@@ -100,7 +208,7 @@ export function entityDefToRow(def: Record<string, any>): Record<string, any> {
     action_time: def.actionTime ?? 0,
     damage: def.damage ?? 0,
     damage_bonus: 0,
-    on_hit_effects: serializeJsonField(normalizeOnHitEffects(def.onHitEffects ?? [])),
+    on_hit_effects: '[]',
     target_type: def.targetType ?? null,
     target_order: def.targetOrder ?? null,
     priority_target: def.priorityTarget ?? null,
@@ -112,16 +220,20 @@ export function entityDefToRow(def: Record<string, any>): Record<string, any> {
     hp_regeneration_bonus: 0,
     hp_bonus: 0,
     load_bonus: 0,
-    has_passive_bonuses: cfg.hasPassiveBonuses ? 1 : 0,
-    passive_effects: serializeJsonField(cfg.passiveEffects),
-    passive_target_condition: JSON.stringify(cfg.passiveTargetCondition),
-    passive_target_count: cfg.passiveTargetCount === 'all' ? -1 : cfg.passiveTargetCount,
+    has_passive_bonuses: passiveChannel.enabled ? 1 : 0,
+    passive_effects: '[]',
+    passive_target_condition: passiveChannel.targetCondition != null
+      ? JSON.stringify(passiveChannel.targetCondition)
+      : null,
+    passive_target_count: passiveChannel.targetCount === 'all' ? -1 : (passiveChannel.targetCount ?? null),
+    active_channel: JSON.stringify(activeChannel),
+    passive_channel: JSON.stringify(passiveChannel),
     updated_at: new Date().toISOString(),
   };
 }
 
 export function affixRowToDef(row: Record<string, any>): Record<string, any> {
-  return attachResolvedPassives({
+  return attachChannelsAndResolvedEffects({
     id: row.id,
     name: row.name,
     category: row.category,
@@ -131,7 +243,8 @@ export function affixRowToDef(row: Record<string, any>): Record<string, any> {
     prerequisite: parseJsonField(row.prerequisite) ?? [],
     poolPrerequisite: parseJsonField(row.pool_prerequisite) ?? [],
     effect: row.effect,
-    onHitEffects: normalizeOnHitEffects(parseJsonField(row.on_hit_effects) ?? []),
+    description: row.effect,
+    onHitEffects: parseJsonField(row.on_hit_effects) ?? [],
     targetingModifier: parseJsonField(row.targeting_modifier),
     hasPassiveBonuses: row.has_passive_bonuses === 1,
     staminaRegenerationBonus: row.stamina_regeneration_bonus ?? 0,
@@ -142,11 +255,22 @@ export function affixRowToDef(row: Record<string, any>): Record<string, any> {
     passiveEffects: parseJsonField(row.passive_effects) ?? [],
     passiveTargetCondition: parseJsonField(row.passive_target_condition),
     passiveTargetCount: row.passive_target_count === -1 ? 'all' : (row.passive_target_count ?? undefined),
+    activeChannel: parseJsonField(row.active_channel),
+    passiveChannel: parseJsonField(row.passive_channel),
   });
 }
 
 export function affixDefToRow(def: Record<string, any>): Record<string, any> {
-  const cfg = resolvePassiveBonusConfig(def);
+  const activeChannel = normalizeActiveChannel(def.activeChannel ?? { effectBindings: [] });
+  const passiveChannel = normalizePassiveChannel(
+    def.passiveChannel ?? {
+      enabled: def.hasPassiveBonuses === true,
+      targetCondition: def.passiveTargetCondition,
+      targetCount: def.passiveTargetCount,
+      effectBindings: [],
+    },
+  );
+  const description = def.description ?? def.effect ?? '';
   return {
     id: def.id,
     name: def.name,
@@ -156,47 +280,62 @@ export function affixDefToRow(def: Record<string, any>): Record<string, any> {
     repeatable: def.repeatable ? 1 : 0,
     prerequisite: serializeJsonField(def.prerequisite),
     pool_prerequisite: serializeJsonField(def.poolPrerequisite),
-    effect: def.effect ?? '',
-    on_hit_effects: serializeJsonField(normalizeOnHitEffects(def.onHitEffects ?? [])),
+    effect: description,
+    on_hit_effects: '[]',
     damage_bonus: 0,
     targeting_modifier: def.targetingModifier != null ? JSON.stringify(def.targetingModifier) : null,
-    has_passive_bonuses: cfg.hasPassiveBonuses ? 1 : 0,
+    has_passive_bonuses: passiveChannel.enabled ? 1 : 0,
     stamina_regeneration_bonus: 0,
     stamina_bonus: 0,
     hp_regeneration_bonus: 0,
     hp_bonus: 0,
     load_bonus: 0,
-    passive_effects: serializeJsonField(cfg.passiveEffects),
-    passive_target_condition: JSON.stringify(cfg.passiveTargetCondition),
-    passive_target_count: cfg.passiveTargetCount === 'all' ? -1 : cfg.passiveTargetCount,
+    passive_effects: '[]',
+    passive_target_condition: passiveChannel.targetCondition != null
+      ? JSON.stringify(passiveChannel.targetCondition)
+      : null,
+    passive_target_count: passiveChannel.targetCount === 'all' ? -1 : (passiveChannel.targetCount ?? null),
+    active_channel: JSON.stringify(activeChannel),
+    passive_channel: JSON.stringify(passiveChannel),
     updated_at: new Date().toISOString(),
   };
 }
-
-// ============================================================
-// TemplateCache
-// ============================================================
 
 class TemplateCache {
   private _entities: Map<string, Record<string, any>> = new Map();
   private _affixes: Map<string, Record<string, any>> = new Map();
   private _categories: Map<string, Record<string, any>> = new Map();
+  private _effects: Map<string, EffectDef> = new Map();
   private _version: number = 0;
   private _loaded = false;
 
-  /** 启动时调用：从 DB 全量加载模板到内存 */
   load(): void {
     const db = getDB();
 
+    const allEffects = (() => {
+      try {
+        return db.prepare('SELECT * FROM effects').all() as any[];
+      } catch {
+        return [];
+      }
+    })();
     const allEntities = db.prepare('SELECT * FROM entities').all() as any[];
     const allAffixes = db.prepare('SELECT * FROM affixes').all() as any[];
     const allCategories = db.prepare('SELECT * FROM categories ORDER BY sort_order').all() as any[];
     const verRow = db.prepare('SELECT version FROM data_version WHERE id = 1').get() as any;
 
+    this._effects.clear();
     this._entities.clear();
     this._affixes.clear();
     this._categories.clear();
 
+    for (const row of allEffects) {
+      try {
+        this._effects.set(row.id, effectRowToDef(row));
+      } catch (e) {
+        console.warn('[Cache] 跳过无效效果', row.id, e);
+      }
+    }
     for (const row of allEntities) {
       this._entities.set(row.id, entityRowToDef(row));
     }
@@ -209,7 +348,6 @@ class TemplateCache {
         name: row.name,
         sortOrder: row.sort_order,
         isEntityClass: row.is_entity_class === 1,
-        // 缺列/null 视为 true（兼容旧库）
         showInFilter: row.show_in_filter !== 0,
       });
     }
@@ -217,12 +355,33 @@ class TemplateCache {
     this._version = verRow?.version ?? 1;
     this._loaded = true;
 
-    console.log(`[Cache] 模板缓存加载完成: ${this._entities.size} entities, ${this._affixes.size} affixes, ${this._categories.size} categories, version=${this._version}`);
+    console.log(
+      `[Cache] 模板缓存加载完成: ${this._entities.size} entities, ${this._affixes.size} affixes, ${this._effects.size} effects, ${this._categories.size} categories, version=${this._version}`,
+    );
   }
 
   get isLoaded(): boolean { return this._loaded; }
 
-  // ---- Entity 操作 ----
+  getEffectMap(): Map<string, EffectDef> {
+    return this._effects;
+  }
+
+  getEffect(id: string): EffectDef | undefined {
+    return this._effects.get(id);
+  }
+
+  getAllEffects(): EffectDef[] {
+    return [...this._effects.values()];
+  }
+
+  setEffect(def: EffectDef | Record<string, any>): void {
+    const n = normalizeEffectDef(def);
+    if (n) this._effects.set(n.id, n);
+  }
+
+  deleteEffect(id: string): void {
+    this._effects.delete(id);
+  }
 
   getEntity(id: string): Record<string, any> | undefined {
     return this._entities.get(id);
@@ -240,8 +399,6 @@ class TemplateCache {
     this._entities.delete(id);
   }
 
-  // ---- Affix 操作 ----
-
   getAffix(id: string): Record<string, any> | undefined {
     return this._affixes.get(id);
   }
@@ -257,8 +414,6 @@ class TemplateCache {
   deleteAffix(id: string): void {
     this._affixes.delete(id);
   }
-
-  // ---- Category 操作 ----
 
   getCategory(id: string): Record<string, any> | undefined {
     return this._categories.get(id);
@@ -276,7 +431,6 @@ class TemplateCache {
     this._categories.delete(id);
   }
 
-  /** 返回所有 is_entity_class=1 的分类 ID 集合 */
   getEntityClassCategoryIds(): Set<string> {
     const ids = new Set<string>();
     for (const c of this._categories.values()) {
@@ -284,8 +438,6 @@ class TemplateCache {
     }
     return ids;
   }
-
-  // ---- Version ----
 
   get version(): number {
     return this._version;

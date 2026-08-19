@@ -18,17 +18,15 @@ import {
 import { mountAdminList, type AdminListBridge } from './admin/mountAdminList';
 import type { AdminListItem } from './admin/AdminListPanel';
 import {
-  bindOnHitEffectsEditor,
-  collectOnHitEffectsFromDom,
-  entityInitialOnHitEffects,
-  renderOnHitEffectsEditor,
-  setHitAffixOpts,
-} from './adminHitEffects';
-import {
   bindPassiveBonusesEditor,
   readPassiveBonusesFromDom,
   renderPassiveBonusesEditor,
 } from './adminPassiveBonuses';
+import {
+  bindEffectBindingsEditor,
+  readEffectBindingsFromDom,
+  renderEffectBindingsEditor,
+} from './adminEffectBindings';
 import {
   renderPopoverSelector,
   bindPopoverSelector,
@@ -36,13 +34,17 @@ import {
   getSelected,
   initPopoverDocClick,
 } from './admin/popoverSelector';
+import type { ActiveChannel, PassiveChannel } from '@shared/effectDef';
+import { resolveActiveBindings, resolvePassiveBindings } from '@shared/effectResolve';
+import { EFFECT_DEFS } from '../game/data';
 
-type TabType = 'entities' | 'affixes';
+type TabType = 'entities' | 'affixes' | 'effects';
 
 interface AdminState {
   tab: TabType;
   entities: any[];
   affixes: any[];
+  effects: any[];
   selectedId: string | null;
   selectedIds: Set<string>;
   isCreating: boolean;
@@ -68,7 +70,7 @@ interface TabSession {
 export async function showAdminPage(onBack: () => void): Promise<void> {
   const app = document.getElementById('app')!;
   let state: AdminState = {
-    tab: 'entities', entities: [], affixes: [],
+    tab: 'entities', entities: [], affixes: [], effects: [],
     selectedId: null, selectedIds: new Set(), isCreating: false,
     searchQuery: '', entityCatFilter: 'all', affixCatFilter: 'all', toast: null,
   };
@@ -76,6 +78,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
   const sessions: Record<TabType, TabSession> = {
     entities: { searchQuery: '', selectedId: null, selectedIds: new Set(), isCreating: false },
     affixes: { searchQuery: '', selectedId: null, selectedIds: new Set(), isCreating: false },
+    effects: { searchQuery: '', selectedId: null, selectedIds: new Set(), isCreating: false },
   };
 
   let listBridge: AdminListBridge | null = null;
@@ -146,12 +149,13 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
   }
 
   try {
-    const [eRes, aRes, cRes] = await Promise.all([
-      admin.listEntities(), admin.listAffixes(), admin.listCategories()
+    const [eRes, aRes, cRes, efRes] = await Promise.all([
+      admin.listEntities(), admin.listAffixes(), admin.listCategories(), admin.listEffects(),
     ]);
     state.entities = eRes.entities;
     state.affixes = aRes.affixes;
-    reloadData(state.entities, state.affixes, cRes.categories);
+    state.effects = efRes.effects || [];
+    reloadData(state.entities, state.affixes, cRes.categories, state.effects);
   } catch (e: any) {
     app.innerHTML = `<div style="padding:40px;text-align:center;"><p style="color:var(--warn);">加载数据失败：${e.message}</p><button class="btn" id="btn-back-admin">返回</button></div>`;
     document.getElementById('btn-back-admin')!.addEventListener('click', onBack);
@@ -166,6 +170,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
         <div id="adm-tabs">
           <button id="adm-tab-entities" class="adm-tab-btn active">实体管理</button>
           <button id="adm-tab-affixes" class="adm-tab-btn">词条管理</button>
+          <button id="adm-tab-effects" class="adm-tab-btn">效果库</button>
         </div>
         <div style="flex:1;"></div>
         <div id="adm-header-actions" style="display:flex;gap:8px;">
@@ -507,12 +512,12 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
   });
   document.getElementById('adm-btn-publish-seed')!.addEventListener('click', async () => {
     const ok = confirm(
-      '将当前库中的实体、词条、分类写入 project/server/data/seed/，覆盖已有种子文件。\n\n发布后请记得 git add 并提交种子文件。是否继续？'
+      '将当前库中的实体、词条、效果、分类写入 project/server/data/seed/，覆盖已有种子文件。\n\n发布后请记得 git add 并提交种子文件。是否继续？'
     );
     if (!ok) return;
     try {
       const result = await admin.publishSeed();
-      showToast(`种子已发布：实体 ${result.entities} / 词条 ${result.affixes} / 分类 ${result.categories}`);
+      showToast(`种子已发布：实体 ${result.entities} / 词条 ${result.affixes} / 效果 ${result.effects ?? 0} / 分类 ${result.categories}`);
     } catch (e: any) {
       showToast('发布种子失败：' + e.message);
     }
@@ -545,6 +550,7 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
 
   document.getElementById('adm-tab-entities')!.addEventListener('click', () => switchTab('entities'));
   document.getElementById('adm-tab-affixes')!.addEventListener('click', () => switchTab('affixes'));
+  document.getElementById('adm-tab-effects')!.addEventListener('click', () => switchTab('effects'));
   let searchTimer: ReturnType<typeof setTimeout> | null = null;
   document.getElementById('adm-search')!.addEventListener('input', (e) => {
     const val = (e.target as HTMLInputElement).value.toLowerCase();
@@ -579,18 +585,22 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
   function render() {
     const tabEnt = document.getElementById('adm-tab-entities')!;
     const tabAff = document.getElementById('adm-tab-affixes')!;
+    const tabFx = document.getElementById('adm-tab-effects');
     const clearBtn = document.getElementById('adm-btn-clear-all')!;
     const addBtn = document.getElementById('adm-btn-add')!;
     const catMgrBtn = document.getElementById('adm-btn-manage-cats')!;
+    tabEnt.classList.toggle('active', state.tab === 'entities');
+    tabAff.classList.toggle('active', state.tab === 'affixes');
+    tabFx?.classList.toggle('active', state.tab === 'effects');
     if (state.tab === 'entities') {
-      tabEnt.classList.add('active');
-      tabAff.classList.remove('active');
       clearBtn.textContent = '删除全部实体';
       addBtn.textContent = '+ 新增实体';
       catMgrBtn.style.display = 'none';
+    } else if (state.tab === 'effects') {
+      clearBtn.textContent = '效果库';
+      addBtn.textContent = '+ 新增效果';
+      catMgrBtn.style.display = 'none';
     } else {
-      tabAff.classList.add('active');
-      tabEnt.classList.remove('active');
       clearBtn.textContent = '删除全部词条';
       addBtn.textContent = '+ 新增词条';
       catMgrBtn.style.display = '';
@@ -635,12 +645,22 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
       if (q) items = items.filter((e: any) => e.id.toLowerCase().includes(q) || e.name.toLowerCase().includes(q));
       if (state.entityCatFilter !== 'all') items = items.filter((e: any) => getEntityCategory(e).includes(state.entityCatFilter));
       return items;
-    } else {
-      let items = state.affixes;
-      if (q) items = items.filter((a: any) => a.id.toLowerCase().includes(q) || a.name.toLowerCase().includes(q) || (a.effect && a.effect.includes(q)));
-      if (state.affixCatFilter !== 'all') items = items.filter((a: any) => a.category === state.affixCatFilter);
+    }
+    if (state.tab === 'effects') {
+      let items = state.effects;
+      if (q) {
+        items = items.filter((e: any) =>
+          e.id.toLowerCase().includes(q)
+          || e.name.toLowerCase().includes(q)
+          || (e.description && String(e.description).includes(q)),
+        );
+      }
       return items;
     }
+    let items = state.affixes;
+    if (q) items = items.filter((a: any) => a.id.toLowerCase().includes(q) || a.name.toLowerCase().includes(q) || (a.effect && a.effect.includes(q)) || (a.description && a.description.includes(q)));
+    if (state.affixCatFilter !== 'all') items = items.filter((a: any) => a.category === state.affixCatFilter);
+    return items;
   }
 
   function renderList() {
@@ -653,6 +673,14 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
           name: item.name,
           catLabel: getEntityCategory(item).join(' / '),
           priceLabel: `价${item.value}`,
+        };
+      }
+      if (state.tab === 'effects') {
+        return {
+          id: item.id,
+          name: item.name,
+          catLabel: `${item.kind}/${item.stat}`,
+          priceLabel: item.allowPassive ? (item.allowActive ? '主+被' : '被动') : '主动',
         };
       }
       return {
@@ -692,6 +720,22 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
 
   function renderForm() {
     const rightEl = document.getElementById('adm-right')!;
+    if (state.tab === 'effects') {
+      if (state.isCreating) {
+        rightEl.innerHTML = buildEffectForm({}, true);
+        bindEffectFormEvents(true, null);
+        return;
+      }
+      if (state.selectedId) {
+        const item = state.effects.find((e: any) => e.id === state.selectedId);
+        if (!item) { rightEl.innerHTML = '<p class="adm-empty-hint">效果不存在</p>'; return; }
+        rightEl.innerHTML = buildEffectForm(item, false);
+        bindEffectFormEvents(false, item);
+        return;
+      }
+      rightEl.innerHTML = '<p class="adm-empty-hint">← 选择效果，或新增效果配方（须先建效果再挂到实体/词条）</p>';
+      return;
+    }
     if (state.isCreating) { rightEl.innerHTML = state.tab === 'entities' ? buildEntityForm({}, true) : buildAffixForm({}, true); bindFormEvents(true, null); return; }
     if (state.selectedId) {
       const item = state.tab === 'entities' ? state.entities.find((e: any) => e.id === state.selectedId) : state.affixes.find((a: any) => a.id === state.selectedId);
@@ -700,6 +744,82 @@ export async function showAdminPage(onBack: () => void): Promise<void> {
       bindFormEvents(false, item); return;
     }
     rightEl.innerHTML = '<p class="adm-empty-hint">← 从左侧列表选择物品进行编辑，或点击"新增"创建新物品</p>';
+  }
+
+  function buildEffectForm(data: any, isNew: boolean): string {
+    const v = (field: string, def: any = '') => (isNew ? (data[field] ?? def) : (data[field] ?? def));
+    const amount = data?.defaultParams?.amount ?? '';
+    return `<div class="admin-form">
+      <h3>${isNew ? '新增效果' : '编辑效果'}</h3>
+      <div class="admin-field"><label>ID</label><input id="fx-id" value="${escAttr(String(v('id')))}" ${isNew ? '' : 'readonly'}></div>
+      <div class="admin-field"><label>名称</label><input id="fx-name" value="${escAttr(String(v('name')))}"></div>
+      <div class="admin-field"><label>说明</label><input id="fx-desc" value="${escAttr(String(v('description', '')))}"></div>
+      <div class="admin-field"><label>类型</label><select id="fx-kind"><option value="instant"${v('kind', 'instant') === 'instant' ? ' selected' : ''}>瞬间</option><option value="duration"${v('kind') === 'duration' ? ' selected' : ''}>持续</option></select></div>
+      <div class="admin-field"><label>属性</label><input id="fx-stat" value="${escAttr(String(v('stat', 'hp')))}"></div>
+      <div class="admin-field"><label>运算</label><select id="fx-op"><option value="loss"${v('op', 'loss') === 'loss' ? ' selected' : ''}>loss</option><option value="gain"${v('op') === 'gain' ? ' selected' : ''}>gain</option><option value="set"${v('op') === 'set' ? ' selected' : ''}>set</option></select></div>
+      <div class="admin-field"><label>默认数量</label><input id="fx-amount" type="number" value="${amount}"></div>
+      <div class="admin-field"><label>默认可主动</label><select id="fx-allowActive"><option value="1"${v('allowActive', true) !== false ? ' selected' : ''}>是</option><option value="0"${v('allowActive') === false ? ' selected' : ''}>否</option></select></div>
+      <div class="admin-field"><label>默认可被动</label><select id="fx-allowPassive"><option value="0"${!v('allowPassive') ? ' selected' : ''}>否</option><option value="1"${v('allowPassive') ? ' selected' : ''}>是</option></select></div>
+      <div class="admin-field"><label>持续(ms)</label><input id="fx-duration" type="number" value="${v('defaultDurationMs', '')}"></div>
+      <div class="admin-field"><label>跳伤间隔(ms)</label><input id="fx-tick" type="number" value="${v('defaultTickIntervalMs', '')}"></div>
+      <div style="display:flex;gap:8px;margin-top:12px;">
+        <button class="btn" id="fx-btn-save">保存</button>
+        ${isNew ? '' : '<button class="btn adm-btn-danger" id="fx-btn-del">删除</button>'}
+      </div>
+    </div>`;
+  }
+
+  function bindEffectFormEvents(isNew: boolean, original: any) {
+    document.getElementById('fx-btn-save')?.addEventListener('click', async () => {
+      try {
+        const id = (document.getElementById('fx-id') as HTMLInputElement).value.trim();
+        const name = (document.getElementById('fx-name') as HTMLInputElement).value.trim();
+        if (!id || !name) { showToast('ID 与名称不能为空'); return; }
+        const amount = Number((document.getElementById('fx-amount') as HTMLInputElement).value);
+        const effect: any = {
+          id,
+          name,
+          description: (document.getElementById('fx-desc') as HTMLInputElement).value.trim(),
+          kind: (document.getElementById('fx-kind') as HTMLSelectElement).value,
+          stat: (document.getElementById('fx-stat') as HTMLInputElement).value.trim(),
+          op: (document.getElementById('fx-op') as HTMLSelectElement).value,
+          allowActive: (document.getElementById('fx-allowActive') as HTMLSelectElement).value === '1',
+          allowPassive: (document.getElementById('fx-allowPassive') as HTMLSelectElement).value === '1',
+          defaultParams: Number.isFinite(amount) ? { amount } : {},
+          defaultDurationMs: Number((document.getElementById('fx-duration') as HTMLInputElement).value) || undefined,
+          defaultTickIntervalMs: Number((document.getElementById('fx-tick') as HTMLInputElement).value) || undefined,
+        };
+        if (isNew) await admin.createEffect(effect);
+        else {
+          const res = await admin.updateEffect(original.id, effect);
+          if (res.warn) showToast(res.warn);
+        }
+        const efRes = await admin.listEffects();
+        state.effects = efRes.effects || [];
+        state.isCreating = false;
+        state.selectedId = id;
+        reloadData(state.entities, state.affixes, undefined, state.effects);
+        showToast('效果已保存');
+        render();
+      } catch (e: any) {
+        showToast('保存失败：' + e.message);
+      }
+    });
+    document.getElementById('fx-btn-del')?.addEventListener('click', async () => {
+      if (!original?.id) return;
+      if (!confirm(`删除效果 ${original.id}？仍被引用时会失败。`)) return;
+      try {
+        await admin.deleteEffect(original.id);
+        const efRes = await admin.listEffects();
+        state.effects = efRes.effects || [];
+        state.selectedId = null;
+        reloadData(state.entities, state.affixes, undefined, state.effects);
+        showToast('已删除');
+        render();
+      } catch (e: any) {
+        showToast('删除失败：' + e.message);
+      }
+    });
   }
 
   function buildEntityForm(data: any, isNew: boolean): string {
@@ -789,12 +909,11 @@ ${renderFilterSectionHtml({ name: 'ef-tc-filter', filterBy: filters, affixPopove
     const countNorm = normalizeTargetCount(countRaw);
     const countSel = countNorm === 'all' ? 'all' : String(countNorm);
     h += `<div class="admin-field"><label>目标数量</label><select id="ef-targetCount"><option value="1"${countSel==='1'?' selected':''}>1</option><option value="2"${countSel==='2'?' selected':''}>2</option><option value="3"${countSel==='3'?' selected':''}>3</option><option value="4"${countSel==='4'?' selected':''}>4</option><option value="5"${countSel==='5'?' selected':''}>5</option><option value="all"${countSel==='all'?' selected':''}>全部</option></select></div>`;
-    h += `<div class="adm-section-title">主动效果</div>`;
-    setHitAffixOpts(state.affixes.map((a: any) => ({ id: a.id, name: a.name, cat: getCategoryName(a.category) })));
-    h += renderOnHitEffectsEditor('ef-onhit', entityInitialOnHitEffects(data));
+    h += `<div class="adm-section-title">主动效果（效果库引用）</div>`;
+    h += renderEffectBindingsEditor('ef-active', 'active', data?.activeChannel?.effectBindings || []);
     h += `</div>`;
     h += `</div>`;
-    // 被动加成（目标 + 效果，与主动同构；上下分区）
+    // 被动加成（总开关 + 打谁 + 效果库引用）
     h += `<div class="admin-form-section"><h4>被动加成</h4>`;
     h += renderPassiveBonusesEditor('ef', data || {}, affixOpts);
     h += `</div>`;
@@ -913,7 +1032,7 @@ ${renderFilterSectionHtml({ name: 'ef-tc-filter', filterBy: filters, affixPopove
     h += `<div class="admin-field"><label>ID</label><input id="af-id" value="${v('id')}" ${isNew?'':'readonly'}></div>`;
     h += `<div class="admin-field"><label>名称</label><input id="af-name" value="${v('name')}"></div>`;
     h += `<div class="admin-field"><label>分类</label><select id="af-category">${allCats.map(c=>`<option value="${c.id}"${sel('category',c.id)}>${c.name}${c.isEntityClass ? ' (实体分类)' : ''}</option>`).join('')}</select><button class="btn adm-manage-link" id="af-btn-manage-cats" type="button">管理</button></div>`;
-    h += `<div class="admin-field"><label>效果描述</label><input id="af-effect" value="${v('effect')}"></div>`;
+    h += `<div class="admin-field"><label>描述</label><input id="af-effect" value="${v('description') || v('effect')}"></div>`;
     h += `<div class="admin-field"><label>价值</label><input id="af-costValue" type="number" value="${v('costValue',0)}"></div>`;
     h += `<div class="admin-field"><label>槽位消耗</label><input id="af-slotCost" type="number" min="0" value="${v('slotCost',0)}" title="0=不占用动态词条槽位"></div>`;
     h += `<div class="admin-field"><label>可重复</label><input id="af-repeatable" type="checkbox" ${v('repeatable')?'checked':''}></div>`;
@@ -943,9 +1062,8 @@ ${renderFilterSectionHtml({ name: 'af-tm-filter', filterBy: tmFilters, affixPopo
     h += `<div class="admin-field"><label>目标数量</label><select id="af-tm-targetCount"><option value="">不修改</option><option value="1"${tmCountSel==='1'?' selected':''}>1</option><option value="2"${tmCountSel==='2'?' selected':''}>2</option><option value="3"${tmCountSel==='3'?' selected':''}>3</option><option value="4"${tmCountSel==='4'?' selected':''}>4</option><option value="5"${tmCountSel==='5'?' selected':''}>5</option><option value="all"${tmCountSel==='all'?' selected':''}>全部</option><option value="none"${tmCountSel==='none'?' selected':''}>无（清除）</option></select></div>`;
     h += `</div>`;
     h += `</div>`;
-    h += `<div class="admin-form-section"><h4>主动效果</h4>`;
-    setHitAffixOpts(state.affixes.map((a: any) => ({ id: a.id, name: a.name, cat: getCategoryName(a.category) })));
-    h += renderOnHitEffectsEditor('af-onhit', v('onHitEffects') || []);
+    h += `<div class="admin-form-section"><h4>主动效果（效果库引用）</h4>`;
+    h += renderEffectBindingsEditor('af-active', 'active', v('activeChannel')?.effectBindings || []);
     h += `</div>`;
     h += `<div class="admin-form-section"><h4>被动加成</h4>`;
     h += renderPassiveBonusesEditor('af', data || {}, affixOpts);
@@ -968,8 +1086,7 @@ ${renderFilterSectionHtml({ name: 'af-tm-filter', filterBy: tmFilters, affixPopo
     bindPopoverSelector('ef-fixedAffixes', affixOpts);
     bindPopoverSelector('ef-poolPrerequisite', affixOpts);
     bindPopoverSelector('ef-tc-has-affix', affixOpts);
-    setHitAffixOpts(affixOpts);
-    bindOnHitEffectsEditor('ef-onhit', entityInitialOnHitEffects(originalData || {}));
+    bindEffectBindingsEditor('ef-active');
     bindPassiveBonusesEditor('ef', originalData || {});
 
     // 战斗属性等可折叠分区
@@ -1059,25 +1176,37 @@ ${renderFilterSectionHtml({ name: 'af-tm-filter', filterBy: tmFilters, affixPopo
         const name = (document.getElementById('ef-name') as HTMLInputElement).value.trim();
         if (!name) { showToast('名称不能为空'); return; }
 
-        const hitCollect = collectOnHitEffectsFromDom('ef-onhit');
-        if (hitCollect.durationNameMissing > 0) {
-          showToast(`有 ${hitCollect.durationNameMissing} 条持续效果未填名称（同名互抢轨道），已阻止保存`);
-          return;
-        }
-        if (hitCollect.durationNameDuplicate) {
-          showToast('同一物品内持续效果名称不可重复（同名会互相覆盖），已阻止保存');
-          return;
-        }
-        if (hitCollect.tickRequiredMissing > 0) {
-          showToast(`有 ${hitCollect.tickRequiredMissing} 条「HP/耐力/倒计时」的持续效果未填 Tick 间隔（毒式须填；底盘请改选生命恢复等数据），已阻止保存`);
-          return;
-        }
-        if (hitCollect.dropped > 0) {
-          showToast(`有 ${hitCollect.dropped} 条效果不合法（持续须填时长等），已阻止保存`);
-          return;
-        }
-
+        const effectBindings = readEffectBindingsFromDom('ef-active');
+        const catalog = new Map(EFFECT_DEFS.map(e => [e.id, e]));
         const passive = readPassiveBonusesFromDom('ef');
+        const isActive = (document.getElementById('ef-isActive') as HTMLSelectElement).value === '有';
+        const actionTime = parseInt((document.getElementById('ef-actionTime') as HTMLInputElement).value) || 0;
+        const staminaCost = parseInt((document.getElementById('ef-staminaCost') as HTMLInputElement).value) || 0;
+        const targetCount = (() => {
+          const v = (document.getElementById('ef-targetCount') as HTMLSelectElement).value;
+          if (v === 'all') return 'all' as const;
+          const n = parseInt(v, 10);
+          return Number.isFinite(n) && n >= 1 ? n : 1;
+        })();
+        const targetCondition = (() => {
+          const sortBy = (document.getElementById('ef-tc-sortBy') as HTMLSelectElement).value || null;
+          const filterBy = mergeHasAffixFilterBy(readFilterCheckboxes('ef-tc-filter'), readAffixMultiSelect('ef-tc-has-affix'));
+          return { sortBy: sortBy || 'random', filterBy };
+        })();
+        const activeChannel: ActiveChannel = {
+          enabled: isActive,
+          actionTime,
+          staminaCost,
+          targetCount,
+          targetCondition,
+          effectBindings,
+        };
+        const passiveChannel: PassiveChannel = {
+          enabled: passive.hasPassiveBonuses,
+          targetCondition: passive.passiveTargetCondition,
+          targetCount: passive.passiveTargetCount,
+          effectBindings: passive.effectBindings,
+        };
         const entity: any = {
           id, name,
           slotCost: (() => {
@@ -1097,34 +1226,23 @@ ${renderFilterSectionHtml({ name: 'af-tm-filter', filterBy: tmFilters, affixPopo
           staminaRegen: parseInt((document.getElementById('ef-staminaRegen') as HTMLInputElement).value) || 0,
           hpRegen: parseInt((document.getElementById('ef-hpRegen') as HTMLInputElement).value) || 0,
           maxLoad: parseInt((document.getElementById('ef-maxLoad') as HTMLInputElement).value) || 0,
-          isActive: (document.getElementById('ef-isActive') as HTMLSelectElement).value === '有',
-          staminaCost: parseInt((document.getElementById('ef-staminaCost') as HTMLInputElement).value) || 0,
-          actionTime: parseInt((document.getElementById('ef-actionTime') as HTMLInputElement).value) || 0,
+          isActive,
+          staminaCost,
+          actionTime,
           damage: 0,
-          onHitEffects: hitCollect.effects,
+          onHitEffects: resolveActiveBindings(effectBindings, catalog, name),
           targetFaction: null,
           targetType: null,
           targetOrder: null,
           priorityTarget: null,
-          targetCount: (() => {
-            const v = (document.getElementById('ef-targetCount') as HTMLSelectElement).value;
-            if (v === 'all') return 'all';
-            const n = parseInt(v, 10);
-            return Number.isFinite(n) && n >= 1 ? n : 1;
-          })(),
-          targetCondition: (() => {
-            const sortBy = (document.getElementById('ef-tc-sortBy') as HTMLSelectElement).value || null;
-            const filterBy = mergeHasAffixFilterBy(readFilterCheckboxes('ef-tc-filter'), readAffixMultiSelect('ef-tc-has-affix'));
-            return {
-              sortBy: sortBy || 'random',
-              filterBy,
-            };
-          })(),
-          // 被动：列表 + 目标
+          targetCount,
+          targetCondition,
+          activeChannel,
           hasPassiveBonuses: passive.hasPassiveBonuses,
-          passiveEffects: passive.passiveEffects,
+          passiveEffects: resolvePassiveBindings(passive.effectBindings, catalog, name),
           passiveTargetCondition: passive.passiveTargetCondition,
           passiveTargetCount: passive.passiveTargetCount,
+          passiveChannel,
           staminaRegenerationBonus: 0,
           staminaBonus: 0,
           hpRegenerationBonus: 0,
@@ -1164,8 +1282,7 @@ ${renderFilterSectionHtml({ name: 'af-tm-filter', filterBy: tmFilters, affixPopo
     bindPopoverSelector('af-prerequisite', affixOpts);
     bindPopoverSelector('af-poolPrerequisite', affixOpts);
     bindPopoverSelector('af-tm-has-affix', affixOpts);
-    setHitAffixOpts(affixOpts);
-    bindOnHitEffectsEditor('af-onhit', originalData?.onHitEffects || []);
+    bindEffectBindingsEditor('af-active');
     bindPassiveBonusesEditor('af', originalData || {});
 
     // v7: targeting modifier 主开关
@@ -1186,25 +1303,17 @@ ${renderFilterSectionHtml({ name: 'af-tm-filter', filterBy: tmFilters, affixPopo
         if (!id) { showToast('ID 不能为空'); return; }
         const name = (document.getElementById('af-name') as HTMLInputElement).value.trim();
         if (!name) { showToast('名称不能为空'); return; }
-        const hitCollect = collectOnHitEffectsFromDom('af-onhit');
-        if (hitCollect.durationNameMissing > 0) {
-          showToast(`有 ${hitCollect.durationNameMissing} 条持续效果未填名称（同名互抢轨道），已阻止保存`);
-          return;
-        }
-        if (hitCollect.durationNameDuplicate) {
-          showToast('同一物品内持续效果名称不可重复（同名会互相覆盖），已阻止保存');
-          return;
-        }
-        if (hitCollect.tickRequiredMissing > 0) {
-          showToast(`有 ${hitCollect.tickRequiredMissing} 条「HP/耐力/倒计时」的持续效果未填 Tick 间隔（毒式须填；底盘请改选生命恢复等数据），已阻止保存`);
-          return;
-        }
-        if (hitCollect.dropped > 0) {
-          showToast(`有 ${hitCollect.dropped} 条效果不合法（持续须填时长等），已阻止保存`);
-          return;
-        }
-        const onHitEffects = hitCollect.effects;
+        const effectBindings = readEffectBindingsFromDom('af-active');
+        const catalog = new Map(EFFECT_DEFS.map(e => [e.id, e]));
+        const onHitEffects = resolveActiveBindings(effectBindings, catalog, name);
         const passive = readPassiveBonusesFromDom('af');
+        const activeChannel: ActiveChannel = { effectBindings };
+        const passiveChannel: PassiveChannel = {
+          enabled: passive.hasPassiveBonuses,
+          targetCondition: passive.passiveTargetCondition,
+          targetCount: passive.passiveTargetCount,
+          effectBindings: passive.effectBindings,
+        };
 
         const affix = {
           id, name,
@@ -1218,11 +1327,14 @@ ${renderFilterSectionHtml({ name: 'af-tm-filter', filterBy: tmFilters, affixPopo
           prerequisite: getSelected('af-prerequisite'),
           poolPrerequisite: getSelected('af-poolPrerequisite'),
           effect: (document.getElementById('af-effect') as HTMLInputElement).value.trim(),
+          description: (document.getElementById('af-effect') as HTMLInputElement).value.trim(),
           onHitEffects,
+          activeChannel,
           hasPassiveBonuses: passive.hasPassiveBonuses,
-          passiveEffects: passive.passiveEffects,
+          passiveEffects: resolvePassiveBindings(passive.effectBindings, catalog, name),
           passiveTargetCondition: passive.passiveTargetCondition,
           passiveTargetCount: passive.passiveTargetCount,
+          passiveChannel,
           staminaRegenerationBonus: 0,
           staminaBonus: 0,
           hpRegenerationBonus: 0,

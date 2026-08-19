@@ -419,8 +419,8 @@ export function showSimTooltip(
     let h = `<div class="sb-tip-header"><div class="sb-tip-name">${def.name}</div>`;
     h += `<div class="sb-tip-price">价${getAffixPackageTradeValue(def)}</div></div>`;
     h += `<div class="sb-tip-cat">${getCategoryName(def.category)}</div>`;
-    h += tipSection('效果描述');
-    h += `<div class="sb-tip-effect">${def.effect}</div>`;
+    h += tipSection('描述');
+    h += `<div class="sb-tip-effect">${def.description || def.effect}</div>`;
     h += tipSection('基本信息');
     h += '<div class="sb-tip-grid">';
     h += tipkv('槽位消耗', def.slotCost);

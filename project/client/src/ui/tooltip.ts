@@ -133,8 +133,8 @@ function renderAffixTooltip(tip: HTMLElement, def: any) {
 
   let html = `<div class="tt-name"><span>${def.name}</span><span class="tt-price">价${getAffixPackageTradeValue(def)}</span></div>`;
   html += `<div class="tt-cat">${getCategoryName(def.category)}</div>`;
-  html += '<div class="tt-section">效果描述</div>';
-  html += `<div class="tt-row"><span class="tt-label">效果:</span>${def.effect}</div>`;
+  html += '<div class="tt-section">描述</div>';
+  html += `<div class="tt-row"><span class="tt-label">描述:</span>${def.description || def.effect}</div>`;
 
   html += '<div class="tt-section">基本信息</div>';
   html += `<div class="tt-row"><span class="tt-label">槽位消耗:</span>${def.slotCost}</div>`;

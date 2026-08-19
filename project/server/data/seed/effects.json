@@ -1,0 +1,1339 @@
+[
+  {
+    "id": "a_duration_actionTime_gain_3000_d5000",
+    "name": "冰冻",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "duration",
+    "stat": "actionTime",
+    "op": "gain",
+    "defaultParams": {
+      "amount": 3000
+    },
+    "category": "duration",
+    "defaultDurationMs": 5000,
+    "defaultDisplayName": "冰冻",
+    "defaultApplyTo": [
+      "target"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_duration_hp_loss_3_d6000_t1000",
+    "name": "流血",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "duration",
+    "stat": "hp",
+    "op": "loss",
+    "defaultParams": {
+      "amount": 3
+    },
+    "category": "duration",
+    "defaultDurationMs": 6000,
+    "defaultTickIntervalMs": 1000,
+    "defaultDisplayName": "流血",
+    "defaultApplyTo": [
+      "target"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_duration_hp_loss_5_d4000_t1000",
+    "name": "毒",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "duration",
+    "stat": "hp",
+    "op": "loss",
+    "defaultParams": {
+      "amount": 5
+    },
+    "category": "duration",
+    "defaultDurationMs": 4000,
+    "defaultTickIntervalMs": 1000,
+    "defaultDisplayName": "毒",
+    "defaultApplyTo": [
+      "target"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_duration_hp_loss_8_d10000_t1000",
+    "name": "毒牙-猛毒",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "duration",
+    "stat": "hp",
+    "op": "loss",
+    "defaultParams": {
+      "amount": 8
+    },
+    "category": "duration",
+    "defaultDurationMs": 10000,
+    "defaultTickIntervalMs": 1000,
+    "defaultDisplayName": "毒牙-猛毒",
+    "defaultApplyTo": [
+      "target"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_duration_maxHp_loss_d10000",
+    "name": "烙印-虚弱",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "duration",
+    "stat": "maxHp",
+    "op": "loss",
+    "defaultParams": {
+      "percent": 10
+    },
+    "category": "duration",
+    "defaultDurationMs": 10000,
+    "defaultDisplayName": "烙印-虚弱",
+    "defaultApplyTo": [
+      "target"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_duration_staminaRegen_loss_5_d8000",
+    "name": "致残",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "duration",
+    "stat": "staminaRegen",
+    "op": "loss",
+    "defaultParams": {
+      "amount": 5
+    },
+    "category": "duration",
+    "defaultDurationMs": 8000,
+    "defaultDisplayName": "致残",
+    "defaultApplyTo": [
+      "target"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_instant_hp_gain",
+    "name": "生命回复",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "instant",
+    "stat": "hp",
+    "op": "gain",
+    "defaultParams": {
+      "percent": 15
+    },
+    "category": "instant",
+    "defaultDisplayName": "生命回复",
+    "defaultApplyTo": [
+      "starter"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_instant_hp_gain_2",
+    "name": "吸血",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "instant",
+    "stat": "hp",
+    "op": "gain",
+    "defaultParams": {
+      "amount": 2
+    },
+    "category": "instant",
+    "defaultDisplayName": "吸血",
+    "defaultApplyTo": [
+      "starter"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_instant_hp_gain_30",
+    "name": "回复",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "instant",
+    "stat": "hp",
+    "op": "gain",
+    "defaultParams": {
+      "amount": 30
+    },
+    "category": "instant",
+    "defaultDisplayName": "回复",
+    "defaultApplyTo": [
+      "target"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_instant_hp_loss",
+    "name": "生命汲取",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "instant",
+    "stat": "hp",
+    "op": "loss",
+    "defaultParams": {
+      "percent": 30
+    },
+    "category": "instant",
+    "defaultDisplayName": "生命汲取",
+    "defaultApplyTo": [
+      "target"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_instant_hp_loss_1",
+    "name": "伤害",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "instant",
+    "stat": "hp",
+    "op": "loss",
+    "defaultParams": {
+      "amount": 1
+    },
+    "category": "instant",
+    "defaultDisplayName": "伤害",
+    "defaultApplyTo": [
+      "target"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_instant_hp_loss_10",
+    "name": "伤害",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "instant",
+    "stat": "hp",
+    "op": "loss",
+    "defaultParams": {
+      "amount": 10
+    },
+    "category": "instant",
+    "defaultDisplayName": "伤害",
+    "defaultApplyTo": [
+      "target"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_instant_hp_loss_100",
+    "name": "爆炸",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "instant",
+    "stat": "hp",
+    "op": "loss",
+    "defaultParams": {
+      "amount": 100
+    },
+    "category": "instant",
+    "defaultDisplayName": "爆炸",
+    "defaultApplyTo": [
+      "target"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_instant_hp_loss_15",
+    "name": "伤害",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "instant",
+    "stat": "hp",
+    "op": "loss",
+    "defaultParams": {
+      "amount": 15
+    },
+    "category": "instant",
+    "defaultDisplayName": "伤害",
+    "defaultApplyTo": [
+      "target"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_instant_hp_loss_1ac9cc",
+    "name": "处决",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "instant",
+    "stat": "hp",
+    "op": "loss",
+    "defaultParams": {
+      "percent": 25
+    },
+    "category": "instant",
+    "defaultDisplayName": "处决",
+    "defaultApplyTo": [
+      "target"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_instant_hp_loss_2",
+    "name": "伤害",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "instant",
+    "stat": "hp",
+    "op": "loss",
+    "defaultParams": {
+      "amount": 2
+    },
+    "category": "instant",
+    "defaultDisplayName": "伤害",
+    "defaultApplyTo": [
+      "target"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_instant_hp_loss_20",
+    "name": "伤害",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "instant",
+    "stat": "hp",
+    "op": "loss",
+    "defaultParams": {
+      "amount": 20
+    },
+    "category": "instant",
+    "defaultDisplayName": "伤害",
+    "defaultApplyTo": [
+      "target"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_instant_hp_loss_22f6f0",
+    "name": "玻璃大炮",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "instant",
+    "stat": "hp",
+    "op": "loss",
+    "defaultParams": {
+      "percent": 20
+    },
+    "category": "instant",
+    "defaultDisplayName": "玻璃大炮",
+    "defaultApplyTo": [
+      "target"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_instant_hp_loss_25",
+    "name": "撕裂",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "instant",
+    "stat": "hp",
+    "op": "loss",
+    "defaultParams": {
+      "amount": 25
+    },
+    "category": "instant",
+    "defaultDisplayName": "撕裂",
+    "defaultApplyTo": [
+      "target"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_instant_hp_loss_3",
+    "name": "溅射",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "instant",
+    "stat": "hp",
+    "op": "loss",
+    "defaultParams": {
+      "amount": 3
+    },
+    "category": "instant",
+    "defaultDisplayName": "溅射",
+    "defaultApplyTo": [
+      "target"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_instant_hp_loss_30",
+    "name": "烙印",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "instant",
+    "stat": "hp",
+    "op": "loss",
+    "defaultParams": {
+      "amount": 30
+    },
+    "category": "instant",
+    "defaultDisplayName": "烙印",
+    "defaultApplyTo": [
+      "target"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_instant_hp_loss_35",
+    "name": "穿刺",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "instant",
+    "stat": "hp",
+    "op": "loss",
+    "defaultParams": {
+      "amount": 35
+    },
+    "category": "instant",
+    "defaultDisplayName": "穿刺",
+    "defaultApplyTo": [
+      "target"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_instant_hp_loss_40",
+    "name": "冰霜伤害",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "instant",
+    "stat": "hp",
+    "op": "loss",
+    "defaultParams": {
+      "amount": 40
+    },
+    "category": "instant",
+    "defaultDisplayName": "冰霜伤害",
+    "defaultApplyTo": [
+      "target"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_instant_hp_loss_40_5ca355",
+    "name": "伤害",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "instant",
+    "stat": "hp",
+    "op": "loss",
+    "defaultParams": {
+      "amount": 40
+    },
+    "category": "instant",
+    "defaultDisplayName": "伤害",
+    "defaultApplyTo": [
+      "target",
+      "starter"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_instant_hp_loss_5",
+    "name": "射击",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "instant",
+    "stat": "hp",
+    "op": "loss",
+    "defaultParams": {
+      "amount": 5
+    },
+    "category": "instant",
+    "defaultDisplayName": "射击",
+    "defaultApplyTo": [
+      "target"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_instant_hp_loss_50",
+    "name": "伤害",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "instant",
+    "stat": "hp",
+    "op": "loss",
+    "defaultParams": {
+      "amount": 50
+    },
+    "category": "instant",
+    "defaultDisplayName": "伤害",
+    "defaultApplyTo": [
+      "target"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_instant_hp_loss_60",
+    "name": "重击",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "instant",
+    "stat": "hp",
+    "op": "loss",
+    "defaultParams": {
+      "amount": 60
+    },
+    "category": "instant",
+    "defaultDisplayName": "重击",
+    "defaultApplyTo": [
+      "target"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_instant_hp_loss_8",
+    "name": "双刃剑-反噬",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "instant",
+    "stat": "hp",
+    "op": "loss",
+    "defaultParams": {
+      "amount": 8
+    },
+    "category": "instant",
+    "defaultDisplayName": "双刃剑-反噬",
+    "defaultApplyTo": [
+      "starter"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_instant_hp_loss_80",
+    "name": "伤害",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "instant",
+    "stat": "hp",
+    "op": "loss",
+    "defaultParams": {
+      "amount": 80
+    },
+    "category": "instant",
+    "defaultDisplayName": "伤害",
+    "defaultApplyTo": [
+      "target"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_instant_remainingTime_gain_1000",
+    "name": "击退",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "instant",
+    "stat": "remainingTime",
+    "op": "gain",
+    "defaultParams": {
+      "amount": 1000
+    },
+    "category": "instant",
+    "defaultDisplayName": "击退",
+    "defaultApplyTo": [
+      "target"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_instant_remainingTime_gain_2000",
+    "name": "束缚",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "instant",
+    "stat": "remainingTime",
+    "op": "gain",
+    "defaultParams": {
+      "amount": 2000
+    },
+    "category": "instant",
+    "defaultDisplayName": "束缚",
+    "defaultApplyTo": [
+      "target"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "a_instant_stamina_loss_5",
+    "name": "削耐",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": false,
+    "kind": "instant",
+    "stat": "stamina",
+    "op": "loss",
+    "defaultParams": {
+      "amount": 5,
+      "percent": 0
+    },
+    "category": "instant",
+    "defaultDisplayName": "削耐",
+    "defaultApplyTo": [
+      "target"
+    ],
+    "paramSchema": [
+      "amount",
+      "percent",
+      "durationMs",
+      "tickIntervalMs",
+      "displayName",
+      "applyTo"
+    ]
+  },
+  {
+    "id": "p_instant_hpRegen_gain_1",
+    "name": "生命恢复加成",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "instant",
+    "stat": "hpRegen",
+    "op": "gain",
+    "defaultParams": {
+      "amount": 1
+    },
+    "category": "passive_chassis",
+    "defaultDisplayName": "生命恢复加成",
+    "paramSchema": [
+      "amount",
+      "displayName"
+    ]
+  },
+  {
+    "id": "p_instant_hpRegen_gain_2",
+    "name": "生命恢复加成",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "instant",
+    "stat": "hpRegen",
+    "op": "gain",
+    "defaultParams": {
+      "amount": 2
+    },
+    "category": "passive_chassis",
+    "defaultDisplayName": "生命恢复加成",
+    "paramSchema": [
+      "amount",
+      "displayName"
+    ]
+  },
+  {
+    "id": "p_instant_hpRegen_loss_3",
+    "name": "鲁莽-失血",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "instant",
+    "stat": "hpRegen",
+    "op": "loss",
+    "defaultParams": {
+      "amount": 3
+    },
+    "category": "passive_chassis",
+    "defaultDisplayName": "鲁莽-失血",
+    "paramSchema": [
+      "amount",
+      "displayName"
+    ]
+  },
+  {
+    "id": "p_instant_maxHp_gain_100",
+    "name": "生命加成",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "instant",
+    "stat": "maxHp",
+    "op": "gain",
+    "defaultParams": {
+      "amount": 100
+    },
+    "category": "passive_chassis",
+    "defaultDisplayName": "生命加成",
+    "paramSchema": [
+      "amount",
+      "displayName"
+    ]
+  },
+  {
+    "id": "p_instant_maxHp_gain_20",
+    "name": "斗士亲和-生命",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "instant",
+    "stat": "maxHp",
+    "op": "gain",
+    "defaultParams": {
+      "amount": 20
+    },
+    "category": "passive_chassis",
+    "defaultDisplayName": "斗士亲和-生命",
+    "paramSchema": [
+      "amount",
+      "displayName"
+    ]
+  },
+  {
+    "id": "p_instant_maxHp_gain_200",
+    "name": "贪婪-生命",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "instant",
+    "stat": "maxHp",
+    "op": "gain",
+    "defaultParams": {
+      "amount": 200
+    },
+    "category": "passive_chassis",
+    "defaultDisplayName": "贪婪-生命",
+    "paramSchema": [
+      "amount",
+      "displayName"
+    ]
+  },
+  {
+    "id": "p_instant_maxHp_gain_30",
+    "name": "奴役共鸣",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "instant",
+    "stat": "maxHp",
+    "op": "gain",
+    "defaultParams": {
+      "amount": 30
+    },
+    "category": "passive_chassis",
+    "defaultDisplayName": "奴役共鸣",
+    "paramSchema": [
+      "amount",
+      "displayName"
+    ]
+  },
+  {
+    "id": "p_instant_maxHp_gain_40",
+    "name": "斗士图腾",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "instant",
+    "stat": "maxHp",
+    "op": "gain",
+    "defaultParams": {
+      "amount": 40
+    },
+    "category": "passive_chassis",
+    "defaultDisplayName": "斗士图腾",
+    "paramSchema": [
+      "amount",
+      "displayName"
+    ]
+  },
+  {
+    "id": "p_instant_maxHp_gain_50",
+    "name": "斗士专精-生命",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "instant",
+    "stat": "maxHp",
+    "op": "gain",
+    "defaultParams": {
+      "amount": 50
+    },
+    "category": "passive_chassis",
+    "defaultDisplayName": "斗士专精-生命",
+    "paramSchema": [
+      "amount",
+      "displayName"
+    ]
+  },
+  {
+    "id": "p_instant_maxHp_gain_500",
+    "name": "生命加成",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "instant",
+    "stat": "maxHp",
+    "op": "gain",
+    "defaultParams": {
+      "amount": 500
+    },
+    "category": "passive_chassis",
+    "defaultDisplayName": "生命加成",
+    "paramSchema": [
+      "amount",
+      "displayName"
+    ]
+  },
+  {
+    "id": "p_instant_maxHp_gain_60",
+    "name": "项圈-强化",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "instant",
+    "stat": "maxHp",
+    "op": "gain",
+    "defaultParams": {
+      "amount": 60
+    },
+    "category": "passive_chassis",
+    "defaultDisplayName": "项圈-强化",
+    "paramSchema": [
+      "amount",
+      "displayName"
+    ]
+  },
+  {
+    "id": "p_instant_maxHp_loss_100",
+    "name": "生命削减-100",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "instant",
+    "stat": "maxHp",
+    "op": "loss",
+    "defaultParams": {
+      "amount": 100
+    },
+    "category": "passive_chassis",
+    "defaultDisplayName": "生命削减-100",
+    "paramSchema": [
+      "amount",
+      "displayName"
+    ]
+  },
+  {
+    "id": "p_instant_maxHp_loss_30",
+    "name": "贪婪-代价-30HP",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "instant",
+    "stat": "maxHp",
+    "op": "loss",
+    "defaultParams": {
+      "amount": 30
+    },
+    "category": "passive_chassis",
+    "defaultDisplayName": "贪婪-代价-30HP",
+    "paramSchema": [
+      "amount",
+      "displayName"
+    ]
+  },
+  {
+    "id": "p_instant_maxLoad_gain_10000",
+    "name": "机械图腾",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "instant",
+    "stat": "maxLoad",
+    "op": "gain",
+    "defaultParams": {
+      "amount": 10000
+    },
+    "category": "passive_chassis",
+    "defaultDisplayName": "机械图腾",
+    "paramSchema": [
+      "amount",
+      "displayName"
+    ]
+  },
+  {
+    "id": "p_instant_maxLoad_gain_5000",
+    "name": "贪婪-负重+5000",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "instant",
+    "stat": "maxLoad",
+    "op": "gain",
+    "defaultParams": {
+      "amount": 5000
+    },
+    "category": "passive_chassis",
+    "defaultDisplayName": "贪婪-负重+5000",
+    "paramSchema": [
+      "amount",
+      "displayName"
+    ]
+  },
+  {
+    "id": "p_instant_maxLoad_loss_3000",
+    "name": "贪婪-代价-3000负重",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "instant",
+    "stat": "maxLoad",
+    "op": "loss",
+    "defaultParams": {
+      "amount": 3000
+    },
+    "category": "passive_chassis",
+    "defaultDisplayName": "贪婪-代价-3000负重",
+    "paramSchema": [
+      "amount",
+      "displayName"
+    ]
+  },
+  {
+    "id": "p_instant_maxStamina_gain_100",
+    "name": "奴役图腾",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "instant",
+    "stat": "maxStamina",
+    "op": "gain",
+    "defaultParams": {
+      "amount": 100
+    },
+    "category": "passive_chassis",
+    "defaultDisplayName": "奴役图腾",
+    "paramSchema": [
+      "amount",
+      "displayName"
+    ]
+  },
+  {
+    "id": "p_instant_maxStamina_gain_20",
+    "name": "耐力加成",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "instant",
+    "stat": "maxStamina",
+    "op": "gain",
+    "defaultParams": {
+      "amount": 20
+    },
+    "category": "passive_chassis",
+    "defaultDisplayName": "耐力加成",
+    "paramSchema": [
+      "amount",
+      "displayName"
+    ]
+  },
+  {
+    "id": "p_instant_maxStamina_gain_200",
+    "name": "耐力恢复加成",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "instant",
+    "stat": "maxStamina",
+    "op": "gain",
+    "defaultParams": {
+      "amount": 200
+    },
+    "category": "passive_chassis",
+    "defaultDisplayName": "耐力恢复加成",
+    "paramSchema": [
+      "amount",
+      "displayName"
+    ]
+  },
+  {
+    "id": "p_instant_staminaRegen_gain_1",
+    "name": "耐力恢复加成",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "instant",
+    "stat": "staminaRegen",
+    "op": "gain",
+    "defaultParams": {
+      "amount": 1
+    },
+    "category": "passive_chassis",
+    "defaultDisplayName": "耐力恢复加成",
+    "paramSchema": [
+      "amount",
+      "displayName"
+    ]
+  },
+  {
+    "id": "p_instant_staminaRegen_gain_10",
+    "name": "双刃剑-狂涌",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "instant",
+    "stat": "staminaRegen",
+    "op": "gain",
+    "defaultParams": {
+      "amount": 10
+    },
+    "category": "passive_chassis",
+    "defaultDisplayName": "双刃剑-狂涌",
+    "paramSchema": [
+      "amount",
+      "displayName"
+    ]
+  },
+  {
+    "id": "p_instant_staminaRegen_gain_15",
+    "name": "鲁莽-狂涌",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "instant",
+    "stat": "staminaRegen",
+    "op": "gain",
+    "defaultParams": {
+      "amount": 15
+    },
+    "category": "passive_chassis",
+    "defaultDisplayName": "鲁莽-狂涌",
+    "paramSchema": [
+      "amount",
+      "displayName"
+    ]
+  },
+  {
+    "id": "p_instant_staminaRegen_gain_3",
+    "name": "法术亲和-耐力恢复",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "instant",
+    "stat": "staminaRegen",
+    "op": "gain",
+    "defaultParams": {
+      "amount": 3
+    },
+    "category": "passive_chassis",
+    "defaultDisplayName": "法术亲和-耐力恢复",
+    "paramSchema": [
+      "amount",
+      "displayName"
+    ]
+  },
+  {
+    "id": "p_instant_staminaRegen_gain_5",
+    "name": "耐力恢复加成",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "instant",
+    "stat": "staminaRegen",
+    "op": "gain",
+    "defaultParams": {
+      "amount": 5
+    },
+    "category": "passive_chassis",
+    "defaultDisplayName": "耐力恢复加成",
+    "paramSchema": [
+      "amount",
+      "displayName"
+    ]
+  },
+  {
+    "id": "p_instant_staminaRegen_gain_6",
+    "name": "耐力恢复加成",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "instant",
+    "stat": "staminaRegen",
+    "op": "gain",
+    "defaultParams": {
+      "amount": 6
+    },
+    "category": "passive_chassis",
+    "defaultDisplayName": "耐力恢复加成",
+    "paramSchema": [
+      "amount",
+      "displayName"
+    ]
+  },
+  {
+    "id": "p_instant_staminaRegen_gain_8",
+    "name": "法术专精-耐力恢复",
+    "description": "",
+    "allowActive": true,
+    "allowPassive": true,
+    "kind": "instant",
+    "stat": "staminaRegen",
+    "op": "gain",
+    "defaultParams": {
+      "amount": 8
+    },
+    "category": "passive_chassis",
+    "defaultDisplayName": "法术专精-耐力恢复",
+    "paramSchema": [
+      "amount",
+      "displayName"
+    ]
+  }
+]

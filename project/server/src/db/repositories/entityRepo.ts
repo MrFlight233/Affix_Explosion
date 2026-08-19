@@ -82,6 +82,8 @@ export class EntityRepo {
       passiveEffects: def.passiveEffects ?? [],
       passiveTargetCondition: def.passiveTargetCondition,
       passiveTargetCount: def.passiveTargetCount ?? null,
+      activeChannel: def.activeChannel,
+      passiveChannel: def.passiveChannel,
     };
 
     const db = getDB();
@@ -97,6 +99,7 @@ export class EntityRepo {
         stamina_regeneration_bonus, stamina_bonus, hp_regeneration_bonus, hp_bonus,
         load_bonus, has_passive_bonuses,
         passive_effects, passive_target_condition, passive_target_count,
+        active_channel, passive_channel,
         updated_at
       ) VALUES (
         @id, @name, @slot_cost, @entity_slots, @weight, @value,
@@ -108,6 +111,7 @@ export class EntityRepo {
         @stamina_regeneration_bonus, @stamina_bonus, @hp_regeneration_bonus, @hp_bonus,
         @load_bonus, @has_passive_bonuses,
         @passive_effects, @passive_target_condition, @passive_target_count,
+        @active_channel, @passive_channel,
         @updated_at
       )
     `).run(row);
@@ -166,6 +170,7 @@ export class EntityRepo {
         load_bonus=@load_bonus, has_passive_bonuses=@has_passive_bonuses,
         passive_effects=@passive_effects, passive_target_condition=@passive_target_condition,
         passive_target_count=@passive_target_count,
+        active_channel=@active_channel, passive_channel=@passive_channel,
         updated_at=@updated_at
       WHERE id=@id
     `).run(row);

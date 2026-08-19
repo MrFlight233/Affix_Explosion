@@ -6,7 +6,7 @@
 import fs from 'fs';
 import path from 'path';
 import { getDB } from './connection';
-import { templateCache, entityDefToRow, affixDefToRow } from './cache';
+import { templateCache, entityDefToRow, affixDefToRow, effectDefToRow } from './cache';
 import { getSeedDir } from '../paths';
 
 /** 种子相对 server 根 data/seed/（与 Git 跟踪路径一致；不随 cwd / DB_PATH 漂移） */
@@ -16,6 +16,7 @@ export interface SeedPublishResult {
   path: string;
   entities: number;
   affixes: number;
+  effects: number;
   categories: number;
   version: number;
   exportedAt: string;
@@ -39,6 +40,21 @@ function writeJson(file: string, data: unknown): void {
   fs.writeFileSync(file, JSON.stringify(data, null, 2) + '\n', 'utf8');
 }
 
+/** 发布种子时通道为权威；清空旧内联列表，避免双轨回潮 */
+function stripLegacyInlineEffects<T extends Record<string, any>>(item: T): T {
+  return {
+    ...item,
+    onHitEffects: [],
+    passiveEffects: [],
+    damageBonus: 0,
+    hpBonus: 0,
+    hpRegenerationBonus: 0,
+    staminaBonus: 0,
+    staminaRegenerationBonus: 0,
+    loadBonus: 0,
+  };
+}
+
 function readJsonArray(file: string): any[] {
   if (!fs.existsSync(file)) return [];
   const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -55,20 +71,23 @@ export function publishSeed(): SeedPublishResult {
 
   ensureSeedDir();
 
-  const entities = sortById(templateCache.getAllEntities());
-  const affixes = sortById(templateCache.getAllAffixes());
+  const entities = sortById(templateCache.getAllEntities()).map(stripLegacyInlineEffects);
+  const affixes = sortById(templateCache.getAllAffixes()).map(stripLegacyInlineEffects);
+  const effects = sortById(templateCache.getAllEffects());
   const categories = sortById(templateCache.getAllCategories());
   const exportedAt = new Date().toISOString();
   const version = templateCache.version;
 
   writeJson(path.join(SEED_DIR, 'entities.json'), entities);
   writeJson(path.join(SEED_DIR, 'affixes.json'), affixes);
+  writeJson(path.join(SEED_DIR, 'effects.json'), effects);
   writeJson(path.join(SEED_DIR, 'categories.json'), categories);
 
   const meta: SeedPublishResult = {
     path: SEED_DIR,
     entities: entities.length,
     affixes: affixes.length,
+    effects: effects.length,
     categories: categories.length,
     version,
     exportedAt,
@@ -76,7 +95,7 @@ export function publishSeed(): SeedPublishResult {
   writeJson(path.join(SEED_DIR, 'meta.json'), meta);
 
   console.log(
-    `[Seed] 已发布种子: ${meta.entities} entities, ${meta.affixes} affixes, ${meta.categories} categories → ${SEED_DIR}`
+    `[Seed] 已发布种子: ${meta.entities} entities, ${meta.affixes} affixes, ${meta.effects} effects, ${meta.categories} categories → ${SEED_DIR}`
   );
   return meta;
 }
@@ -110,6 +129,7 @@ export function importSeedIfEmpty(): void {
 
   const entitiesPath = path.join(SEED_DIR, 'entities.json');
   const affixesPath = path.join(SEED_DIR, 'affixes.json');
+  const effectsPath = path.join(SEED_DIR, 'effects.json');
   const categoriesPath = path.join(SEED_DIR, 'categories.json');
 
   if (!fs.existsSync(entitiesPath) && !fs.existsSync(affixesPath) && !fs.existsSync(categoriesPath)) {
@@ -119,10 +139,12 @@ export function importSeedIfEmpty(): void {
 
   let entities: any[];
   let affixes: any[];
+  let effects: any[];
   let categories: any[];
   try {
     entities = readJsonArray(entitiesPath);
     affixes = readJsonArray(affixesPath);
+    effects = fs.existsSync(effectsPath) ? readJsonArray(effectsPath) : [];
     categories = readJsonArray(categoriesPath);
   } catch (e) {
     console.error('[Seed] 读取种子失败:', (e as Error).message);
@@ -139,6 +161,18 @@ export function importSeedIfEmpty(): void {
     VALUES (@id, @name, @sort_order, @is_entity_class, @show_in_filter, @updated_at)
   `);
 
+  const insertEffect = db.prepare(`
+    INSERT OR REPLACE INTO effects (
+      id, name, description, allow_active, allow_passive, kind, stat, op,
+      default_params, default_duration_ms, default_tick_interval_ms,
+      default_display_name, default_apply_to, param_schema, category, updated_at
+    ) VALUES (
+      @id, @name, @description, @allow_active, @allow_passive, @kind, @stat, @op,
+      @default_params, @default_duration_ms, @default_tick_interval_ms,
+      @default_display_name, @default_apply_to, @param_schema, @category, @updated_at
+    )
+  `);
+
   const insertEntity = db.prepare(`
     INSERT OR REPLACE INTO entities (
       id, name, slot_cost, entity_slots, weight, value, fixed_affixes, dynamic_affix_slots,
@@ -147,7 +181,8 @@ export function importSeedIfEmpty(): void {
       on_hit_effects, target_type, target_order, priority_target, target_faction, target_count,
       target_condition, stamina_regeneration_bonus, stamina_bonus, hp_regeneration_bonus,
       hp_bonus, load_bonus, has_passive_bonuses,
-      passive_effects, passive_target_condition, passive_target_count, updated_at
+      passive_effects, passive_target_condition, passive_target_count,
+      active_channel, passive_channel, updated_at
     ) VALUES (
       @id, @name, @slot_cost, @entity_slots, @weight, @value, @fixed_affixes, @dynamic_affix_slots,
       @pool_prerequisite, @default_children, @preloaded_dynamic_affixes, @hp, @max_stamina,
@@ -155,7 +190,8 @@ export function importSeedIfEmpty(): void {
       @on_hit_effects, @target_type, @target_order, @priority_target, @target_faction, @target_count,
       @target_condition, @stamina_regeneration_bonus, @stamina_bonus, @hp_regeneration_bonus,
       @hp_bonus, @load_bonus, @has_passive_bonuses,
-      @passive_effects, @passive_target_condition, @passive_target_count, @updated_at
+      @passive_effects, @passive_target_condition, @passive_target_count,
+      @active_channel, @passive_channel, @updated_at
     )
   `);
 
@@ -164,12 +200,14 @@ export function importSeedIfEmpty(): void {
       id, name, category, cost_value, slot_cost, repeatable, prerequisite, pool_prerequisite,
       effect, on_hit_effects, damage_bonus, targeting_modifier, has_passive_bonuses,
       stamina_regeneration_bonus, stamina_bonus, hp_regeneration_bonus, hp_bonus, load_bonus,
-      passive_effects, passive_target_condition, passive_target_count, updated_at
+      passive_effects, passive_target_condition, passive_target_count,
+      active_channel, passive_channel, updated_at
     ) VALUES (
       @id, @name, @category, @cost_value, @slot_cost, @repeatable, @prerequisite, @pool_prerequisite,
       @effect, @on_hit_effects, @damage_bonus, @targeting_modifier, @has_passive_bonuses,
       @stamina_regeneration_bonus, @stamina_bonus, @hp_regeneration_bonus, @hp_bonus, @load_bonus,
-      @passive_effects, @passive_target_condition, @passive_target_count, @updated_at
+      @passive_effects, @passive_target_condition, @passive_target_count,
+      @active_channel, @passive_channel, @updated_at
     )
   `);
 
@@ -186,18 +224,68 @@ export function importSeedIfEmpty(): void {
         updated_at: now,
       });
     }
+    for (const ef of effects) {
+      if (!ef?.id || !ef?.name) continue;
+      insertEffect.run(effectDefToRow(ef));
+    }
+    const channelNeedsPassiveBackfill = (item: any): boolean => {
+      const binds = item?.passiveChannel?.effectBindings;
+      const hasBinds = Array.isArray(binds) && binds.length > 0;
+      const pe = item?.passiveEffects;
+      return !hasBinds && (item?.hasPassiveBonuses || (Array.isArray(pe) && pe.length > 0));
+    };
+    const channelNeedsActiveBackfill = (item: any): boolean => {
+      const binds = item?.activeChannel?.effectBindings;
+      const hasBinds = Array.isArray(binds) && binds.length > 0;
+      const oh = item?.onHitEffects;
+      return !hasBinds && Array.isArray(oh) && oh.length > 0;
+    };
+
     for (const e of entities) {
       if (!e?.id || !e?.name) continue;
-      insertEntity.run(entityDefToRow(e));
+      const row = entityDefToRow(e);
+      // 通道空绑定但仍有旧列表时，保留旧字段并清空通道，供随后 v11 补迁
+      if (channelNeedsActiveBackfill(e)) {
+        row.on_hit_effects = JSON.stringify(e.onHitEffects);
+        row.active_channel = null;
+      }
+      if (channelNeedsPassiveBackfill(e)) {
+        row.passive_effects = JSON.stringify(e.passiveEffects || []);
+        row.has_passive_bonuses = e.hasPassiveBonuses ? 1 : 0;
+        row.passive_channel = null;
+        if (e.passiveTargetCondition) {
+          row.passive_target_condition = JSON.stringify(e.passiveTargetCondition);
+        }
+        if (e.passiveTargetCount != null) {
+          row.passive_target_count = e.passiveTargetCount === 'all' ? -1 : e.passiveTargetCount;
+        }
+      }
+      insertEntity.run(row);
     }
     for (const a of affixes) {
       if (!a?.id || !a?.name) continue;
-      insertAffix.run(affixDefToRow(a));
+      const row = affixDefToRow(a);
+      if (channelNeedsActiveBackfill(a)) {
+        row.on_hit_effects = JSON.stringify(a.onHitEffects);
+        row.active_channel = null;
+      }
+      if (channelNeedsPassiveBackfill(a)) {
+        row.passive_effects = JSON.stringify(a.passiveEffects || []);
+        row.has_passive_bonuses = a.hasPassiveBonuses ? 1 : 0;
+        row.passive_channel = null;
+        if (a.passiveTargetCondition) {
+          row.passive_target_condition = JSON.stringify(a.passiveTargetCondition);
+        }
+        if (a.passiveTargetCount != null) {
+          row.passive_target_count = a.passiveTargetCount === 'all' ? -1 : a.passiveTargetCount;
+        }
+      }
+      insertAffix.run(row);
     }
   });
 
   tx();
   console.log(
-    `[Seed] 空库已导入种子: ${entities.length} entities, ${affixes.length} affixes, ${categories.length} categories`
+    `[Seed] 空库已导入种子: ${entities.length} entities, ${affixes.length} affixes, ${effects.length} effects, ${categories.length} categories`
   );
 }

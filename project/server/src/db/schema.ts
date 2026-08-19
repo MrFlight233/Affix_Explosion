@@ -5,7 +5,7 @@
 
 import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
 import { getDB as _getDB, initDB as _initDB } from './connection';
-import { initTables } from './seed';
+import { initTables, migrateEffectCatalogV11AfterSeed } from './seed';
 import { importSeedIfEmpty } from './seedData';
 import { templateCache } from './cache';
 
@@ -49,6 +49,8 @@ export const entities = sqliteTable('entities', {
   passiveEffects: text('passive_effects').notNull().default('[]'),
   passiveTargetCondition: text('passive_target_condition'),
   passiveTargetCount: integer('passive_target_count'),
+  activeChannel: text('active_channel'),
+  passiveChannel: text('passive_channel'),
   createdAt: text('created_at').notNull().default("(datetime('now'))"),
   updatedAt: text('updated_at').notNull().default("(datetime('now'))"),
 });
@@ -76,6 +78,28 @@ export const affixes = sqliteTable('affixes', {
   passiveEffects: text('passive_effects').notNull().default('[]'),
   passiveTargetCondition: text('passive_target_condition'),
   passiveTargetCount: integer('passive_target_count'),
+  activeChannel: text('active_channel'),
+  passiveChannel: text('passive_channel'),
+  createdAt: text('created_at').notNull().default("(datetime('now'))"),
+  updatedAt: text('updated_at').notNull().default("(datetime('now'))"),
+});
+
+export const effects = sqliteTable('effects', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  description: text('description').notNull().default(''),
+  allowActive: integer('allow_active').notNull().default(1),
+  allowPassive: integer('allow_passive').notNull().default(0),
+  kind: text('kind').notNull().default('instant'),
+  stat: text('stat').notNull(),
+  op: text('op').notNull().default('gain'),
+  defaultParams: text('default_params').notNull().default('{}'),
+  defaultDurationMs: integer('default_duration_ms'),
+  defaultTickIntervalMs: integer('default_tick_interval_ms'),
+  defaultDisplayName: text('default_display_name'),
+  defaultApplyTo: text('default_apply_to'),
+  paramSchema: text('param_schema'),
+  category: text('category'),
   createdAt: text('created_at').notNull().default("(datetime('now'))"),
   updatedAt: text('updated_at').notNull().default("(datetime('now'))"),
 });
@@ -125,11 +149,12 @@ export const battlePool = sqliteTable(
 // 过渡兼容层 — 保持旧路由 (save.ts, auth.ts, data.ts) 不报错
 // ============================================================
 
-/** 初始化数据库：建立连接 + 建表 + 空库灌种子 + 加载缓存 */
+/** 初始化数据库：建立连接 + 建表 + 空库灌种子 + 效果库迁移（种子后）+ 加载缓存 */
 export async function initDB(): Promise<void> {
   _initDB();
   initTables();
   importSeedIfEmpty();
+  migrateEffectCatalogV11AfterSeed();
   templateCache.load();
 }
 

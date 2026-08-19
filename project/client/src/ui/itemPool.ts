@@ -5,6 +5,7 @@
 import {
   ENTITY_DEFS,
   AFFIX_DEFS,
+  EFFECT_DEFS,
   getEntityDef,
   getAffixDef,
   getEntityCategory,
@@ -17,6 +18,7 @@ import {
   type AffixDef,
   type DefaultChildSpec,
 } from '../game/data';
+import type { EffectDef } from '@shared/effectDef';
 import {
   formatTargetingSummary,
   SORT_BY_LABELS,
@@ -33,7 +35,7 @@ import {
   resolvePassiveForDisplay,
 } from './passiveBonusDisplay';
 
-type TabType = 'entities' | 'affixes';
+type TabType = 'entities' | 'affixes' | 'effects';
 
 interface TabSession {
   searchQuery: string;
@@ -88,6 +90,12 @@ export function showFullItemPool(onBack: () => void): void {
       affixCatFilter: 'all',
     },
     affixes: {
+      searchQuery: '',
+      selectedId: null,
+      entityCatFilter: 'all',
+      affixCatFilter: 'all',
+    },
+    effects: {
       searchQuery: '',
       selectedId: null,
       entityCatFilter: 'all',
@@ -309,7 +317,7 @@ export function showFullItemPool(onBack: () => void): void {
       field('ID', a.id),
       field('名称', a.name),
       field('分类', getCategoryName(a.category)),
-      field('效果描述', a.effect),
+      field('描述', a.description || a.effect),
       field('价值', getAffixPackageTradeValue(a)),
       field('槽位消耗', a.slotCost),
       field('可重复', a.repeatable ? '是' : '否'),
@@ -425,10 +433,45 @@ export function showFullItemPool(onBack: () => void): void {
       list = list.filter(a =>
         a.id.toLowerCase().includes(q) ||
         a.name.toLowerCase().includes(q) ||
-        (a.effect || '').toLowerCase().includes(q),
+        ((a.description || a.effect) || '').toLowerCase().includes(q),
       );
     }
     return list;
+  }
+
+  function getFilteredEffects(): EffectDef[] {
+    const s = sess();
+    let list = EFFECT_DEFS.slice();
+    const q = s.searchQuery.trim().toLowerCase();
+    if (q) {
+      list = list.filter(e =>
+        e.id.toLowerCase().includes(q) ||
+        e.name.toLowerCase().includes(q) ||
+        (e.stat || '').toLowerCase().includes(q) ||
+        (e.category || '').toLowerCase().includes(q),
+      );
+    }
+    return list.sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+  }
+
+  function buildEffectDetail(e: EffectDef): string {
+    const allow = [
+      e.allowActive ? '主动' : null,
+      e.allowPassive ? '被动' : null,
+    ].filter(Boolean).join('+') || '—';
+    return `<h3>查看效果：${esc(e.name)}</h3>` + section('基本信息', [
+      field('ID', e.id),
+      field('名称', e.name),
+      field('说明', e.description || '—'),
+      field('可引用', allow),
+      field('类型', e.kind === 'duration' ? '持续' : '瞬间'),
+      field('属性', e.stat),
+      field('运算', e.op),
+      field('默认数量', e.defaultParams?.amount ?? '—'),
+      field('默认持续(ms)', e.defaultDurationMs ?? '—'),
+      field('跳伤间隔(ms)', e.defaultTickIntervalMs ?? '—'),
+      field('分类', e.category || '—'),
+    ].join(''));
   }
 
   function renderChips(): void {
@@ -437,16 +480,17 @@ export function showFullItemPool(onBack: () => void): void {
     const s = sess();
     let html = '';
     if (tab === 'entities') {
-      // 与制作物品实体 Tab 一致：仅分类 Chip（全部 + 实体分类名）
       for (const cat of getEntityCategoryFilters()) {
         const label = cat === 'all' ? '全部' : cat;
         html += `<button type="button" class="ip-chip${s.entityCatFilter === cat ? ' active' : ''}" data-ecat="${esc(cat)}">${esc(label)}</button>`;
       }
-    } else {
+    } else if (tab === 'affixes') {
       html += `<button type="button" class="ip-chip${s.affixCatFilter === 'all' ? ' active' : ''}" data-acat="all">全部</button>`;
       for (const c of getAffixFilterCategories()) {
         html += `<button type="button" class="ip-chip${s.affixCatFilter === c.id ? ' active' : ''}" data-acat="${esc(c.id)}">${esc(c.name)}</button>`;
       }
+    } else {
+      html = '<span class="ip-hint">效果库配方（只读）</span>';
     }
     el.innerHTML = html;
   }
@@ -465,12 +509,25 @@ export function showFullItemPool(onBack: () => void): void {
           <span class="price">价 ${getDefPackageTradeValue(e)}</span>
         </div>`;
       }
-    } else {
+    } else if (tab === 'affixes') {
       for (const a of getFilteredAffixes()) {
         html += `<div class="ip-list-item${s.selectedId === a.id ? ' selected' : ''}" data-id="${esc(a.id)}" role="button" tabindex="0">
           <span class="name">${esc(a.name)}</span>
           <span class="meta">${esc(getCategoryName(a.category))}</span>
           <span class="price">价 ${getAffixPackageTradeValue(a)}</span>
+        </div>`;
+      }
+    } else {
+      for (const e of getFilteredEffects()) {
+        const meta = [
+          e.kind === 'duration' ? '持续' : '瞬间',
+          e.allowActive ? '主' : '',
+          e.allowPassive ? '被' : '',
+        ].filter(Boolean).join('·');
+        html += `<div class="ip-list-item${s.selectedId === e.id ? ' selected' : ''}" data-id="${esc(e.id)}" role="button" tabindex="0">
+          <span class="name">${esc(e.name)}</span>
+          <span class="meta">${esc(meta)}</span>
+          <span class="price">${esc(e.stat)}</span>
         </div>`;
       }
     }
@@ -493,11 +550,16 @@ export function showFullItemPool(onBack: () => void): void {
       right.innerHTML = e
         ? buildEntityDetail(e)
         : '<p class="ip-empty-hint">实体不存在</p>';
-    } else {
+    } else if (tab === 'affixes') {
       const a = getAffixDef(id);
       right.innerHTML = a
         ? buildAffixDetail(a)
         : '<p class="ip-empty-hint">词条不存在</p>';
+    } else {
+      const e = EFFECT_DEFS.find(x => x.id === id);
+      right.innerHTML = e
+        ? buildEffectDetail(e)
+        : '<p class="ip-empty-hint">效果不存在</p>';
     }
     bindFoldEvents();
   }
@@ -563,6 +625,7 @@ export function showFullItemPool(onBack: () => void): void {
         <div id="ip-tabs">
           <button type="button" class="ip-tab active" data-tab="entities">实体</button>
           <button type="button" class="ip-tab" data-tab="affixes">词条</button>
+          <button type="button" class="ip-tab" data-tab="effects">效果</button>
         </div>
       </div>
       <div id="ip-body">

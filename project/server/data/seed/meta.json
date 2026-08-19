@@ -1,8 +1,9 @@
 {
-  "path": "E:\\EMAG\\Affix_Explosion\\project\\server\\data\\seed",
+  "path": "/workspace/project/server/data/seed",
   "entities": 57,
   "affixes": 41,
+  "effects": 58,
   "categories": 11,
-  "version": 2,
-  "exportedAt": "2026-08-12T08:46:03.136Z"
+  "version": 1,
+  "exportedAt": "2026-08-19T08:07:10.413Z"
 }

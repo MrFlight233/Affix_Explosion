@@ -15,6 +15,8 @@ import { normalizeOnHitEffects } from './hitEffectUtil';
 import { resolvePassiveBonusConfig, isRootOnlyPassiveTarget } from './passiveBonusUtil';
 import type { PassiveEffect } from './passiveBonusUtil';
 import type { SubtreeCondition } from '@shared/types';
+import { normalizeActiveChannel, normalizePassiveChannel } from '@shared/effectDef';
+import { resolveActiveBindings, resolvePassiveBindings } from '@shared/effectResolve';
 
 /** 条件 Targeting 配置（v8：多选过滤 + 统一排序 + 目标数量） */
 export interface TargetCondition {
@@ -99,17 +101,24 @@ export interface EntityDef {
   hpBonus: number;
   /** @deprecated 迁入 passiveEffects */
   loadBonus: number;
-  /** 被动效果列表（v1：五类底盘 + amount） */
+  /** 被动效果列表（v1：五类底盘 + amount）；可由 passiveChannel 解析填充 */
   passiveEffects?: import('@shared/passiveBonusUtil').PassiveEffect[];
   passiveTargetCondition?: TargetCondition;
   passiveTargetCount?: number | 'all' | null;
+  /** 主动通道（效果库引用） */
+  activeChannel?: import('@shared/effectDef').ActiveChannel;
+  /** 被动通道（效果库引用 + 总开关） */
+  passiveChannel?: import('@shared/effectDef').PassiveChannel;
 }
 
 export interface AffixDef {
   id: string; name: string; category: string;
   costValue: number; slotCost: number;
   repeatable: boolean; prerequisite: string[]; poolPrerequisite: string[];
+  /** @deprecated 请用 description；存储仍可能为 effect 列 */
   effect: string;
+  /** 词条描述（风味说明，不参与结算） */
+  description?: string;
   /** 命中效果列表（与实体同结构） */
   onHitEffects?: OnHitEffect[];
 
@@ -127,6 +136,8 @@ export interface AffixDef {
   passiveEffects?: import('@shared/passiveBonusUtil').PassiveEffect[];
   passiveTargetCondition?: TargetCondition;
   passiveTargetCount?: number | 'all' | null;
+  activeChannel?: import('@shared/effectDef').ActiveChannel;
+  passiveChannel?: import('@shared/effectDef').PassiveChannel;
   /** targeting_modifier 分类词条的专属效果（v7 扩展）— 可覆写所有 targeting 字段 */
   targetingModifier?: TargetingModifier;
   /** 是否有被动加成。false → 跳过。 */
@@ -165,6 +176,9 @@ export const ENTITY_DEFS: EntityDef[] = [];
 // ---- 词条数据（从服务端 API 加载，reloadData 填充） ----
 export const AFFIX_DEFS: AffixDef[] = [];
 
+// ---- 效果库 ----
+export const EFFECT_DEFS: import('@shared/effectDef').EffectDef[] = [];
+
 // ---- 分类数据（从服务端 API 加载，reloadData 填充） ----
 export const CATEGORIES: CategoryDef[] = [];
 
@@ -182,13 +196,7 @@ export async function loadInitialData(): Promise<void> {
   const resp = await fetch('/api/data/all');
   if (!resp.ok) throw new Error(`数据加载失败: HTTP ${resp.status}`);
   const data = await resp.json();
-  ENTITY_DEFS.length = 0;
-  ENTITY_DEFS.push(...data.entities);
-  AFFIX_DEFS.length = 0;
-  AFFIX_DEFS.push(...data.affixes);
-  CATEGORIES.length = 0;
-  if (data.categories) CATEGORIES.push(...data.categories);
-  _dataLoaded = true;
+  reloadData(data.entities || [], data.affixes || [], data.categories, data.effects);
 }
 
 // ---- 辅助函数（v3：新类型守卫） ----
@@ -197,6 +205,12 @@ export function getEntityDef(id: string): EntityDef | undefined {
 }
 export function getAffixDef(id: string): AffixDef | undefined {
   return AFFIX_DEFS.find(a => a.id === id);
+}
+export function getEffectDef(id: string): import('@shared/effectDef').EffectDef | undefined {
+  return EFFECT_DEFS.find(e => e.id === id);
+}
+export function getEffectCatalogMap(): Map<string, import('@shared/effectDef').EffectDef> {
+  return new Map(EFFECT_DEFS.map(e => [e.id, e]));
 }
 
 /** 根据分类 ID 获取显示名称 */
@@ -226,31 +240,59 @@ export function getEntityClassCategoryIds(): Set<string> {
  * 重新加载实体和词条数据（管理员修改后调用）。
  * 注意：ENTITY_DEFS 和 AFFIX_DEFS 是 const 引用，但内容可变。
  */
-export function reloadData(entities: EntityDef[], affixes: AffixDef[], categories?: CategoryDef[]): void {
+export function reloadData(
+  entities: EntityDef[],
+  affixes: AffixDef[],
+  categories?: CategoryDef[],
+  effects?: import('@shared/effectDef').EffectDef[],
+): void {
+  if (effects) {
+    EFFECT_DEFS.length = 0;
+    EFFECT_DEFS.push(...effects);
+  }
+  const catalog = getEffectCatalogMap();
+
+  const hydrate = <T extends EntityDef | AffixDef>(item: T): T => {
+    const activeChannel = normalizeActiveChannel((item as any).activeChannel);
+    const passiveChannel = normalizePassiveChannel(
+      (item as any).passiveChannel ?? {
+        enabled: (item as any).hasPassiveBonuses === true,
+        effectBindings: [],
+        targetCondition: (item as any).passiveTargetCondition,
+        targetCount: (item as any).passiveTargetCount,
+      },
+    );
+    let onHitEffects = normalizeOnHitEffects((item as any).onHitEffects || []);
+    if (activeChannel.effectBindings.length > 0 && catalog.size > 0) {
+      onHitEffects = resolveActiveBindings(activeChannel.effectBindings, catalog, item.name);
+    }
+    let passiveEffects: PassiveEffect[] = [];
+    let hasPassiveBonuses = passiveChannel.enabled;
+    if (passiveChannel.enabled && passiveChannel.effectBindings.length > 0 && catalog.size > 0) {
+      passiveEffects = resolvePassiveBindings(passiveChannel.effectBindings, catalog, item.name);
+    } else if (passiveChannel.enabled) {
+      const cfg = resolvePassiveBonusConfig(item as any);
+      passiveEffects = cfg.passiveEffects;
+      hasPassiveBonuses = cfg.hasPassiveBonuses;
+    }
+    return {
+      ...item,
+      activeChannel,
+      passiveChannel,
+      onHitEffects,
+      hasPassiveBonuses,
+      passiveEffects,
+      passiveTargetCondition: passiveChannel.targetCondition ?? (item as any).passiveTargetCondition,
+      passiveTargetCount: passiveChannel.targetCount ?? (item as any).passiveTargetCount,
+      description: (item as any).description ?? (item as any).effect,
+      effect: (item as any).description ?? (item as any).effect,
+    };
+  };
+
   ENTITY_DEFS.length = 0;
-  ENTITY_DEFS.push(...entities.map(e => {
-    const cfg = resolvePassiveBonusConfig(e as any);
-    return {
-      ...e,
-      onHitEffects: normalizeOnHitEffects(e.onHitEffects || []),
-      hasPassiveBonuses: cfg.hasPassiveBonuses,
-      passiveEffects: cfg.passiveEffects,
-      passiveTargetCondition: cfg.passiveTargetCondition,
-      passiveTargetCount: cfg.passiveTargetCount,
-    };
-  }));
+  ENTITY_DEFS.push(...entities.map(e => hydrate(e)));
   AFFIX_DEFS.length = 0;
-  AFFIX_DEFS.push(...affixes.map(a => {
-    const cfg = resolvePassiveBonusConfig(a as any);
-    return {
-      ...a,
-      onHitEffects: normalizeOnHitEffects(a.onHitEffects || []),
-      hasPassiveBonuses: cfg.hasPassiveBonuses,
-      passiveEffects: cfg.passiveEffects,
-      passiveTargetCondition: cfg.passiveTargetCondition,
-      passiveTargetCount: cfg.passiveTargetCount,
-    };
-  }));
+  AFFIX_DEFS.push(...affixes.map(a => hydrate(a)));
   if (categories) {
     CATEGORIES.length = 0;
     CATEGORIES.push(...categories);

@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import { adminMiddleware, AuthRequest } from '../middleware/admin';
-import { entityRepo, affixRepo, categoryRepo, templateCache, publishSeed, getSeedStatus } from '../db';
+import { entityRepo, affixRepo, effectRepo, categoryRepo, templateCache, publishSeed, getSeedStatus } from '../db';
 
 const router = Router();
 
@@ -209,6 +209,62 @@ router.delete('/affixes/:id', (req: AuthRequest, res: Response) => {
 router.delete('/affixes', (_req: AuthRequest, res: Response) => {
   affixRepo.deleteAll();
   res.json({ ok: true, message: '所有词条已删除' });
+});
+
+// ---- 效果库 CRUD ----
+
+router.get('/effects', (_req: AuthRequest, res: Response) => {
+  res.json({
+    effects: effectRepo.getAll(),
+    version: templateCache.version,
+  });
+});
+
+router.get('/effects/:id', (req: AuthRequest, res: Response) => {
+  const effect = effectRepo.getById(req.params.id as string);
+  if (!effect) {
+    res.status(404).json({ error: '效果不存在' });
+    return;
+  }
+  res.json({ effect, refCount: effectRepo.countRefs(effect.id) });
+});
+
+router.post('/effects', (req: AuthRequest, res: Response) => {
+  try {
+    const { effect } = req.body;
+    if (!effect || !effect.id || !effect.name) {
+      res.status(400).json({ error: '效果 ID 和名称不能为空' });
+      return;
+    }
+    const created = effectRepo.create(effect);
+    res.status(201).json({ effect: created });
+  } catch (e: any) {
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
+});
+
+router.put('/effects/:id', (req: AuthRequest, res: Response) => {
+  try {
+    const { effect } = req.body;
+    if (!effect) {
+      res.status(400).json({ error: '请求体需要 effect 字段' });
+      return;
+    }
+    const refCount = effectRepo.countRefs(req.params.id as string);
+    const updated = effectRepo.update(req.params.id as string, effect);
+    res.json({ effect: updated, refCount, warn: refCount > 0 ? `将影响 ${refCount} 处引用` : undefined });
+  } catch (e: any) {
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
+});
+
+router.delete('/effects/:id', (req: AuthRequest, res: Response) => {
+  try {
+    effectRepo.delete(req.params.id as string);
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
 });
 
 // ---- 分类 CRUD ----

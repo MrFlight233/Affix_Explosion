@@ -300,8 +300,8 @@ export function renderEntityCard(
   if (!isEntity) {
     const adef = def as AffixDef;
     h += '<div class="sb-card-block">';
-    h += '<div class="sb-block-title">效果描述</div>';
-    h += `<div class="sb-card-stats">${adef.effect || '—'}</div>`;
+    h += '<div class="sb-block-title">描述</div>';
+    h += `<div class="sb-card-stats">${adef.description || adef.effect || '—'}</div>`;
     h += '</div>';
 
     h += '<div class="sb-card-block">';

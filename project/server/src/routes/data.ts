@@ -27,7 +27,15 @@ router.get('/all', (_req: Request, res: Response) => {
   res.json({
     entities: templateCache.getAllEntities(),
     affixes: templateCache.getAllAffixes(),
+    effects: templateCache.getAllEffects(),
     categories: templateCache.getAllCategories(),
+    version: templateCache.version,
+  });
+});
+
+router.get('/effects', (_req: Request, res: Response) => {
+  res.json({
+    effects: templateCache.getAllEffects(),
     version: templateCache.version,
   });
 });

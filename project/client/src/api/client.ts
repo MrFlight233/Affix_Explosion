@@ -67,7 +67,7 @@ export const auth = {
 
 // Data
 export const data = {
-  getAll: () => request<{entities:any[];affixes:any[];version:number}>('/data/all'),
+  getAll: () => request<{entities:any[];affixes:any[];effects?:any[];categories?:any[];version:number}>('/data/all'),
   uploadBD: (round: number, bd: any) =>
     request<{id:number}>('/data/battle-pool', {
       method:'POST', body:JSON.stringify({round, bd_json:JSON.stringify(bd)}),
@@ -151,6 +151,22 @@ export const admin = {
     }),
   deleteCategory: (id: string) =>
     request<{ ok: boolean }>(`/admin/categories/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+  // Effects
+  listEffects: () =>
+    request<{ effects: any[]; version: number }>('/admin/effects'),
+  getEffect: (id: string) =>
+    request<{ effect: any; refCount?: number }>(`/admin/effects/${encodeURIComponent(id)}`),
+  createEffect: (effect: any) =>
+    request<{ effect: any }>('/admin/effects', {
+      method: 'POST', body: JSON.stringify({ effect }),
+    }),
+  updateEffect: (id: string, effect: any) =>
+    request<{ effect: any; refCount?: number; warn?: string }>(`/admin/effects/${encodeURIComponent(id)}`, {
+      method: 'PUT', body: JSON.stringify({ effect }),
+    }),
+  deleteEffect: (id: string) =>
+    request<{ ok: boolean }>(`/admin/effects/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
   // Seed
   publishSeed: () =>

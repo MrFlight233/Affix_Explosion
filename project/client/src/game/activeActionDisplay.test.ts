@@ -105,7 +105,8 @@ describe('combat log lines', () => {
     });
     expect(html).toContain('[2.0s]');
     expect(html).toContain('毒 哥布林 血量 - 5');
-    expect(html).not.toMatch(/\[2\.0s\] 哥布林</);
+    // 效果子行缩进；避免把 "</div>" 误判成 "哥布林<"
+    expect(html).toMatch(/padding-left:20px[^>]*>毒 哥布林/);
   });
 });
 
